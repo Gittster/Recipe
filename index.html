@@ -13,7 +13,11 @@
       <label for="ingredientInput" class="form-label">Filter by Ingredients:</label>
       <input type="text" id="ingredientInput" class="form-control" placeholder="e.g. tomato, chicken">
     </div>
-    <button class="btn btn-primary mb-3" onclick="filterRecipes()">Show Recipes</button>
+    <div class="mb-3">
+      <button class="btn btn-primary" onclick="filterRecipes()">Show Recipes</button>
+      <button class="btn btn-secondary" onclick="showRandomRecipe()">Random Recipe</button>
+      <button class="btn btn-outline-dark" onclick="viewHistory()">View History</button>
+    </div>
 
     <div id="recipeList"></div>
   </div>
@@ -47,6 +51,7 @@
           <h5 class="card-title">${recipe.name}</h5>
           <p><strong>Ingredients:</strong> ${recipe.ingredients.join(', ')}</p>
           <p><strong>Instructions:</strong> ${recipe.instructions}</p>
+          <button class="btn btn-success btn-sm" onclick="markAsMade('${recipe.name}')">Made This</button>
         `;
 
         card.appendChild(body);
@@ -69,6 +74,52 @@
       );
 
       displayRecipes(filtered);
+    }
+
+    function showRandomRecipe() {
+      if (recipes.length === 0) return;
+      const randomIndex = Math.floor(Math.random() * recipes.length);
+      displayRecipes([recipes[randomIndex]]);
+    }
+
+    function markAsMade(recipeName) {
+      const notes = prompt(`Notes for "${recipeName}"?`);
+      const history = JSON.parse(localStorage.getItem('history') || '[]');
+      history.push({
+        recipe: recipeName,
+        timestamp: new Date().toISOString(),
+        notes: notes || ''
+      });
+      localStorage.setItem('history', JSON.stringify(history));
+      alert("Saved to history!");
+    }
+
+    function viewHistory() {
+      const history = JSON.parse(localStorage.getItem('history') || '[]');
+      const recipeList = document.getElementById('recipeList');
+      recipeList.innerHTML = '';
+
+      if (history.length === 0) {
+        recipeList.innerHTML = '<p>No history found.</p>';
+        return;
+      }
+
+      history.reverse().forEach(entry => {
+        const card = document.createElement('div');
+        card.className = 'card mb-3';
+
+        const body = document.createElement('div');
+        body.className = 'card-body';
+
+        body.innerHTML = `
+          <h5 class="card-title">${entry.recipe}</h5>
+          <p><strong>Date:</strong> ${new Date(entry.timestamp).toLocaleString()}</p>
+          <p><strong>Notes:</strong> ${entry.notes || '(No notes)'}</p>
+        `;
+
+        card.appendChild(body);
+        recipeList.appendChild(card);
+      });
     }
 
     loadRecipes();
