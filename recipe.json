@@ -1,16 +1,12 @@
 [
   {
-    "name": "spaghetti",
-    "components": [],
-    "unit": "lb",
-    "cost": 1.50,
-    "store": "https://example.com/spaghetti"
+    "name": "Spaghetti Carbonara",
+    "ingredients": ["spaghetti", "eggs", "parmesan", "bacon"],
+    "instructions": "Boil pasta. Fry bacon. Mix with egg and cheese. Combine."
   },
   {
-    "name": "parmesan",
-    "components": ["milk", "salt", "enzyme"],
-    "unit": "oz",
-    "cost": 0.75,
-    "store": "https://example.com/parmesan"
+    "name": "Tomato Soup",
+    "ingredients": ["tomato", "onion", "garlic", "cream"],
+    "instructions": "Cook all and blend."
   }
 ]
