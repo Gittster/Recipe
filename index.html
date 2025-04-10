@@ -5,28 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Recipe Picker</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
-  <style>
-    body, html {
-      height: 100%;
-      margin: 0;
-    }
-    #menuBar {
-      border-bottom: 1px solid #ccc;
-    }
-    #mainView {
-      overflow-y: auto;
-      padding: 1rem;
-    }
-    .card {
-      margin-bottom: 1rem;
-    }
-    .fixed-menu {
-      position: sticky;
-      top: 0;
-      z-index: 10;
-      background-color: white;
-    }
-  </style>
+  <link href="style.css" rel="stylesheet" />
 </head>
 <body>
 
@@ -37,6 +16,7 @@
         <button class="btn btn-outline-primary" onclick="showRecipeFilter()">Recipes</button>
         <button class="btn btn-outline-secondary" onclick="showRandomRecipe()">Random</button>
         <button class="btn btn-outline-dark" onclick="viewHistory()">History</button>
+        <button class="btn btn-outline-success" onclick="showIngredients()">Ingredients</button>
       </div>
     </div>
 
@@ -44,125 +24,7 @@
     <div id="mainView" class="flex-grow-1 bg-light"></div>
   </div>
 
-  <script>
-    let recipes = [];
+  <script src="script.js"></script>
 
-    async function loadRecipes() {
-      const res = await fetch('recipes.json');
-      recipes = await res.json();
-      showRecipeFilter();
-    }
-
-    // ------- View Modes --------
-
-    function showRecipeFilter() {
-      const view = document.getElementById('mainView');
-      view.innerHTML = `
-        <div class="mb-3">
-          <label for="ingredientSelect" class="form-label">Filter by ingredient:</label>
-          <select id="ingredientSelect" class="form-select" multiple></select>
-        </div>
-        <button class="btn btn-primary mb-3" onclick="filterRecipes()">Show Recipes</button>
-        <div id="recipeResults"></div>
-      `;
-      populateIngredientSelect();
-      displayRecipes(recipes, 'recipeResults');
-    }
-
-    function showRandomRecipe() {
-      const view = document.getElementById('mainView');
-      const randomIndex = Math.floor(Math.random() * recipes.length);
-      view.innerHTML = '<h5>🎲 Random Recipe</h5>';
-      displayRecipes([recipes[randomIndex]]);
-    }
-
-    function viewHistory() {
-      const view = document.getElementById('mainView');
-      const history = JSON.parse(localStorage.getItem('history') || '[]');
-      view.innerHTML = '<h5>🕘 Recipe History</h5>';
-
-      if (history.length === 0) {
-        view.innerHTML += '<p>No history yet.</p>';
-        return;
-      }
-
-      history.reverse().forEach(entry => {
-        const card = document.createElement('div');
-        card.className = 'card';
-
-        const body = document.createElement('div');
-        body.className = 'card-body';
-        body.innerHTML = `
-          <h5 class="card-title">${entry.recipe}</h5>
-          <p><strong>Date:</strong> ${new Date(entry.timestamp).toLocaleString()}</p>
-          <p><strong>Notes:</strong> ${entry.notes || '(No notes)'}</p>
-        `;
-
-        card.appendChild(body);
-        view.appendChild(card);
-      });
-    }
-
-    // ------- Helpers --------
-
-    function populateIngredientSelect() {
-      const allIngredients = [...new Set(recipes.flatMap(r => r.ingredients))].sort();
-      const select = document.getElementById('ingredientSelect');
-      select.innerHTML = '';
-      allIngredients.forEach(ing => {
-        const opt = document.createElement('option');
-        opt.value = ing;
-        opt.textContent = ing;
-        select.appendChild(opt);
-      });
-    }
-
-    function filterRecipes() {
-      const selected = Array.from(document.getElementById('ingredientSelect').selectedOptions).map(o => o.value);
-      const filtered = selected.length
-        ? recipes.filter(r => selected.every(ing => r.ingredients.includes(ing)))
-        : recipes;
-      displayRecipes(filtered, 'recipeResults');
-    }
-
-    function displayRecipes(list, containerId = 'mainView') {
-      const container = document.getElementById(containerId);
-      if (!container) return;
-      if (list.length === 0) {
-        container.innerHTML = '<p>No matching recipes found.</p>';
-        return;
-      }
-      container.innerHTML = '';
-      list.forEach(r => {
-        const card = document.createElement('div');
-        card.className = 'card';
-
-        const body = document.createElement('div');
-        body.className = 'card-body';
-        body.innerHTML = `
-          <h5 class="card-title">${r.name}</h5>
-          <p><strong>Ingredients:</strong> ${r.ingredients.join(', ')}</p>
-          <p><strong>Instructions:</strong> ${r.instructions}</p>
-          <button class="btn btn-success btn-sm" onclick="markAsMade('${r.name}')">Mark as Made</button>
-        `;
-        card.appendChild(body);
-        container.appendChild(card);
-      });
-    }
-
-    function markAsMade(recipeName) {
-      const notes = prompt(`Notes for "${recipeName}"?`);
-      const history = JSON.parse(localStorage.getItem('history') || '[]');
-      history.push({
-        recipe: recipeName,
-        timestamp: new Date().toISOString(),
-        notes: notes || ''
-      });
-      localStorage.setItem('history', JSON.stringify(history));
-      alert("Saved to history!");
-    }
-
-    loadRecipes();
-  </script>
 </body>
 </html>
