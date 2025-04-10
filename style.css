@@ -1,0 +1,17 @@
+body, html {
+    height: 100%;
+    margin: 0;
+  }
+  
+  #menuBar {
+    border-bottom: 1px solid #ccc;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: white;
+  }
+  
+  .card {
+    margin-bottom: 1rem;
+  }
+  
