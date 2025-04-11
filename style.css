@@ -39,3 +39,24 @@ body, html {
 .delete-area:hover {
   border-color: #dc3545; /* Bootstrap red */
 }
+
+.ingredient-tag {
+  background-color: #e9ecef;
+  padding: 5px 10px;
+  border-radius: 15px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.ingredient-tag .remove-tag {
+  color: #dc3545;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+#autocompleteResults {
+  max-height: 150px;
+  overflow-y: auto;
+}

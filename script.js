@@ -76,10 +76,23 @@ function toggleRecipeForm() {
 
 function showRandomRecipe() {
   const view = document.getElementById('mainView');
+
+  if (recipes.length === 0) {
+    view.innerHTML = "<p>No recipes available.</p>";
+    return;
+  }
+
   const randomIndex = Math.floor(Math.random() * recipes.length);
-  view.innerHTML = '<h5>🎲 Random Recipe</h5>';
-  displayRecipes([recipes[randomIndex]]);
+  const randomRecipe = recipes[randomIndex];
+
+  view.innerHTML = `
+    <h5 class="mb-3">🎲 Random Recipe</h5>
+    <div id="randomRecipeCard"></div>
+  `;
+
+  displayRecipes([randomRecipe], 'randomRecipeCard');
 }
+
 
 function viewHistory() {
   const view = document.getElementById('mainView');
