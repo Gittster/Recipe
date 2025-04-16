@@ -84,7 +84,7 @@ function runOCRFromImage(src) {
     logger: m => console.log(m),
     // This is where you pass Tesseract config variables
     config: {
-      tessedit_pageseg_mode: '13',
+      tessedit_pageseg_mode: '6',
       tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:,.()/- '
     }
   }).then(({ data: { text } }) => {
