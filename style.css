@@ -65,3 +65,10 @@ body, html {
   max-height: 300px;
   margin-top: 10px;
 }
+
+#photoPreviewContainer pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow-y: auto;
+}

@@ -61,12 +61,14 @@ function handleRecipePhoto(event) {
     img.src = e.target.result;
     img.className = 'img-fluid rounded border';
     img.alt = 'Recipe Photo Preview';
-    preview.innerHTML = ''; // Clear any previous preview
+    preview.innerHTML = '';
     preview.appendChild(img);
-
-    // 🔁 Run OCR
-    runOCRFromImage(e.target.result);
-  };
+  
+    img.onload = () => {
+      const cleanedImage = preprocessImage(img);
+      runOCRFromImage(cleanedImage); // pass cleaned image
+    };
+  };  
 
   reader.readAsDataURL(file);
 }
@@ -78,13 +80,14 @@ function runOCRFromImage(src) {
   status.textContent = '🔍 Scanning text...';
   preview.appendChild(status);
 
-  Tesseract.recognize(
-    src,
-    'eng',
-    {
-      logger: m => console.log(m) // Progress updates (optional)
+  Tesseract.recognize(src, 'eng', {
+    logger: m => console.log(m),
+    // This is where you pass Tesseract config variables
+    config: {
+      tessedit_pageseg_mode: '13',
+      tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:,.()/- '
     }
-  ).then(({ data: { text } }) => {
+  }).then(({ data: { text } }) => {
     status.remove();
     console.log("🧠 OCR Result:\n", text);
 
@@ -92,6 +95,8 @@ function runOCRFromImage(src) {
     const result = document.createElement('pre');
     result.textContent = text;
     result.className = 'bg-light p-2 border mt-2';
+    console.log("OCR text:", text);
+    console.log("Appending OCR text to preview");
     preview.appendChild(result);
 
     // TODO: Parse this text into recipe structure!
@@ -99,6 +104,36 @@ function runOCRFromImage(src) {
     status.textContent = '❌ OCR failed.';
     console.error("OCR error:", err);
   });
+}
+
+function preprocessImage(img) {
+  const canvas = document.getElementById('preprocessCanvas');
+  const ctx = canvas.getContext('2d');
+
+  // Set canvas size to match image
+  const scaleFactor = 1.5; // Upscale if needed
+  const width = img.naturalWidth * scaleFactor;
+  const height = img.naturalHeight * scaleFactor;
+
+  canvas.width = width;
+  canvas.height = height;
+
+  // Draw image
+  ctx.drawImage(img, 0, 0, width, height);
+
+  // Convert to grayscale
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const avg = (data[i] + data[i+1] + data[i+2]) / 3;
+    data[i] = data[i+1] = data[i+2] = avg; // gray
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+
+  // Return canvas as Data URL for OCR
+  return canvas.toDataURL();
 }
 
 
