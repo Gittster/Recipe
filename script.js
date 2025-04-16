@@ -64,13 +64,42 @@ function handleRecipePhoto(event) {
     preview.innerHTML = ''; // Clear any previous preview
     preview.appendChild(img);
 
-    // 👉 Pass this image to OCR when you're ready
-    // e.g., runTesseractOCR(img.src)
+    // 🔁 Run OCR
+    runOCRFromImage(e.target.result);
   };
 
   reader.readAsDataURL(file);
 }
 
+
+function runOCRFromImage(src) {
+  const preview = document.getElementById('photoPreviewContainer');
+  const status = document.createElement('p');
+  status.textContent = '🔍 Scanning text...';
+  preview.appendChild(status);
+
+  Tesseract.recognize(
+    src,
+    'eng',
+    {
+      logger: m => console.log(m) // Progress updates (optional)
+    }
+  ).then(({ data: { text } }) => {
+    status.remove();
+    console.log("🧠 OCR Result:\n", text);
+
+    // Optionally show the extracted text
+    const result = document.createElement('pre');
+    result.textContent = text;
+    result.className = 'bg-light p-2 border mt-2';
+    preview.appendChild(result);
+
+    // TODO: Parse this text into recipe structure!
+  }).catch(err => {
+    status.textContent = '❌ OCR failed.';
+    console.error("OCR error:", err);
+  });
+}
 
 
 function saveRecipe() {
