@@ -29,10 +29,48 @@ function showRecipeFilter() {
       </div>
     </div>
 
+    <div class="mb-3">
+      <label for="recipePhotoInput" class="form-label">📷 Upload or Take a Recipe Photo</label>
+      <input
+        type="file"
+        id="recipePhotoInput"
+        accept="image/*"
+        capture="environment"
+        class="form-control"
+        onchange="handleRecipePhoto(event)"
+      />
+    </div>
+
+<div id="photoPreviewContainer" class="mb-3"></div>
+
+
     <div id="recipeResults"></div>
   `;
   displayRecipes(recipes, 'recipeResults');
 }
+
+function handleRecipePhoto(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const preview = document.getElementById('photoPreviewContainer');
+  const reader = new FileReader();
+
+  reader.onload = function (e) {
+    const img = document.createElement('img');
+    img.src = e.target.result;
+    img.className = 'img-fluid rounded border';
+    img.alt = 'Recipe Photo Preview';
+    preview.innerHTML = ''; // Clear any previous preview
+    preview.appendChild(img);
+
+    // 👉 Pass this image to OCR when you're ready
+    // e.g., runTesseractOCR(img.src)
+  };
+
+  reader.readAsDataURL(file);
+}
+
 
 
 function saveRecipe() {

@@ -60,3 +60,8 @@ body, html {
   max-height: 150px;
   overflow-y: auto;
 }
+
+#photoPreviewContainer img {
+  max-height: 300px;
+  margin-top: 10px;
+}
