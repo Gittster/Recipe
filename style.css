@@ -16,21 +16,13 @@ body, html {
 }
 
 .collapsible-form {
-  overflow: hidden;
-  transition: max-height 0.4s ease, padding 0.3s ease;
-  max-height: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  opacity: 0;
-  transition: opacity 0.4s ease, max-height 0.4s ease;
+  display: none;
 }
 
 .collapsible-form.open {
-  max-height: 400px; /* adjust if needed */
-  padding-top: 1rem;
-  padding-bottom: 1rem;
-  opacity: 1;
+  display: block;
 }
+
 
 .delete-area {
   border: 1px solid transparent;
@@ -71,4 +63,42 @@ body, html {
   word-break: break-word;
   max-height: 400px;
   overflow-y: auto;
+}
+
+#photoPreviewContainer {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 1rem;
+}
+
+.table-sm th,
+.table-sm td {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.9rem;
+  vertical-align: middle;
+}
+
+.table {
+  margin-bottom: 0.75rem;
+}
+
+/* Default: full width for portrait or narrow screens */
+#mainView {
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+/* Limit width in landscape or wide screens */
+@media screen and (orientation: landscape) and (min-width: 768px) {
+  #mainView {
+    max-width: 700px;
+    margin: 0 auto;
+    border-left: 1px solid #ddd;
+    border-right: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 0 15px rgba(0,0,0,0.05);
+    background: #fff;
+  }
 }

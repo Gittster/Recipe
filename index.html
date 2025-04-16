@@ -21,7 +21,12 @@
     </div>
 
     <!-- Main Viewport -->
-    <div id="mainView" class="flex-grow-1 bg-light"></div>
+    <div id="mainView" class="flex-grow-1 bg-light">
+      <div id="addRecipeContainer" style="display: none;" class="p-3">
+        <!-- Add Recipe Form and OCR results will go here -->
+      </div>
+</div>
+
   </div>
 
   <canvas id="preprocessCanvas" style="display:none;"></canvas>
@@ -48,4 +53,5 @@ const firebaseConfig = {
 </script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
 <script src="script.js"></script>
+</body>
 </html>

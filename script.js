@@ -10,44 +10,100 @@ async function loadRecipes() {
 function showRecipeFilter() {
   const view = document.getElementById('mainView');
   view.innerHTML = `
-    <h5 class="mb-3">📚 Recipes</h5>
+  <h5 class="mb-3">📚 Recipes</h5>
 
-    <input type="text" class="form-control mb-2" id="recipeSearch" placeholder="Filter by ingredient..." oninput="filterRecipesByText()" />
-    
-    <button class="btn btn-success mb-3" onclick="toggleRecipeForm()">➕ Add Recipe</button>
+  <input type="text" class="form-control mb-2" id="recipeSearch" placeholder="Filter by ingredient..." oninput="filterRecipesByText()" />
 
-    <div id="recipeForm" class="collapsible-form mb-4">
-      <div class="card card-body">
-        <input class="form-control mb-2" id="recipeNameInput" placeholder="Recipe name" />
-        <input class="form-control mb-2" id="recipeIngredientsInput" placeholder="Ingredients (comma separated)" />
-        <textarea class="form-control mb-2" id="recipeInstructionsInput" rows="4" placeholder="Instructions"></textarea>
-        <div class="d-flex gap-2">
-          <button class="btn btn-primary" onclick="saveRecipe()">Add Recipe</button>
-          <button class="btn btn-outline-secondary" onclick="toggleRecipeForm()">Cancel</button>
-        </div>
+  <button class="btn btn-success mb-3" onclick="toggleRecipeForm()">➕ Add Recipe</button>
 
+  <div id="recipeForm" class="collapsible-form mb-4">
+    <div class="card card-body">
+
+      <input class="form-control mb-2" id="recipeNameInput" placeholder="Recipe name" />
+
+      <div id="ingredientsGrid" class="mb-3">
+        <label class="form-label">🧂 Ingredients</label>
+        <div id="ingredientsTable"></div>
       </div>
-    </div>
 
-    <div class="mb-3">
-      <label for="recipePhotoInput" class="form-label">📷 Upload or Take a Recipe Photo</label>
-      <input
-        type="file"
-        id="recipePhotoInput"
-        accept="image/*"
-        capture="environment"
-        class="form-control"
-        onchange="handleRecipePhoto(event)"
-      />
-    </div>
+      <textarea class="form-control mb-2" id="recipeInstructionsInput" rows="4" placeholder="Instructions"></textarea>
 
-<div id="photoPreviewContainer" class="mb-3"></div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-primary" onclick="saveRecipe()">Add Recipe</button>
+        <button class="btn btn-outline-secondary" onclick="toggleRecipeForm()">Cancel</button>
+      </div>
 
+      <div class="mb-3">
+        <label for="recipePhotoInput" class="form-label">📷 Upload or Take a Recipe Photo</label>
+        <input
+          type="file"
+          id="recipePhotoInput"
+          accept="image/*"
+          capture="environment"
+          class="form-control"
+          onchange="handleRecipePhoto(event)"
+        />
+      </div>
 
-    <div id="recipeResults"></div>
-  `;
+      <!-- ✅ This goes here, inside the card -->
+      <div id="photoPreviewContainer" class="mb-3"></div>
+
+    </div> <!-- end card-body -->
+  </div> <!-- end collapsible form -->
+
+  <div id="recipeResults"></div>
+`;
+
   displayRecipes(recipes, 'recipeResults');
 }
+
+function createIngredientRow(name = '', unit = '', qty = '') {
+  const row = document.createElement('div');
+  row.className = 'row g-2 align-items-center mb-2';
+
+  const nameCol = document.createElement('div');
+  nameCol.className = 'col-6';
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.placeholder = 'Ingredient';
+  nameInput.className = 'form-control';
+  nameInput.value = name;
+  nameCol.appendChild(nameInput);
+
+  const qtyCol = document.createElement('div');
+  qtyCol.className = 'col-3';
+  const qtyInput = document.createElement('input');
+  qtyInput.type = 'number';
+  qtyInput.placeholder = 'Qty';
+  qtyInput.className = 'form-control';
+  qtyInput.value = qty;
+  qtyCol.appendChild(qtyInput);
+
+  const unitCol = document.createElement('div');
+  unitCol.className = 'col-3';
+  const unitInput = document.createElement('input');
+  unitInput.type = 'text';
+  unitInput.placeholder = 'Unit';
+  unitInput.className = 'form-control';
+  unitInput.value = unit;
+  unitCol.appendChild(unitInput);
+
+  row.appendChild(nameCol);
+  row.appendChild(qtyCol);
+  row.appendChild(unitCol);
+
+  document.getElementById('ingredientsTable').appendChild(row);
+
+  // Add new blank row when the last one is filled
+  [nameInput, qtyInput, unitInput].forEach(input => {
+    input.addEventListener('input', () => {
+      const isLastRow = row === document.getElementById('ingredientsTable').lastElementChild;
+      const filled = nameInput.value && qtyInput.value && unitInput.value;
+      if (isLastRow && filled) createIngredientRow();
+    });
+  });
+}
+
 
 function handleRecipePhoto(event) {
   const file = event.target.files[0];
@@ -64,117 +120,325 @@ function handleRecipePhoto(event) {
     preview.innerHTML = '';
     preview.appendChild(img);
   
-    img.onload = () => {
-      const cleanedImage = preprocessImage(img);
-      runOCRFromImage(cleanedImage); // pass cleaned image
+    img.onload = async () => {
+      const container = document.getElementById('photoPreviewContainer');
+      container.innerHTML = ''; // Clear previous content
+    
+      // ➤ Original Image
+      const originalLabel = document.createElement('p');
+      originalLabel.textContent = "📷 Original Photo";
+      const originalImg = document.createElement('img');
+      originalImg.src = img.src;
+      originalImg.style.maxWidth = "45%";
+      originalImg.style.marginRight = "5%";
+    
+      // ➤ Preprocessed Image
+      const processedLabel = document.createElement('p');
+      processedLabel.textContent = "🧼 Preprocessed Image";
+      const processedDataUrl = preprocessImage(img); // canvas.toDataURL()
+      const processedImg = document.createElement('img');
+      processedImg.src = processedDataUrl;
+      processedImg.style.maxWidth = "45%";
+    
+      // Add both images and labels side-by-side
+      const labelRow = document.createElement('div');
+      labelRow.style.display = 'flex';
+      labelRow.style.justifyContent = 'space-between';
+      labelRow.appendChild(originalLabel);
+      labelRow.appendChild(processedLabel);
+    
+      const imgRow = document.createElement('div');
+      imgRow.style.display = 'flex';
+      imgRow.style.justifyContent = 'space-between';
+      imgRow.appendChild(originalImg);
+      imgRow.appendChild(processedImg);
+    
+      container.appendChild(labelRow);
+      container.appendChild(imgRow);
+    
+      // ➤ Run OCR on preprocessed image
+      Tesseract.recognize(
+        processedDataUrl,
+        'eng',
+        {
+          logger: m => console.log(m),
+          config: {
+            tessedit_pageseg_mode: '6'
+          }
+        }
+      ).then(({ data: { text } }) => {
+        const editorLabel = document.createElement('p');
+      editorLabel.textContent = "📝 Editable OCR Text";
+
+      const result = document.createElement('textarea');
+      result.value = text;
+      result.rows = 10;
+      result.className = 'form-control mt-2';
+
+      // ✅ Add ID so we can reference it
+      result.id = 'ocrTextArea';
+
+      // ✅ Add parse button
+      const parseBtn = document.createElement('button');
+      parseBtn.className = 'btn btn-info btn-sm mt-2';
+      parseBtn.textContent = '✨ Parse OCR Text to Fill Form';
+
+      parseBtn.onclick = () => {
+        const updatedText = document.getElementById('ocrTextArea').value;
+        const parsed = parseOcrToRecipeFields(updatedText);
+        fillRecipeForm(parsed);
+      };
+
+      container.appendChild(editorLabel);
+      container.appendChild(result);
+      container.appendChild(parseBtn);
+
+
+      }).catch(err => {
+        const errorMsg = document.createElement('p');
+        errorMsg.textContent = '❌ OCR failed.';
+        container.appendChild(errorMsg);
+        console.error("OCR error:", err);
+      });
     };
+    
+    
+    
   };  
 
   reader.readAsDataURL(file);
 }
 
+function fillRecipeForm(recipe) {
+  const nameInput = document.getElementById('recipeNameInput');
+  const instructionsInput = document.getElementById('recipeInstructionsInput');
+  const ingredientsTable = document.getElementById('ingredientsTable');
+
+  if (nameInput) nameInput.value = recipe.title || '';
+  if (instructionsInput) instructionsInput.value = recipe.instructions || '';
+
+  if (ingredientsTable) {
+    ingredientsTable.innerHTML = '';
+    recipe.ingredients.forEach(i => {
+      createIngredientRow(i.name, i.unit, i.quantity);
+    });
+    createIngredientRow(); // Add blank row at end
+  }
+}
+
+
+function stripBase64Header(dataUrl) {
+  return dataUrl.replace(/^data:image\/\w+;base64,/, '');
+}
+
 
 function runOCRFromImage(src) {
   const preview = document.getElementById('photoPreviewContainer');
+  preview.innerHTML = ''; // Clear any previous content
+
   const status = document.createElement('p');
   status.textContent = '🔍 Scanning text...';
   preview.appendChild(status);
 
   Tesseract.recognize(src, 'eng', {
     logger: m => console.log(m),
-    // This is where you pass Tesseract config variables
     config: {
-      tessedit_pageseg_mode: '6',
-      tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:,.()/- '
+      tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:,.()/- ',
+      tessedit_pageseg_mode: '13'
     }
   }).then(({ data: { text } }) => {
     status.remove();
-    console.log("🧠 OCR Result:\n", text);
 
-    // Optionally show the extracted text
-    const result = document.createElement('pre');
-    result.textContent = text;
-    result.className = 'bg-light p-2 border mt-2';
-    console.log("OCR text:", text);
-    console.log("Appending OCR text to preview");
-    preview.appendChild(result);
+    // 📝 Textarea for editable OCR result
+    const textarea = document.createElement('textarea');
+    textarea.className = 'form-control mb-2';
+    textarea.id = 'ocrTextArea';
+    textarea.rows = 10;
+    textarea.value = text;
+    preview.appendChild(textarea);
 
-    // TODO: Parse this text into recipe structure!
+    // 🔘 Button to parse the editable OCR result
+    const parseBtn = document.createElement('button');
+    parseBtn.className = 'btn btn-info btn-sm mt-2';
+    parseBtn.textContent = '✨ Parse OCR Text to Fill Form';
+
+    parseBtn.onclick = () => {
+      const updatedText = document.getElementById('ocrTextArea').value;
+      const parsed = parseOcrToRecipeFields(updatedText);
+      fillRecipeForm(parsed);
+    };
+    console.log("✅ OCR Parse button being added!");
+    preview.appendChild(parseBtn);
   }).catch(err => {
-    status.textContent = '❌ OCR failed.';
     console.error("OCR error:", err);
+    status.textContent = '❌ OCR failed.';
   });
 }
+
+
 
 function preprocessImage(img) {
   const canvas = document.getElementById('preprocessCanvas');
   const ctx = canvas.getContext('2d');
 
-  // Set canvas size to match image
-  const scaleFactor = 1.5; // Upscale if needed
+  const scaleFactor = 2; // Upscale for better pixel resolution
   const width = img.naturalWidth * scaleFactor;
   const height = img.naturalHeight * scaleFactor;
 
   canvas.width = width;
   canvas.height = height;
 
-  // Draw image
   ctx.drawImage(img, 0, 0, width, height);
 
-  // Convert to grayscale
   const imageData = ctx.getImageData(0, 0, width, height);
   const data = imageData.data;
 
   for (let i = 0; i < data.length; i += 4) {
-    const avg = (data[i] + data[i+1] + data[i+2]) / 3;
-    data[i] = data[i+1] = data[i+2] = avg; // gray
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    const avg = (r + g + b) / 3;
+
+    // Increase contrast manually
+    const contrast = avg > 180 ? 255 : 0;
+
+    data[i] = data[i + 1] = data[i + 2] = contrast;
   }
 
   ctx.putImageData(imageData, 0, 0);
 
-  // Return canvas as Data URL for OCR
   return canvas.toDataURL();
+}
+
+function parseOcrToRecipeFields(ocrText) {
+  const lines = ocrText.split('\n').map(l => l.trim()).filter(l => l);
+
+  const recipe = {
+    title: '',
+    ingredients: [],
+    instructions: ''
+  };
+
+  let inIngredients = false;
+  let inInstructions = false;
+  const instructionLines = [];
+
+  lines.forEach(line => {
+    const lower = line.toLowerCase();
+
+    if (!recipe.title) {
+      recipe.title = line;
+      return;
+    }
+
+    if (lower.includes('ingredient')) {
+      inIngredients = true;
+      inInstructions = false;
+      return;
+    }
+
+    if (lower.includes('instruction') || lower.includes('method') || lower.includes('directions')) {
+      inInstructions = true;
+      inIngredients = false;
+      return;
+    }
+
+    if (inIngredients) {
+      const match = line.match(/^([\d\/.\s]+)?\s*([a-zA-Z]+)?\s*(.+)$/);
+      if (match) {
+        const qty = (match[1] || '').trim();
+        const unit = (match[2] || '').trim();
+        const name = (match[3] || '').trim();
+        if (name) {
+          recipe.ingredients.push({
+            name,
+            quantity: qty || '',
+            unit: unit || ''
+          });
+        }
+      }
+    }
+
+    if (inInstructions) {
+      instructionLines.push(line);
+    }
+  });
+
+  recipe.instructions = instructionLines.join(' ').trim();
+  return recipe;
 }
 
 
 function saveRecipe() {
   const name = document.getElementById('recipeNameInput').value.trim();
-  const ingredientsText = document.getElementById('recipeIngredientsInput').value;
   const instructions = document.getElementById('recipeInstructionsInput').value.trim();
 
-  if (!name || !ingredientsText || !instructions) {
-    alert("Please fill out all fields.");
+  const rows = document.querySelectorAll('#ingredientsTable > .row');
+  const ingredients = [];
+
+  rows.forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    const name = inputs[0]?.value.trim();
+    const qty = inputs[1]?.value.trim();
+    const unit = inputs[2]?.value.trim();
+
+    if (name && qty && unit) {
+      ingredients.push({ name, quantity: qty, unit });
+    }
+  });
+
+  if (!name || !instructions || ingredients.length === 0) {
+    alert("Please fill out all fields and include at least one ingredient.");
     return;
   }
 
-  const ingredients = ingredientsText.split(',').map(i => i.trim()).filter(Boolean);
-
-  db.collection("recipes").add({
+  const recipe = {
     name,
+    instructions,
     ingredients,
-    instructions
-  }).then(() => {
-    toggleRecipeForm();
-    loadRecipesFromFirestore(); // reloads and shows
-  }).catch(err => {
-    console.error("Error saving recipe:", err);
-    alert("Failed to save recipe.");
-  });
+    timestamp: new Date()
+  };
+
+  db.collection('recipes').add(recipe)
+    .then(docRef => {
+      console.log("✅ Recipe added with ID:", docRef.id);
+      toggleRecipeForm(); // Collapse the form
+      loadRecipesFromFirestore(); // Refresh list (if applicable)
+    })
+    .catch(error => {
+      console.error("❌ Error adding recipe:", error);
+    });
 }
 
 
 
 function toggleRecipeForm() {
   const form = document.getElementById('recipeForm');
-  form.classList.toggle('open');
+  if (!form) return;
 
-   // Clear fields when collapsing
-   if (!form.classList.contains('open')) {
-    document.getElementById('recipeNameInput').value = '';
-    document.getElementById('recipeIngredientsInput').value = '';
-    document.getElementById('recipeInstructionsInput').value = '';
+  const isNowOpen = form.classList.toggle('open');
+
+  const nameInput = document.getElementById('recipeNameInput');
+  const ingredientsTable = document.getElementById('ingredientsTable');
+  const instructionsInput = document.getElementById('recipeInstructionsInput');
+
+  if (isNowOpen) {
+    // ✅ When opening, clear old values and set up grid
+    if (nameInput) nameInput.value = '';
+    if (instructionsInput) instructionsInput.value = '';
+    if (ingredientsTable) {
+      ingredientsTable.innerHTML = '';
+      createIngredientRow(); // ← THIS is the important line
+    }
+
+    const preview = document.getElementById('photoPreviewContainer');
+    if (preview) preview.innerHTML = '';
+
+  } else {
+    // Optional cleanup when hiding
+    if (ingredientsTable) ingredientsTable.innerHTML = '';
   }
 }
+
+
 
 function showRandomRecipe() {
   const view = document.getElementById('mainView');
@@ -273,53 +537,127 @@ function populateIngredientSelect() {
 }
 
 function filterRecipesByText() {
-  const query = document.getElementById('recipeSearch').value.toLowerCase().trim();
-  if (!query) {
-    displayRecipes(recipes, 'recipeResults');
+  const search = document.getElementById('recipeSearch').value.trim().toLowerCase();
+
+  if (!search) {
+    displayRecipes(recipes); // assuming you store the original list
     return;
   }
 
-  const keywords = query.split(/\s+/);
-
-  const filtered = recipes.filter(r => {
-    const ingString = r.ingredients.join(' ').toLowerCase();
-    return keywords.every(k => ingString.includes(k));
+  const filtered = recipes.filter(recipe => {
+    return recipe.ingredients?.some(ing => {
+      if (typeof ing === 'string') {
+        return ing.toLowerCase().includes(search);
+      } else if (typeof ing === 'object' && ing.name) {
+        return ing.name.toLowerCase().includes(search);
+      }
+      return false;
+    });
   });
 
-  displayRecipes(filtered, 'recipeResults');
+  displayRecipes(filtered);
 }
 
-function displayRecipes(list, containerId = 'mainView') {
+
+function displayRecipes(list, containerId = 'recipeResults') {
   const container = document.getElementById(containerId);
   container.innerHTML = '';
 
   if (list.length === 0) {
-    container.innerHTML = '<p>No matching recipes found.</p>';
+    container.innerHTML = '<p class="text-muted">No matching recipes found.</p>';
     return;
   }
 
   list.forEach(r => {
     const card = document.createElement('div');
-    card.className = 'card';
+    card.className = 'card mb-3 shadow-sm';
+
     const body = document.createElement('div');
     body.className = 'card-body';
-    body.innerHTML = `
-      <h5 class="card-title d-flex justify-content-between align-items-center">
-        ${r.name}
-        <div class="delete-area d-flex justify-content-center align-items-center border rounded p-2 bg-light" style="min-width: 80px; height: 60px;">
-          <button class="btn btn-sm btn-outline-danger delete-btn" onclick="confirmDeleteRecipe('${r.id}', this)">🗑️</button>
-        </div>
 
-      </h5>
-      <p><strong>Ingredients:</strong> ${r.ingredients.join(', ')}</p>
-      <p><strong>Instructions:</strong> ${r.instructions}</p>
-      <button class="btn btn-success btn-sm" onclick="markAsMade('${r.name}')">Mark as Made</button>
+    // Title and delete button container
+    const titleRow = document.createElement('div');
+    titleRow.className = 'd-flex justify-content-between align-items-center mb-3';
+
+    // Styled title badge
+    const title = document.createElement('span');
+    title.className = 'px-3 py-2 bg-warning text-dark fs-5';
+    title.textContent = r.name;
+
+    // Delete button (unchanged)
+    const deleteArea = document.createElement('div');
+    deleteArea.className = 'delete-area d-flex justify-content-center align-items-center border rounded p-2 bg-light';
+    deleteArea.style.minWidth = '80px';
+    deleteArea.style.height = '60px';
+    deleteArea.innerHTML = `
+      <button class="btn btn-sm btn-outline-danger delete-btn" onclick="confirmDeleteRecipe('${r.id}', this)">🗑️</button>
     `;
 
+    titleRow.appendChild(title);
+    titleRow.appendChild(deleteArea);
+
+    // Ingredient Table
+    const ingredientsHeader = document.createElement('p');
+    ingredientsHeader.innerHTML = '<strong>Ingredients:</strong>';
+
+    const table = document.createElement('table');
+    table.className = 'table table-bordered table-sm mb-2';
+
+    const thead = document.createElement('thead');
+    thead.innerHTML = `
+      <tr>
+        <th>Ingredient</th>
+        <th>Qty</th>
+        <th>Unit</th>
+      </tr>
+    `;
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+
+    if (Array.isArray(r.ingredients)) {
+      r.ingredients.forEach(i => {
+        const tr = document.createElement('tr');
+
+        const nameTd = document.createElement('td');
+        nameTd.textContent = i.name || i;
+
+        const qtyTd = document.createElement('td');
+        qtyTd.textContent = i.quantity || '';
+
+        const unitTd = document.createElement('td');
+        unitTd.textContent = i.unit || '';
+
+        tr.appendChild(nameTd);
+        tr.appendChild(qtyTd);
+        tr.appendChild(unitTd);
+        tbody.appendChild(tr);
+      });
+    }
+
+    table.appendChild(tbody);
+
+    // Instructions
+    const instructions = document.createElement('p');
+    instructions.innerHTML = `<strong>Instructions:</strong> ${r.instructions}`;
+
+    // "Mark as Made" Button
+    const madeBtn = document.createElement('button');
+    madeBtn.className = 'btn btn-success btn-sm';
+    madeBtn.textContent = 'Mark as Made';
+    madeBtn.onclick = () => markAsMade(r.name);
+
+    // Append all
+    body.appendChild(titleRow);
+    body.appendChild(ingredientsHeader);
+    body.appendChild(table);
+    body.appendChild(instructions);
+    body.appendChild(madeBtn);
     card.appendChild(body);
     container.appendChild(card);
   });
 }
+
 
 function markAsMade(recipeName) {
   // Find the card for this recipe and inject the note form
