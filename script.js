@@ -42,7 +42,7 @@ function clearAllPlanning(button) {
   confirmText.textContent = 'Delete ALL planned meals?';
 
   const yesBtn = document.createElement('button');
-  yesBtn.className = 'btn btn-sm btn-danger';
+  yesBtn.className = 'btn btn-sm btn-outline-danger';
   yesBtn.textContent = 'Yes';
   yesBtn.onclick = () => {
     db.collection("planning").get().then(snapshot => {
@@ -60,7 +60,7 @@ function clearAllPlanning(button) {
   };
 
   const noBtn = document.createElement('button');
-  noBtn.className = 'btn btn-sm btn-outline-secondary';
+  noBtn.className = 'btn btn-sm btn-outline-dark';
   noBtn.textContent = 'No';
   noBtn.onclick = () => {
     confirmArea.remove();
@@ -82,6 +82,7 @@ async function loadRecipes() {
 
 function showRecipeFilter() {
   const view = document.getElementById('mainView');
+  view.className = 'section-recipes';
   view.innerHTML = `
   <h5 class="mb-3">📚 Recipes</h5>
 
@@ -89,7 +90,7 @@ function showRecipeFilter() {
   <input type="text" class="form-control mb-2" id="tagSearch" placeholder="Filter by tag..." oninput="filterRecipesByTag()" />
 
 
-  <button class="btn btn-success mb-3" onclick="toggleRecipeForm()">➕ Add Recipe</button>
+  <button class="btn btn-outline-primary mb-3" onclick="toggleRecipeForm()">Add Recipe</button>
 
   <div id="recipeForm" class="collapsible-form mb-4">
     <div class="card card-body">
@@ -111,8 +112,8 @@ function showRecipeFilter() {
       <textarea class="form-control mb-2" id="recipeInstructionsInput" rows="4" placeholder="Instructions"></textarea>
 
       <div class="d-flex gap-2">
-        <button class="btn btn-primary" onclick="saveRecipe()">Add Recipe</button>
-        <button class="btn btn-outline-secondary" onclick="toggleRecipeForm()">Cancel</button>
+        <button class="btn btn-outline-primary" onclick="saveRecipe()">Add Recipe</button>
+        <button class="btn btn-outline-dark" onclick="toggleRecipeForm()">Cancel</button>
       </div>
 
       <div class="mb-3">
@@ -286,7 +287,7 @@ function handleRecipePhoto(event) {
 
       // ✅ Add parse button
       const parseBtn = document.createElement('button');
-      parseBtn.className = 'btn btn-info btn-sm mt-2';
+      parseBtn.className = 'btn btn-info btn-sm btn-outline-dark mt-2';
       parseBtn.textContent = '✨ Parse OCR Text to Fill Form';
 
       parseBtn.onclick = () => {
@@ -333,11 +334,11 @@ function markAsMade(recipeName, buttonElement) {
   textarea.placeholder = 'Optional comment...';
 
   const saveBtn = document.createElement('button');
-  saveBtn.className = 'btn btn-success btn-sm me-2';
+  saveBtn.className = 'btn btn-outline-dark btn-sm me-2';
   saveBtn.textContent = '💾 Save';
 
   const cancelBtn = document.createElement('button');
-  cancelBtn.className = 'btn btn-outline-secondary btn-sm';
+  cancelBtn.className = 'btn btn-outline-danger btn-sm';
   cancelBtn.textContent = '❌ Cancel';
 
   // Save note
@@ -421,7 +422,7 @@ function runOCRFromImage(src) {
 
     // 🔘 Button to parse the editable OCR result
     const parseBtn = document.createElement('button');
-    parseBtn.className = 'btn btn-info btn-sm mt-2';
+    parseBtn.className = 'btn btn-info btn-sm btn-outline-dark mt-2';
     parseBtn.textContent = '✨ Parse OCR Text to Fill Form';
 
     parseBtn.onclick = () => {
@@ -674,6 +675,7 @@ function showRandomRecipe() {
 
 function viewHistory() {
   const view = document.getElementById('mainView');
+  view.className = 'section-history';
   view.innerHTML = `
     <h5 class="mb-3">🕘 Recipe History</h5>
     <input type="text" class="form-control mb-3" id="historySearch" placeholder="Search history..." oninput="filterHistory()" />
@@ -915,7 +917,7 @@ function displayRecipes(list, containerId = 'recipeResults', options = {}) {
     buttonRow.className = 'd-flex align-items-center gap-2 mt-3';
 
     const madeBtn = document.createElement('button');
-    madeBtn.className = 'btn btn-success btn-sm';
+    madeBtn.className = 'btn btn-outline-info btn-sm';
     madeBtn.textContent = 'Mark as Made';
     madeBtn.onclick = (e) => markAsMade(r.name, e.target);
 
@@ -923,8 +925,8 @@ function displayRecipes(list, containerId = 'recipeResults', options = {}) {
     planArea.className = 'plan-area';
 
     const planBtn = document.createElement('button');
-    planBtn.className = 'btn btn-primary btn-sm';
-    planBtn.textContent = '➕ Plan Meal';
+    planBtn.className = 'btn btn-outline-success btn-sm';
+    planBtn.textContent = 'Plan Meal';
     planBtn.onclick = () => openPlanMealForm(r, planArea);
 
     planArea.appendChild(planBtn);
@@ -952,11 +954,11 @@ function openPlanMealForm(recipe, container) {
   dateInput.style.maxWidth = '150px'; // keep it compact inline
 
   const saveBtn = document.createElement('button');
-  saveBtn.className = 'btn btn-success btn-sm';
+  saveBtn.className = 'btn btn-outline-dark btn-sm';
   saveBtn.textContent = '💾';
 
   const cancelBtn = document.createElement('button');
-  cancelBtn.className = 'btn btn-outline-secondary btn-sm';
+  cancelBtn.className = 'btn btn-outline-danger btn-sm';
   cancelBtn.textContent = '❌';
 
   // Inline flex for form
@@ -985,8 +987,8 @@ function openPlanMealForm(recipe, container) {
       setTimeout(() => {
         container.innerHTML = '';
         const planBtn = document.createElement('button');
-        planBtn.className = 'btn btn-primary btn-sm';
-        planBtn.textContent = '➕ Plan Meal';
+        planBtn.className = 'btn btn-outline-primary btn-sm';
+        planBtn.textContent = 'Plan Meal';
         planBtn.onclick = () => openPlanMealForm(recipe, container);
         container.appendChild(planBtn);
       }, 2000);
@@ -996,8 +998,8 @@ function openPlanMealForm(recipe, container) {
       setTimeout(() => {
         container.innerHTML = '';
         const planBtn = document.createElement('button');
-        planBtn.className = 'btn btn-primary btn-sm';
-        planBtn.textContent = '➕ Plan Meal';
+        planBtn.className = 'btn btn-outline-primary btn-sm';
+        planBtn.textContent = 'Plan Meal';
         planBtn.onclick = () => openPlanMealForm(recipe, container);
         container.appendChild(planBtn);
       }, 2000);
@@ -1007,8 +1009,8 @@ function openPlanMealForm(recipe, container) {
   cancelBtn.onclick = () => {
     container.innerHTML = '';
     const planBtn = document.createElement('button');
-    planBtn.className = 'btn btn-primary btn-sm';
-    planBtn.textContent = '➕ Plan Meal';
+    planBtn.className = 'btn btn-outline-primary btn-sm';
+    planBtn.textContent = 'Plan Meal';
     planBtn.onclick = () => openPlanMealForm(recipe, container);
     container.appendChild(planBtn);
   };
@@ -1080,8 +1082,8 @@ async function openInlineEditor(id, card) {
 
     // Add Ingredient Button
     const addBtn = document.createElement('button');
-    addBtn.className = 'btn btn-outline-secondary btn-sm mb-3';
-    addBtn.textContent = '➕ Add Ingredient';
+    addBtn.className = 'btn btn-outline-primary btn-sm mb-3';
+    addBtn.textContent = 'Add Ingredient';
     addBtn.onclick = () => addIngredientRow(id);
     body.appendChild(addBtn);
 
@@ -1107,8 +1109,8 @@ async function openInlineEditor(id, card) {
     const btnRow = document.createElement('div');
     btnRow.className = 'd-flex gap-2 mt-3';
     btnRow.innerHTML = `
-      <button class="btn btn-primary btn-sm">Save</button>
-      <button class="btn btn-outline-secondary btn-sm">Cancel</button>
+      <button class="btn btn-outline-primary btn-sm">Save</button>
+      <button class="btn btn-outline-dark btn-sm">Cancel</button>
     `;
     body.appendChild(btnRow);
 
@@ -1168,7 +1170,7 @@ async function openInlineEditor(id, card) {
     renderInlineTags(); // First render
 
     // --- 🛠 Save Button ---
-    btnRow.querySelector('.btn-primary').onclick = async () => {
+    btnRow.querySelector('.btn-outline-primary').onclick = async () => {
       const updatedName = nameInput.value.trim();
       const updatedInstructions = instructionsInput.value.trim();
       const updatedIngredients = [];
@@ -1200,8 +1202,8 @@ async function openInlineEditor(id, card) {
     };
 
     // --- 🛠 Cancel Button ---
-    btnRow.querySelector('.btn-outline-secondary').onclick = () => {
-      loadRecipesFromFirestore(); // Just reload
+    btnRow.querySelector('.btn-outline-dark').onclick = () => {
+      loadRecipesFromFirestore(); // Just reload and exit editor
     };
 
     // --- 🛠 Helper: Add Ingredient Row ---
@@ -1220,6 +1222,7 @@ async function openInlineEditor(id, card) {
     console.error("Error opening inline editor:", err);
   }
 }
+
 
 
 
@@ -1315,13 +1318,13 @@ function confirmDeleteRecipe(id, buttonElement) {
   confirmBox.innerHTML = `
     <div class="border bg-light p-2 rounded d-flex align-items-center gap-2">
       <span>Delete this recipe?</span>
-      <button class="btn btn-sm btn-danger">Confirm</button>
-      <button class="btn btn-sm btn-outline-secondary">Cancel</button>
+      <button class="btn btn-sm btn-outline-danger">Confirm</button>
+      <button class="btn btn-sm btn-outline-dark">Cancel</button>
     </div>
   `;
 
   // Confirm
-  confirmBox.querySelector('.btn-danger').onclick = () => {
+  confirmBox.querySelector('.btn-outline-danger').onclick = () => {
     db.collection("recipes").doc(id).delete().then(() => {
       loadRecipesFromFirestore();
     }).catch(err => {
@@ -1331,7 +1334,7 @@ function confirmDeleteRecipe(id, buttonElement) {
   };
 
   // Cancel
-  confirmBox.querySelector('.btn-outline-secondary').onclick = () => {
+  confirmBox.querySelector('.btn-outline-dark').onclick = () => {
     confirmBox.remove();
     buttonElement.disabled = false;
   };
@@ -1381,7 +1384,7 @@ async function showIngredients() {
       <h5 class="mb-3">🧂 Ingredients Repository</h5>
       <input type="text" class="form-control mb-3" id="ingredientSearch" placeholder="Search ingredient..." oninput="filterIngredients()" />
   
-      <button class="btn btn-success mb-3" onclick="toggleAddIngredient()">➕ Add Ingredient</button>
+      <button class="btn btn-outline-dark mb-3" onclick="toggleAddIngredient()">Add Ingredient</button>
       
       <div id="addIngredientForm" class="mb-4" style="display: none;">
         <div class="card card-body">
@@ -1390,7 +1393,7 @@ async function showIngredients() {
           <input class="form-control mb-2" id="newIngUnit" placeholder="Unit (e.g. oz, lb)" />
           <input class="form-control mb-2" id="newIngCost" placeholder="Cost (e.g. 1.50)" type="number" step="0.01" />
           <input class="form-control mb-2" id="newIngStore" placeholder="Store URL" />
-          <button class="btn btn-primary" onclick="addIngredient()">Add</button>
+          <button class="btn btn-outline-dark" onclick="addIngredient()">Add</button>
         </div>
       </div>
   
@@ -1429,7 +1432,7 @@ function renderIngredientList(data) {
       <p>🧬 <strong>Made of:</strong> ${item.components.length ? item.components.join(', ') : '—'}</p>
       <p>📏 <strong>Unit:</strong> ${item.unit}</p>
       <p>💲 <strong>Cost:</strong> $${item.cost.toFixed(2)}</p>
-      <a href="${item.store}" class="btn btn-sm btn-outline-primary" target="_blank">🛒 View in Store</a>
+      <a href="${item.store}" class="btn btn-sm btn-outline-dark" target="_blank">🛒 View in Store</a>
     `;
 
     card.appendChild(body);
@@ -1491,8 +1494,29 @@ function loadIngredientsFromFirestore() {
 
 function showPlanning() {
   const view = document.getElementById('mainView');
+  view.className = 'section-planning';
   view.innerHTML = `
-    <h5 class="mb-3">🗓️ Meal Planning</h5>
+    <h5 class="mb-3">📋 Planned Meals</h5>
+
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h6 class="mb-0">Planned Meals</h6>
+      <button id="clearPlanningBtn" class="btn btn-outline-danger btn-sm" onclick="clearAllPlanning(this)">🧹 Clear Planned Meals</button>
+    </div>
+
+    <div id="plannedMealsList" class="mb-4"></div>
+
+    <h5 class="mb-3">🛒 Shopping List</h5>
+
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <button class="btn btn-outline-success" onclick="generateShoppingList()">🛒 Generate Ingredient Checklist</button>
+      <button id="clearShoppingListBtn" class="btn btn-outline-danger btn-sm" onclick="clearShoppingList()" disabled>🗑️ Clear Shopping List</button>
+    </div>
+
+    <div id="shoppingListResults" class="mb-4"></div>
+
+    <hr />
+
+    <h5 class="mb-3">Plan a New Meal</h5>
 
     <div class="mb-3">
       <label class="form-label">📅 Select Date:</label>
@@ -1506,26 +1530,19 @@ function showPlanning() {
       </select>
     </div>
 
-    <button class="btn btn-primary mb-3" onclick="addPlannedMeal()">➕ Add to Plan</button>
+    <button class="btn btn-outline-success btn-sm">
+      <span class="text-success"></span> Add to Plan
+    </button>
 
-    <hr />
-
-    <div class="d-flex justify-content-between align-items-center mb-2">
-      <h6 class="mb-0">📋 Planned Meals</h6>
-      <button class="btn btn-danger btn-sm" onclick="clearAllPlanning(this)">🧹 Clear All</button>
-    </div>
-
-    <div id="plannedMealsList"></div>
-
-    <hr />
-
-    <button class="btn btn-success" onclick="generateShoppingList()">🛒 Generate Ingredient Checklist</button>
-    <div id="shoppingListResults" class="mt-3"></div>
   `;
 
   populateRecipeDropdown();
   loadPlannedMeals();
+  loadShoppingList();
 }
+
+
+
 
 
 function populateRecipeDropdown() {
@@ -1579,12 +1596,13 @@ function loadPlannedMeals() {
       return;
     }
 
-    list.innerHTML = '';
+    const ul = document.createElement('ul');
+    ul.className = 'list-group';
 
     snapshot.forEach(doc => {
       const data = doc.data();
-      const row = document.createElement('div');
-      row.className = 'd-flex justify-content-between align-items-center border-bottom py-2';
+      const li = document.createElement('li');
+      li.className = 'list-group-item d-flex justify-content-between align-items-center';
 
       const info = document.createElement('div');
       info.innerHTML = `<strong>${data.date}:</strong> ${data.recipeName}`;
@@ -1594,14 +1612,18 @@ function loadPlannedMeals() {
       deleteBtn.innerHTML = '🗑️';
       deleteBtn.onclick = () => deletePlannedMeal(doc.id, deleteBtn);
 
-      row.appendChild(info);
-      row.appendChild(deleteBtn);
-      list.appendChild(row);
+      li.appendChild(info);
+      li.appendChild(deleteBtn);
+      ul.appendChild(li);
     });
+
+    list.innerHTML = '';
+    list.appendChild(ul);
   }).catch(err => {
     console.error("Error loading planning:", err);
   });
 }
+
 
 
 function generateShoppingList() {
@@ -1633,30 +1655,24 @@ function generateShoppingList() {
       });
     });
 
-    // 🛒 Render checklist
-    const list = document.createElement('ul');
-    list.className = 'list-group';
+    // Prepare ingredients list
+    const ingredients = Object.values(ingredientMap).map(ing => ({
+      name: ing.name,
+      unit: ing.unit,
+      quantity: ing.quantity,
+      checked: false // start unchecked
+    }));
 
-    Object.values(ingredientMap).forEach(ing => {
-      const item = document.createElement('li');
-      item.className = 'list-group-item d-flex align-items-center';
+    renderShoppingList(ingredients);
 
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.className = 'form-check-input me-2';
-
-      const label = document.createElement('label');
-      label.textContent = `${ing.quantity} ${ing.unit} ${ing.name}`;
-
-      item.appendChild(checkbox);
-      item.appendChild(label);
-      list.appendChild(item);
-    });
-
-    output.innerHTML = '';
-    output.appendChild(list);
+    // Save it to Firestore!
+    db.collection("shopping").doc('current').set({ ingredients })
+      .then(() => console.log("✅ Shopping list saved to cloud"))
+      .catch(err => console.error("❌ Failed to save shopping list:", err));
   });
 }
+
+
 
 function deletePlannedMeal(planId, button) {
   if (button.parentElement.querySelector('.confirm-delete')) return;
@@ -1670,7 +1686,7 @@ function deletePlannedMeal(planId, button) {
   confirmText.textContent = 'Confirm?';
 
   const yesBtn = document.createElement('button');
-  yesBtn.className = 'btn btn-sm btn-danger';
+  yesBtn.className = 'btn btn-sm btn-outline-danger';
   yesBtn.textContent = 'Yes';
   yesBtn.onclick = () => {
     db.collection("planning").doc(planId).delete()
@@ -1687,7 +1703,7 @@ function deletePlannedMeal(planId, button) {
   };
 
   const noBtn = document.createElement('button');
-  noBtn.className = 'btn btn-sm btn-outline-secondary';
+  noBtn.className = 'btn btn-sm btn-outline-dark';
   noBtn.textContent = 'No';
   noBtn.onclick = () => {
     confirmArea.remove();
@@ -1700,6 +1716,240 @@ function deletePlannedMeal(planId, button) {
 
   button.parentElement.appendChild(confirmArea);
 }
+
+function renderShoppingList(ingredients) {
+  const output = document.getElementById('shoppingListResults');
+  output.innerHTML = '';
+
+  const list = document.createElement('ul');
+  list.className = 'list-group';
+
+  ingredients.forEach((ing, idx) => {
+    const item = document.createElement('li');
+    item.className = 'list-group-item d-flex justify-content-between align-items-center';
+    item.dataset.index = idx;
+
+    const leftSide = document.createElement('div');
+    leftSide.className = 'd-flex align-items-center gap-2';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'form-check-input';
+    checkbox.checked = ing.checked;
+
+    const label = document.createElement('span');
+    label.textContent = `${ing.quantity} ${ing.unit} ${ing.name}`;
+
+    if (checkbox.checked) {
+      label.style.textDecoration = 'line-through';
+      label.style.opacity = '0.6';
+    }
+
+    leftSide.appendChild(checkbox);
+    leftSide.appendChild(label);
+
+    // 🗑️ Delete button
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn btn-outline-danger btn-sm';
+    deleteBtn.innerHTML = '🗑️';
+    deleteBtn.onclick = () => {
+      ingredients.splice(idx, 1); // Remove from local array
+      db.collection("shopping").doc('current').set({ ingredients }) // Save updated
+        .then(() => {
+          renderShoppingList(ingredients); // Re-render
+        })
+        .catch(err => {
+          console.error("❌ Failed to update shopping list:", err);
+        });
+    };
+
+    item.appendChild(leftSide);
+    item.appendChild(deleteBtn);
+    list.appendChild(item);
+
+    // 📦 Click anywhere in left side toggles checkbox
+    item.addEventListener('click', (e) => {
+      if (e.target === deleteBtn || e.target === checkbox) return; // Ignore clicking delete/checkbox
+
+      checkbox.checked = !checkbox.checked;
+      if (checkbox.checked) {
+        label.style.textDecoration = 'line-through';
+        label.style.opacity = '0.6';
+      } else {
+        label.style.textDecoration = 'none';
+        label.style.opacity = '1';
+      }
+
+      ingredients[idx].checked = checkbox.checked;
+      db.collection("shopping").doc('current').set({ ingredients });
+    });
+
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) {
+        label.style.textDecoration = 'line-through';
+        label.style.opacity = '0.6';
+      } else {
+        label.style.textDecoration = 'none';
+        label.style.opacity = '1';
+      }
+
+      ingredients[idx].checked = checkbox.checked;
+      db.collection("shopping").doc('current').set({ ingredients });
+    });
+  });
+
+  output.appendChild(list);
+
+  const clearBtn = document.getElementById('clearShoppingListBtn');
+  if (clearBtn) clearBtn.disabled = ingredients.length === 0;
+}
+
+
+
+function loadShoppingList() {
+  db.collection("shopping").doc('current').get().then(doc => {
+    const clearBtn = document.getElementById('clearShoppingListBtn');
+
+    if (doc.exists && doc.data().ingredients && doc.data().ingredients.length > 0) {
+      renderShoppingList(doc.data().ingredients);
+      if (clearBtn) clearBtn.disabled = false;
+    } else {
+      document.getElementById('shoppingListResults').innerHTML = '<p class="text-muted">No shopping list generated.</p>';
+      if (clearBtn) clearBtn.disabled = true;
+    }
+  }).catch(err => {
+    console.error("❌ Failed to load shopping list:", err);
+  });
+}
+
+
+function clearShoppingList() {
+  console.log("🛠️ clearShoppingList() clicked");
+  
+  const clearBtn = document.getElementById('clearShoppingListBtn');
+  if (!clearBtn) {
+    console.log("❌ clearShoppingListBtn not found");
+    return;
+  }
+
+  // Prevent multiple confirms
+  if (clearBtn.parentElement.querySelector('.confirm-clear-shopping')) {
+    console.log("❌ Already confirming");
+    return;
+  }
+
+  clearBtn.style.display = 'none'; // Hide original button
+
+  const confirmArea = document.createElement('div');
+  confirmArea.className = 'confirm-clear-shopping d-flex gap-2 align-items-center';
+
+  const confirmText = document.createElement('span');
+  confirmText.textContent = 'Clear entire shopping list?';
+
+  const yesBtn = document.createElement('button');
+  yesBtn.className = 'btn btn-sm btn-outline-danger';
+  yesBtn.textContent = 'Yes';
+
+  const noBtn = document.createElement('button');
+  noBtn.className = 'btn btn-sm btn-outline-dark';
+  noBtn.textContent = 'No';
+
+  confirmArea.appendChild(confirmText);
+  confirmArea.appendChild(yesBtn);
+  confirmArea.appendChild(noBtn);
+
+  clearBtn.parentElement.appendChild(confirmArea);
+
+  // Confirm YES
+  yesBtn.onclick = () => {
+    db.collection("shopping").doc('current').delete().then(() => {
+      document.getElementById('shoppingListResults').innerHTML = '<p class="text-muted">No shopping list generated.</p>';
+      console.log("✅ Shopping list cleared.");
+
+      // Clean up confirm box
+      confirmArea.remove();
+      clearBtn.disabled = true; // Disable after clearing
+      clearBtn.style.display = 'block';
+    }).catch(err => {
+      console.error("❌ Failed to clear shopping list:", err);
+    });
+  };
+
+  // Cancel NO
+  noBtn.onclick = () => {
+    confirmArea.remove();
+    clearBtn.style.display = 'block'; // Restore the original button
+  };
+}
+
+
+function clearCheckedIngredients() {
+  const clearBtn = document.getElementById('clearCheckedBtn');
+  if (!clearBtn) return;
+
+  // Prevent multiple confirms
+  if (clearBtn.parentElement.querySelector('.confirm-clear-checked')) return;
+
+  clearBtn.style.display = 'none'; // Hide original button
+
+  const confirmArea = document.createElement('div');
+  confirmArea.className = 'confirm-clear-checked d-flex gap-2 align-items-center';
+
+  const confirmText = document.createElement('span');
+  confirmText.textContent = 'Clear all checked items?';
+
+  const yesBtn = document.createElement('button');
+  yesBtn.className = 'btn btn-sm btn-outline-danger';
+  yesBtn.textContent = 'Yes';
+
+  const noBtn = document.createElement('button');
+  noBtn.className = 'btn btn-sm btn-outline-dark';
+  noBtn.textContent = 'No';
+
+  confirmArea.appendChild(confirmText);
+  confirmArea.appendChild(yesBtn);
+  confirmArea.appendChild(noBtn);
+
+  clearBtn.parentElement.appendChild(confirmArea);
+
+  // Yes clears
+  yesBtn.onclick = () => {
+    db.collection("shopping").doc('current').get().then(doc => {
+      if (!doc.exists) return;
+
+      const data = doc.data();
+      const filtered = data.ingredients.filter(ing => !ing.checked);
+
+      return db.collection("shopping").doc('current').set({ ingredients: filtered })
+        .then(() => {
+          renderShoppingList(filtered);
+          console.log("✅ Cleared checked items");
+
+          // Cleanup UI
+          confirmArea.remove();
+          clearBtn.style.display = 'none'; // still hidden if no checked left
+        });
+    }).catch(err => {
+      console.error("❌ Failed to clear checked items:", err);
+    });
+  };
+
+  // No cancels
+  noBtn.onclick = () => {
+    confirmArea.remove();
+    clearBtn.style.display = 'block'; // restore button
+  };
+}
+
+
+function updateClearCheckedButton(ingredients) {
+  const hasChecked = ingredients.some(ing => ing.checked);
+  const btn = document.getElementById('clearCheckedBtn');
+  if (btn) {
+    btn.style.display = hasChecked ? 'block' : 'none';
+  }
+}
+
 
 window.onload = () => {
   loadRecipesFromFirestore();

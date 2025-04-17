@@ -1,129 +1,96 @@
-body, html {
+/* ===============================
+   General Layout
+   =============================== */
+
+   body, html {
     height: 100%;
     margin: 0;
   }
   
-#menuBar {
-  border-bottom: 1px solid #ccc;
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background-color: white;
-}
-
-.card {
-  margin-bottom: 1rem;
-}
-
-.collapsible-form {
-  display: none;
-}
-
-.collapsible-form.open {
-  display: block;
-}
-
-
-.delete-area {
-  border: 1px solid transparent;
-  transition: border-color 0.2s ease;
-}
-.delete-area:hover {
-  border-color: #dc3545; /* Bootstrap red */
-}
-
-.ingredient-tag {
-  background-color: #e9ecef;
-  padding: 5px 10px;
-  border-radius: 15px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-}
-
-.ingredient-tag .remove-tag {
-  color: #dc3545;
-  cursor: pointer;
-  font-weight: bold;
-}
-
-#autocompleteResults {
-  max-height: 150px;
-  overflow-y: auto;
-}
-
-#photoPreviewContainer img {
-  max-height: 300px;
-  margin-top: 10px;
-}
-
-#photoPreviewContainer pre {
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-#photoPreviewContainer {
-  width: 100%;
-  overflow-x: auto;
-  margin-top: 1rem;
-}
-
-.table-sm th,
-.table-sm td {
-  padding: 0.25rem 0.5rem;
-  font-size: 0.9rem;
-  vertical-align: middle;
-}
-
-.table {
-  margin-bottom: 0.75rem;
-}
-
-/* Default: full width for portrait or narrow screens */
-#mainView {
-  width: 100%;
-  max-width: 100%;
-  margin: 0 auto;
-  padding: 1rem;
-}
-
-/* Limit width in landscape or wide screens */
-@media screen and (orientation: landscape) and (min-width: 768px) {
-  #mainView {
-    max-width: 700px;
-    margin: 0 auto;
-    border-left: 1px solid #ddd;
-    border-right: 1px solid #ddd;
-    border-radius: 6px;
-    box-shadow: 0 0 15px rgba(0,0,0,0.05);
-    background: #fff;
+  #menuBar {
+    border-bottom: 1px solid #ccc;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: white;
   }
-}
-
-.made-message {
-  transition: opacity 0.4s ease;
-}
-
-#tagsContainer {
-  background-color: #f8f9fa; /* subtle light gray */
-  border: 1px dashed #ced4da; /* dashed light border */
-}
-
-#tagsPlaceholder {
-  opacity: 0.6;
-  font-style: italic;
-}
-
-.rating-stars i {
-  transition: transform 0.2s ease, color 0.2s ease;
-}
-.rating-stars i:hover {
-  transform: scale(1.2);
-}
-
-.badge.bg-primary {
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
-}
+  
+  .card {
+    margin-bottom: 1rem;
+  }
+  
+  .collapsible-form {
+    display: none;
+  }
+  
+  .collapsible-form.open {
+    display: block;
+  }
+  
+  #mainView {
+    width: 100%;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 1rem;
+  }
+  
+  @media screen and (orientation: landscape) and (min-width: 768px) {
+    #mainView {
+      max-width: 700px;
+      margin: 0 auto;
+      border-left: 1px solid #ddd;
+      border-right: 1px solid #ddd;
+      border-radius: 6px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.05);
+      background: #fff;
+    }
+  }
+  
+  /* ===============================
+     Tables, Forms, and Animations
+     =============================== */
+  
+  .table-sm th,
+  .table-sm td {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.9rem;
+    vertical-align: middle;
+  }
+  
+  .table {
+    margin-bottom: 0.75rem;
+  }
+  
+  #tagsContainer {
+    background-color: #f8f9fa;
+    border: 1px dashed #ced4da;
+  }
+  
+  #tagsPlaceholder {
+    opacity: 0.6;
+    font-style: italic;
+  }
+  
+  .rating-stars i {
+    transition: transform 0.2s ease, color 0.2s ease;
+  }
+  
+  .rating-stars i:hover {
+    transform: scale(1.2);
+  }
+  
+  #photoPreviewContainer {
+    width: 100%;
+    overflow-x: auto;
+    margin-top: 1rem;
+  }
+  
+  #photoPreviewContainer img {
+    max-height: 300px;
+    margin-top: 10px;
+  }
+  
+  .success-message {
+    transition: opacity 0.4s ease;
+  }
+  
