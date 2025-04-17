@@ -102,3 +102,7 @@ body, html {
     background: #fff;
   }
 }
+
+.made-message {
+  transition: opacity 0.4s ease;
+}

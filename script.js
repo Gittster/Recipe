@@ -13,6 +13,8 @@ function showRecipeFilter() {
   <h5 class="mb-3">📚 Recipes</h5>
 
   <input type="text" class="form-control mb-2" id="recipeSearch" placeholder="Filter by ingredient..." oninput="filterRecipesByText()" />
+  <input type="text" class="form-control mb-2" id="tagSearch" placeholder="Filter by tag..." oninput="filterRecipesByTag()" />
+
 
   <button class="btn btn-success mb-3" onclick="toggleRecipeForm()">➕ Add Recipe</button>
 
@@ -20,6 +22,10 @@ function showRecipeFilter() {
     <div class="card card-body">
 
       <input class="form-control mb-2" id="recipeNameInput" placeholder="Recipe name" />
+
+      <div class="mb-2">
+        <input class="form-control" id="recipeTagsInput" placeholder="Tags (comma separated, e.g. quick, vegan)" />
+      </div>
 
       <div id="ingredientsGrid" class="mb-3">
         <label class="form-label">🧂 Ingredients</label>
@@ -102,6 +108,30 @@ function createIngredientRow(name = '', unit = '', qty = '') {
       if (isLastRow && filled) createIngredientRow();
     });
   });
+}
+
+function filterRecipesByTag() {
+  const searchTerm = document.getElementById('tagSearch').value.trim().toLowerCase();
+  const ingredientSearchTerm = document.getElementById('recipeSearch')?.value.trim().toLowerCase() || '';
+
+  let filtered = recipes;
+
+  // If there's an ingredient filter too
+  if (ingredientSearchTerm) {
+    filtered = filtered.filter(r => {
+      return Array.isArray(r.ingredients) &&
+        r.ingredients.some(i => (i.name || i).toLowerCase().includes(ingredientSearchTerm));
+    });
+  }
+
+  if (searchTerm) {
+    filtered = filtered.filter(r => {
+      return Array.isArray(r.tags) &&
+        r.tags.some(tag => tag.toLowerCase().includes(searchTerm));
+    });
+  }
+
+  displayRecipes(filtered);
 }
 
 
@@ -208,6 +238,51 @@ function handleRecipePhoto(event) {
 
   reader.readAsDataURL(file);
 }
+
+function markAsMade(recipeName, buttonElement) {
+  console.log("✅ Marking as made:", recipeName);
+
+  db.collection("history").add({
+    recipe: recipeName,
+    timestamp: new Date().toISOString()
+  })
+  .then(() => {
+    // Remove any existing messages
+    const card = buttonElement.closest('.card');
+    if (!card) return;
+
+    const oldMsg = card.querySelector('.made-message');
+    if (oldMsg) oldMsg.remove();
+
+    const msg = document.createElement('div');
+    msg.className = 'text-success fw-semibold mt-2 made-message';
+    msg.textContent = "✅ Marked as made!";
+
+    card.appendChild(msg);
+
+    setTimeout(() => {
+      msg.remove();
+    }, 2000);
+  })
+  .catch(error => {
+    console.error("❌ Error adding to history:", error);
+
+    const card = buttonElement.closest('.card');
+    if (!card) return;
+
+    const errorMsg = document.createElement('div');
+    errorMsg.className = 'text-danger fw-semibold mt-2';
+    errorMsg.textContent = "❌ Failed to mark recipe.";
+
+    card.appendChild(errorMsg);
+
+    setTimeout(() => {
+      errorMsg.remove();
+    }, 3000);
+  });
+}
+
+
 
 function fillRecipeForm(recipe) {
   const nameInput = document.getElementById('recipeNameInput');
@@ -374,6 +449,9 @@ function saveRecipe() {
   const rows = document.querySelectorAll('#ingredientsTable > .row');
   const ingredients = [];
 
+  const tagsRaw = document.getElementById('recipeTagsInput').value.trim();
+  const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim().toLowerCase()) : [];
+
   rows.forEach(row => {
     const inputs = row.querySelectorAll('input');
     const name = inputs[0]?.value.trim();
@@ -394,6 +472,7 @@ function saveRecipe() {
     name,
     instructions,
     ingredients,
+    tags,
     timestamp: new Date()
   };
 
@@ -584,6 +663,12 @@ function displayRecipes(list, containerId = 'recipeResults') {
     title.className = 'px-3 py-2 bg-warning text-dark fs-5';
     title.textContent = r.name;
 
+    // Edit button
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn btn-outline-primary btn-sm ms-2';
+    editBtn.textContent = '✏️ Edit';
+    editBtn.onclick = () => openInlineEditor(r.id, card);
+
     // Delete button (unchanged)
     const deleteArea = document.createElement('div');
     deleteArea.className = 'delete-area d-flex justify-content-center align-items-center border rounded p-2 bg-light';
@@ -594,6 +679,7 @@ function displayRecipes(list, containerId = 'recipeResults') {
     `;
 
     titleRow.appendChild(title);
+    titleRow.appendChild(editBtn);
     titleRow.appendChild(deleteArea);
 
     // Ingredient Table
@@ -641,14 +727,30 @@ function displayRecipes(list, containerId = 'recipeResults') {
     const instructions = document.createElement('p');
     instructions.innerHTML = `<strong>Instructions:</strong> ${r.instructions}`;
 
-    // "Mark as Made" Button
     const madeBtn = document.createElement('button');
     madeBtn.className = 'btn btn-success btn-sm';
     madeBtn.textContent = 'Mark as Made';
-    madeBtn.onclick = () => markAsMade(r.name);
+    madeBtn.onclick = (e) => markAsMade(r.name, e.target);
+    
+    console.log("📦 Recipe:", r.name, r.tags);
 
     // Append all
     body.appendChild(titleRow);
+    // Tags Section
+    if (r.tags && r.tags.length > 0) {
+      const tagsRow = document.createElement('div');
+      tagsRow.className = 'mb-2';
+
+      r.tags.forEach(tag => {
+        const tagBadge = document.createElement('span');
+        tagBadge.className = 'badge bg-secondary me-1';
+        tagBadge.textContent = tag;
+        tagsRow.appendChild(tagBadge);
+      });
+
+      body.appendChild(tagsRow);
+    }
+
     body.appendChild(ingredientsHeader);
     body.appendChild(table);
     body.appendChild(instructions);
@@ -658,57 +760,131 @@ function displayRecipes(list, containerId = 'recipeResults') {
   });
 }
 
+function openInlineEditor(recipeId, card) {
+  const recipe = recipes.find(r => r.id === recipeId);
+  if (!recipe) return alert("Recipe not found.");
 
-function markAsMade(recipeName) {
-  // Find the card for this recipe and inject the note form
-  const cards = document.querySelectorAll('.card');
+  card.innerHTML = ''; // Clear the card for editing
 
-  cards.forEach(card => {
-    const title = card.querySelector('.card-title');
-    if (title && title.textContent.trim().startsWith(recipeName))
-      {
-      // Prevent duplicates
-      if (card.querySelector('.mark-made-form')) return;
+  const form = document.createElement('div');
+  form.className = 'p-2';
 
-      const form = document.createElement('div');
-      form.className = 'mt-3 mark-made-form';
-      form.innerHTML = `
-        <div class="border rounded p-3 bg-light">
-          <strong class="d-block mb-2">📝 Add Notes</strong>
-          <textarea class="form-control mb-2" placeholder="Notes (optional)" rows="2"></textarea>
-          <div class="d-flex gap-2">
-            <button class="btn btn-success btn-sm">Save</button>
-            <button class="btn btn-outline-secondary btn-sm">Cancel</button>
-          </div>
-        </div>
-      `;
+  // Name
+  const nameInput = document.createElement('input');
+  nameInput.className = 'form-control mb-2';
+  nameInput.value = recipe.name;
 
-      // Handle Save
-      form.querySelector('.btn-success').onclick = () => {
-        const notes = form.querySelector('textarea').value;
-        db.collection("history").add({
-          recipe: recipeName,
-          timestamp: new Date().toISOString(),
-          notes: notes || ''
-        }).then(() => {
-          form.innerHTML = `
-            <div class="text-success fw-bold d-flex align-items-center gap-2">
-              <span>✅ Marked as made!</span>
-            </div>
-          `;
-          setTimeout(() => form.remove(), 2000);
-        }).catch(err => {
-          console.error("Error saving history:", err);
-          alert("Failed to save entry.");
-        });
-      };
+  // Tags
+  const tagsInput = document.createElement('input');
+  tagsInput.className = 'form-control mb-2';
+  tagsInput.value = (recipe.tags || []).join(', ');
 
-      // Handle Cancel
-      form.querySelector('.btn-outline-secondary').onclick = () => form.remove();
+  // Ingredients Grid
+  const ingredientsLabel = document.createElement('label');
+  ingredientsLabel.textContent = "Ingredients:";
+  
+  const ingredientsDiv = document.createElement('div');
+  ingredientsDiv.id = 'editIngredientsGrid';
+  ingredientsDiv.className = 'mb-3';
 
-      card.appendChild(form);
+  (recipe.ingredients || []).forEach(ing => {
+    addIngredientEditRow(ingredientsDiv, ing.name || ing, ing.quantity || '', ing.unit || '');
+  });
+
+  // Add button to add new ingredient rows
+  const addIngBtn = document.createElement('button');
+  addIngBtn.className = 'btn btn-sm btn-secondary mb-2';
+  addIngBtn.textContent = '➕ Add Ingredient';
+  addIngBtn.onclick = (e) => {
+    e.preventDefault();
+    addIngredientEditRow(ingredientsDiv);
+  };
+
+  // Instructions
+  const instructionsInput = document.createElement('textarea');
+  instructionsInput.className = 'form-control mb-2';
+  instructionsInput.rows = 4;
+  instructionsInput.value = recipe.instructions;
+
+  // Save / Cancel Buttons
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'btn btn-success me-2';
+  saveBtn.textContent = '💾 Save';
+  saveBtn.onclick = () => saveInlineEdit(recipeId, nameInput, tagsInput, ingredientsDiv, instructionsInput);
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn btn-outline-secondary';
+  cancelBtn.textContent = '❌ Cancel';
+  cancelBtn.onclick = () => showRecipeFilter(); // reload original cards
+
+  // Assemble
+  form.appendChild(nameInput);
+  form.appendChild(tagsInput);
+  form.appendChild(ingredientsLabel);
+  form.appendChild(ingredientsDiv);
+  form.appendChild(addIngBtn);
+  form.appendChild(instructionsInput);
+  form.appendChild(saveBtn);
+  form.appendChild(cancelBtn);
+
+  card.appendChild(form);
+}
+
+function addIngredientEditRow(container, name = '', qty = '', unit = '') {
+  const row = document.createElement('div');
+  row.className = 'd-flex gap-2 mb-2';
+
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.placeholder = 'Ingredient';
+  nameInput.className = 'form-control';
+  nameInput.value = name;
+
+  const qtyInput = document.createElement('input');
+  qtyInput.type = 'text';
+  qtyInput.placeholder = 'Qty';
+  qtyInput.className = 'form-control';
+  qtyInput.value = qty;
+
+  const unitInput = document.createElement('input');
+  unitInput.type = 'text';
+  unitInput.placeholder = 'Unit';
+  unitInput.className = 'form-control';
+  unitInput.value = unit;
+
+  row.appendChild(nameInput);
+  row.appendChild(qtyInput);
+  row.appendChild(unitInput);
+
+  container.appendChild(row);
+}
+
+function saveInlineEdit(recipeId, nameInput, tagsInput, ingredientsDiv, instructionsInput) {
+  const name = nameInput.value.trim();
+  const tags = tagsInput.value.trim() ? tagsInput.value.trim().split(',').map(t => t.trim().toLowerCase()) : [];
+  const instructions = instructionsInput.value.trim();
+
+  const ingredients = [];
+  ingredientsDiv.querySelectorAll('div').forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    const ingName = inputs[0].value.trim();
+    const ingQty = inputs[1].value.trim();
+    const ingUnit = inputs[2].value.trim();
+
+    if (ingName) {
+      ingredients.push({ name: ingName, quantity: ingQty, unit: ingUnit });
     }
   });
+
+  db.collection('recipes').doc(recipeId).update({
+    name,
+    tags,
+    ingredients,
+    instructions
+  }).then(() => {
+    console.log("✅ Recipe updated!");
+    loadRecipes().then(() => showRecipeFilter());
+  });  
 }
 
 
@@ -843,6 +1019,11 @@ function renderIngredientList(data) {
 
     body.innerHTML = `
       <h5 class="card-title text-capitalize">${item.name}</h5>
+      ${r.tags && r.tags.length > 0 ? `
+        <div class="mb-2">
+          ${r.tags.map(tag => `<span class="badge bg-secondary me-1">${tag}</span>`).join('')}
+        </div>
+      ` : ''}
       <p>🧬 <strong>Made of:</strong> ${item.components.length ? item.components.join(', ') : '—'}</p>
       <p>📏 <strong>Unit:</strong> ${item.unit}</p>
       <p>💲 <strong>Cost:</strong> $${item.cost.toFixed(2)}</p>
@@ -905,6 +1086,150 @@ function loadIngredientsFromFirestore() {
     console.error("Error loading ingredients:", err);
   });
 }
+
+function showPlanning() {
+  const view = document.getElementById('mainView');
+  view.innerHTML = `
+    <h5 class="mb-3">🗓️ Meal Planning</h5>
+
+    <div class="mb-3">
+      <label class="form-label">📅 Select Date:</label>
+      <input type="date" class="form-control" id="planDate" />
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">🍽️ Select Recipe:</label>
+      <select id="planRecipe" class="form-select">
+        <option value="">-- Choose --</option>
+      </select>
+    </div>
+
+    <button class="btn btn-primary mb-3" onclick="addPlannedMeal()">➕ Add to Plan</button>
+
+    <hr />
+
+    <h6>📋 Planned Meals</h6>
+    <div id="plannedMealsList"></div>
+
+    <hr />
+
+    <button class="btn btn-success" onclick="generateShoppingList()">🛒 Generate Ingredient Checklist</button>
+    <div id="shoppingListResults" class="mt-3"></div>
+  `;
+
+  populateRecipeDropdown();
+  loadPlannedMeals();
+}
+
+function populateRecipeDropdown() {
+  const select = document.getElementById('planRecipe');
+  select.innerHTML = '<option value="">-- Choose --</option>';
+  recipes.forEach(recipe => {
+    const option = document.createElement('option');
+    option.value = recipe.id;
+    option.textContent = recipe.name;
+    select.appendChild(option);
+  });
+}
+
+function addPlannedMeal() {
+  const date = document.getElementById('planDate').value;
+  const recipeId = document.getElementById('planRecipe').value;
+
+  if (!date || !recipeId) return alert("Please select both date and recipe.");
+
+  db.collection("planning").add({
+    date,
+    recipeId,
+    timestamp: new Date().toISOString()
+  }).then(() => {
+    loadPlannedMeals();
+  });
+}
+
+function loadPlannedMeals() {
+  const container = document.getElementById('plannedMealsList');
+  container.innerHTML = 'Loading...';
+
+  db.collection("planning")
+    .orderBy("date")
+    .get()
+    .then(snapshot => {
+      if (snapshot.empty) {
+        container.innerHTML = '<p class="text-muted">No meals planned yet.</p>';
+        return;
+      }
+
+      let html = '<ul class="list-group">';
+      snapshot.forEach(doc => {
+        const { date, recipeId } = doc.data();
+        const recipe = recipes.find(r => r.id === recipeId);
+        if (!recipe) return;
+
+        html += `<li class="list-group-item d-flex justify-content-between align-items-center">
+          <span>${date} — ${recipe.name}</span>
+        </li>`;
+      });
+      html += '</ul>';
+
+      container.innerHTML = html;
+    });
+}
+
+function generateShoppingList() {
+  const output = document.getElementById('shoppingListResults');
+  output.innerHTML = 'Generating...';
+
+  db.collection("planning").get().then(snapshot => {
+    if (snapshot.empty) {
+      output.innerHTML = '<p class="text-muted">No planned meals found.</p>';
+      return;
+    }
+
+    const recipeIds = snapshot.docs.map(doc => doc.data().recipeId);
+    const ingredientMap = {};
+
+    recipeIds.forEach(id => {
+      const recipe = recipes.find(r => r.id === id);
+      if (!recipe || !recipe.ingredients) return;
+
+      recipe.ingredients.forEach(ing => {
+        const key = `${ing.name}|${ing.unit}`.toLowerCase();
+        const qty = parseFloat(ing.quantity) || 0;
+
+        if (!ingredientMap[key]) {
+          ingredientMap[key] = { ...ing, quantity: qty };
+        } else {
+          ingredientMap[key].quantity += qty;
+        }
+      });
+    });
+
+    // 🛒 Render checklist
+    const list = document.createElement('ul');
+    list.className = 'list-group';
+
+    Object.values(ingredientMap).forEach(ing => {
+      const item = document.createElement('li');
+      item.className = 'list-group-item d-flex align-items-center';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'form-check-input me-2';
+
+      const label = document.createElement('label');
+      label.textContent = `${ing.quantity} ${ing.unit} ${ing.name}`;
+
+      item.appendChild(checkbox);
+      item.appendChild(label);
+      list.appendChild(item);
+    });
+
+    output.innerHTML = '';
+    output.appendChild(list);
+  });
+}
+
 
   
 window.onload = () => {
