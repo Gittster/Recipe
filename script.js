@@ -1,5 +1,78 @@
 let recipes = [];
 let madeModalRecipe = '';
+let currentTags = [];
+
+function renderTags() {
+  const tagsContainer = document.getElementById('tagsContainer');
+  const placeholder = document.getElementById('tagsPlaceholder');
+  if (!tagsContainer) return;
+
+  tagsContainer.innerHTML = '';
+
+  if (currentTags.length === 0) {
+    if (placeholder) placeholder.style.display = 'block';
+  } else {
+    if (placeholder) placeholder.style.display = 'none';
+  }
+
+  currentTags.forEach(tag => {
+    const tagBadge = document.createElement('span');
+    tagBadge.className = 'badge bg-primary text-white me-1';
+    tagBadge.textContent = tag;
+
+    // Allow removing tags on click
+    tagBadge.onclick = () => {
+      currentTags = currentTags.filter(t => t !== tag);
+      renderTags();
+    };
+
+    tagsContainer.appendChild(tagBadge);
+  });
+}
+
+function clearAllPlanning(button) {
+  if (button.parentElement.querySelector('.confirm-clear')) return;
+
+  button.style.display = 'none';
+
+  const confirmArea = document.createElement('div');
+  confirmArea.className = 'confirm-clear d-flex gap-2 align-items-center';
+
+  const confirmText = document.createElement('span');
+  confirmText.textContent = 'Delete ALL planned meals?';
+
+  const yesBtn = document.createElement('button');
+  yesBtn.className = 'btn btn-sm btn-danger';
+  yesBtn.textContent = 'Yes';
+  yesBtn.onclick = () => {
+    db.collection("planning").get().then(snapshot => {
+      const batch = db.batch();
+      snapshot.forEach(doc => batch.delete(doc.ref));
+      return batch.commit();
+    }).then(() => {
+      console.log("✅ All planning cleared.");
+      showPlanning(); // ✅ FULL re-render the Planning screen
+    }).catch(err => {
+      console.error("❌ Error clearing planning:", err);
+      confirmArea.remove();
+      button.style.display = '';
+    });
+  };
+
+  const noBtn = document.createElement('button');
+  noBtn.className = 'btn btn-sm btn-outline-secondary';
+  noBtn.textContent = 'No';
+  noBtn.onclick = () => {
+    confirmArea.remove();
+    button.style.display = '';
+  };
+
+  confirmArea.appendChild(confirmText);
+  confirmArea.appendChild(yesBtn);
+  confirmArea.appendChild(noBtn);
+
+  button.parentElement.appendChild(confirmArea);
+}
 
 async function loadRecipes() {
   const res = await fetch('recipes.json');
@@ -23,8 +96,11 @@ function showRecipeFilter() {
 
       <input class="form-control mb-2" id="recipeNameInput" placeholder="Recipe name" />
 
-      <div class="mb-2">
-        <input class="form-control" id="recipeTagsInput" placeholder="Tags (comma separated, e.g. quick, vegan)" />
+      <div class="mb-3">
+      <div id="tagsContainer" class="form-control position-relative d-flex flex-wrap align-items-center gap-2 p-2" style="min-height: 45px;">
+        <span id="tagsPlaceholder" class="text-muted" style="position: absolute; left: 10px; top: 8px; pointer-events: none;">🏷️ Add some tags...</span>
+      </div>
+      <input type="text" id="tagInput" class="form-control mt-2" placeholder="Type a tag and press Enter" />
       </div>
 
       <div id="ingredientsGrid" class="mb-3">
@@ -111,28 +187,28 @@ function createIngredientRow(name = '', unit = '', qty = '') {
 }
 
 function filterRecipesByTag() {
-  const searchTerm = document.getElementById('tagSearch').value.trim().toLowerCase();
-  const ingredientSearchTerm = document.getElementById('recipeSearch')?.value.trim().toLowerCase() || '';
+  const search = document.getElementById('tagSearch').value.trim().toLowerCase();
+  const tagTerms = search.split(',').map(t => t.trim()).filter(Boolean);
 
-  let filtered = recipes;
-
-  // If there's an ingredient filter too
-  if (ingredientSearchTerm) {
-    filtered = filtered.filter(r => {
-      return Array.isArray(r.ingredients) &&
-        r.ingredients.some(i => (i.name || i).toLowerCase().includes(ingredientSearchTerm));
-    });
+  if (tagTerms.length === 0) {
+    displayRecipes(recipes);
+    return;
   }
 
-  if (searchTerm) {
-    filtered = filtered.filter(r => {
-      return Array.isArray(r.tags) &&
-        r.tags.some(tag => tag.toLowerCase().includes(searchTerm));
-    });
-  }
+  const filtered = recipes.filter(recipe => {
+    if (!recipe.tags) return false;
 
-  displayRecipes(filtered);
+    const recipeTags = recipe.tags.map(tag => tag.toLowerCase());
+
+    // ✅ ALL search tags must match at least once
+    return tagTerms.every(term =>
+      recipeTags.some(tag => tag.startsWith(term))
+    );
+  });
+
+  displayRecipes(filtered, 'recipeResults', { highlightTags: tagTerms });
 }
+
 
 
 function handleRecipePhoto(event) {
@@ -240,47 +316,58 @@ function handleRecipePhoto(event) {
 }
 
 function markAsMade(recipeName, buttonElement) {
-  console.log("✅ Marking as made:", recipeName);
+  console.log("✅ Mark as Made clicked for:", recipeName);
 
-  db.collection("history").add({
-    recipe: recipeName,
-    timestamp: new Date().toISOString()
-  })
-  .then(() => {
-    // Remove any existing messages
-    const card = buttonElement.closest('.card');
-    if (!card) return;
+  const card = buttonElement.closest('.card');
+  if (!card) return;
 
-    const oldMsg = card.querySelector('.made-message');
-    if (oldMsg) oldMsg.remove();
+  // Prevent multiple open forms
+  if (card.querySelector('.mark-made-form')) return;
 
-    const msg = document.createElement('div');
-    msg.className = 'text-success fw-semibold mt-2 made-message';
-    msg.textContent = "✅ Marked as made!";
+  const form = document.createElement('div');
+  form.className = 'mark-made-form mt-3 p-2 border rounded bg-light';
 
-    card.appendChild(msg);
+  const textarea = document.createElement('textarea');
+  textarea.className = 'form-control mb-2';
+  textarea.rows = 2;
+  textarea.placeholder = 'Optional comment...';
 
-    setTimeout(() => {
-      msg.remove();
-    }, 2000);
-  })
-  .catch(error => {
-    console.error("❌ Error adding to history:", error);
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'btn btn-success btn-sm me-2';
+  saveBtn.textContent = '💾 Save';
 
-    const card = buttonElement.closest('.card');
-    if (!card) return;
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn btn-outline-secondary btn-sm';
+  cancelBtn.textContent = '❌ Cancel';
 
-    const errorMsg = document.createElement('div');
-    errorMsg.className = 'text-danger fw-semibold mt-2';
-    errorMsg.textContent = "❌ Failed to mark recipe.";
+  // Save note
+  saveBtn.onclick = () => {
+    const notes = textarea.value.trim();
 
-    card.appendChild(errorMsg);
+    db.collection("history").add({
+      recipe: recipeName,
+      timestamp: new Date().toISOString(),
+      notes: notes || ''
+    }).then(() => {
+      console.log("✅ History entry added!");
+      form.innerHTML = '<div class="text-success fw-bold">✅ Marked as made!</div>';
+      setTimeout(() => form.remove(), 2000);
+    }).catch(err => {
+      console.error("❌ Failed to save history:", err);
+      alert('Failed to save history.');
+    });
+  };
 
-    setTimeout(() => {
-      errorMsg.remove();
-    }, 3000);
-  });
+  // Cancel editing
+  cancelBtn.onclick = () => form.remove();
+
+  form.appendChild(textarea);
+  form.appendChild(saveBtn);
+  form.appendChild(cancelBtn);
+
+  card.appendChild(form);
 }
+
 
 
 
@@ -449,8 +536,7 @@ function saveRecipe() {
   const rows = document.querySelectorAll('#ingredientsTable > .row');
   const ingredients = [];
 
-  const tagsRaw = document.getElementById('recipeTagsInput').value.trim();
-  const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim().toLowerCase()) : [];
+  const tags = currentTags || [];
 
   rows.forEach(row => {
     const inputs = row.querySelectorAll('input');
@@ -463,14 +549,23 @@ function saveRecipe() {
     }
   });
 
-  if (!name || !instructions || ingredients.length === 0) {
-    alert("Please fill out all fields and include at least one ingredient.");
+  // 🛑 INLINE Validation Feedback
+  const errorContainer = document.getElementById('recipeErrorMessage');
+  if (errorContainer) errorContainer.remove(); // Clear previous error if exists
+
+  if (!name || ingredients.length === 0) {
+    const error = document.createElement('div');
+    error.id = 'recipeErrorMessage';
+    error.className = 'alert alert-danger mt-2';
+    error.textContent = "Please provide a recipe name and at least one ingredient.";
+    const form = document.getElementById('recipeForm');
+    form.querySelector('.card-body').appendChild(error);
     return;
   }
 
   const recipe = {
     name,
-    instructions,
+    instructions, // 📋 Even if empty, save it
     ingredients,
     tags,
     timestamp: new Date()
@@ -480,11 +575,30 @@ function saveRecipe() {
     .then(docRef => {
       console.log("✅ Recipe added with ID:", docRef.id);
       toggleRecipeForm(); // Collapse the form
-      loadRecipesFromFirestore(); // Refresh list (if applicable)
+      showSuccessMessage("✅ Recipe saved successfully!");
+      loadRecipesFromFirestore(); // Refresh list
+      currentTags = []; // Reset tags for next recipe
     })
     .catch(error => {
       console.error("❌ Error adding recipe:", error);
     });
+}
+
+function showSuccessMessage(message) {
+  const view = document.getElementById('mainView');
+  
+  const successAlert = document.createElement('div');
+  successAlert.className = 'alert alert-success text-center position-fixed top-0 start-50 translate-middle-x mt-3';
+  successAlert.style.zIndex = 1000;
+  successAlert.style.width = '90%';
+  successAlert.style.maxWidth = '400px';
+  successAlert.textContent = message;
+
+  document.body.appendChild(successAlert);
+
+  setTimeout(() => {
+    successAlert.remove();
+  }, 3000); // disappear after 3 seconds
 }
 
 
@@ -505,12 +619,31 @@ function toggleRecipeForm() {
     if (instructionsInput) instructionsInput.value = '';
     if (ingredientsTable) {
       ingredientsTable.innerHTML = '';
-      createIngredientRow(); // ← THIS is the important line
+      createIngredientRow();
+    }
+
+    const tagInput = document.getElementById('tagInput');
+    const tagsContainer = document.getElementById('tagsContainer');
+
+    if (tagInput && tagsContainer) {
+      tagInput.value = '';
+      tagsContainer.innerHTML = '';
+
+      tagInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ',') {
+          e.preventDefault();
+          const value = tagInput.value.trim().toLowerCase();
+          if (value && !currentTags.includes(value)) {
+            currentTags.push(value);
+            renderTags();
+          }
+          tagInput.value = '';
+        }
+      });
     }
 
     const preview = document.getElementById('photoPreviewContainer');
     if (preview) preview.innerHTML = '';
-
   } else {
     // Optional cleanup when hiding
     if (ingredientsTable) ingredientsTable.innerHTML = '';
@@ -617,30 +750,37 @@ function populateIngredientSelect() {
 
 function filterRecipesByText() {
   const search = document.getElementById('recipeSearch').value.trim().toLowerCase();
+  const searchTerms = search.split(',').map(s => s.trim()).filter(Boolean);
 
-  if (!search) {
-    displayRecipes(recipes); // assuming you store the original list
+  if (searchTerms.length === 0) {
+    displayRecipes(recipes);
     return;
   }
 
   const filtered = recipes.filter(recipe => {
-    return recipe.ingredients?.some(ing => {
-      if (typeof ing === 'string') {
-        return ing.toLowerCase().includes(search);
-      } else if (typeof ing === 'object' && ing.name) {
-        return ing.name.toLowerCase().includes(search);
-      }
-      return false;
-    });
+    if (!recipe.ingredients) return false;
+
+    const ingredientNames = recipe.ingredients.map(ing => 
+      typeof ing === 'object' ? ing.name.toLowerCase() : ing.toLowerCase()
+    );
+
+    // ✅ ALL search terms must match at least once
+    return searchTerms.every(term =>
+      ingredientNames.some(ingName => ingName.includes(term))
+    );
   });
 
-  displayRecipes(filtered);
+  displayRecipes(filtered, 'recipeResults', { highlightIngredients: searchTerms });
 }
 
 
-function displayRecipes(list, containerId = 'recipeResults') {
+
+function displayRecipes(list, containerId = 'recipeResults', options = {}) {
   const container = document.getElementById(containerId);
   container.innerHTML = '';
+
+  const highlightIngredients = options.highlightIngredients || [];
+  const highlightTags = options.highlightTags || [];
 
   if (list.length === 0) {
     container.innerHTML = '<p class="text-muted">No matching recipes found.</p>';
@@ -654,38 +794,73 @@ function displayRecipes(list, containerId = 'recipeResults') {
     const body = document.createElement('div');
     body.className = 'card-body';
 
-    // Title and delete button container
+    // ➤ Title and Edit/Delete buttons row
     const titleRow = document.createElement('div');
-    titleRow.className = 'd-flex justify-content-between align-items-center mb-3';
+    titleRow.className = 'd-flex justify-content-between align-items-center mb-3 gap-2';
 
-    // Styled title badge
     const title = document.createElement('span');
-    title.className = 'px-3 py-2 bg-warning text-dark fs-5';
+    title.className = 'badge bg-warning text-dark fs-5 py-2 px-3 mb-0';
+    title.style.minWidth = '150px';
     title.textContent = r.name;
 
-    // Edit button
     const editBtn = document.createElement('button');
-    editBtn.className = 'btn btn-outline-primary btn-sm ms-2';
-    editBtn.textContent = '✏️ Edit';
+    editBtn.className = 'btn btn-outline-primary btn-sm';
+    editBtn.innerHTML = '✏️ Edit';
     editBtn.onclick = () => openInlineEditor(r.id, card);
 
-    // Delete button (unchanged)
-    const deleteArea = document.createElement('div');
-    deleteArea.className = 'delete-area d-flex justify-content-center align-items-center border rounded p-2 bg-light';
-    deleteArea.style.minWidth = '80px';
-    deleteArea.style.height = '60px';
-    deleteArea.innerHTML = `
-      <button class="btn btn-sm btn-outline-danger delete-btn" onclick="confirmDeleteRecipe('${r.id}', this)">🗑️</button>
-    `;
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn btn-outline-danger btn-sm';
+    deleteBtn.innerHTML = '🗑️';
+    deleteBtn.onclick = () => confirmDeleteRecipe(r.id, deleteBtn);
+
+    const buttonGroup = document.createElement('div');
+    buttonGroup.className = 'd-flex gap-2 align-items-center';
+    buttonGroup.appendChild(editBtn);
+    buttonGroup.appendChild(deleteBtn);
 
     titleRow.appendChild(title);
-    titleRow.appendChild(editBtn);
-    titleRow.appendChild(deleteArea);
+    titleRow.appendChild(buttonGroup);
 
-    // Ingredient Table
-    const ingredientsHeader = document.createElement('p');
-    ingredientsHeader.innerHTML = '<strong>Ingredients:</strong>';
+    body.appendChild(titleRow);
 
+    // ➤ Tags and Ratings row
+    const tagsAndRatingRow = document.createElement('div');
+    tagsAndRatingRow.className = 'd-flex justify-content-between align-items-center mb-2';
+
+    const ratingContainer = document.createElement('div');
+    ratingContainer.className = 'rating-stars d-flex gap-1';
+
+    for (let i = 1; i <= 5; i++) {
+      const star = document.createElement('i');
+      star.className = i <= (r.rating || 0) ? 'bi bi-star-fill text-warning' : 'bi bi-star text-warning';
+      star.style.cursor = 'pointer';
+      star.dataset.value = i;
+      star.addEventListener('mouseenter', () => highlightStars(ratingContainer, i));
+      star.addEventListener('mouseleave', () => resetStars(ratingContainer, r.rating || 0));
+      star.addEventListener('click', () => updateRecipeRating(r.id, i));
+      ratingContainer.appendChild(star);
+    }
+
+    const tagsRow = document.createElement('div');
+    if (r.tags && r.tags.length > 0) {
+      r.tags.forEach(tag => {
+        const tagBadge = document.createElement('span');
+        tagBadge.className = 'badge me-1';
+        if (highlightTags.some(term => tag.toLowerCase().includes(term))) {
+          tagBadge.classList.add('bg-warning', 'text-dark');
+        } else {
+          tagBadge.classList.add('bg-primary', 'text-white');
+        }
+        tagBadge.textContent = tag;
+        tagsRow.appendChild(tagBadge);
+      });
+    }
+
+    tagsAndRatingRow.appendChild(tagsRow);
+    tagsAndRatingRow.appendChild(ratingContainer);
+    body.appendChild(tagsAndRatingRow);
+
+    // ➤ Ingredients table
     const table = document.createElement('table');
     table.className = 'table table-bordered table-sm mb-2';
 
@@ -704,9 +879,15 @@ function displayRecipes(list, containerId = 'recipeResults') {
     if (Array.isArray(r.ingredients)) {
       r.ingredients.forEach(i => {
         const tr = document.createElement('tr');
-
         const nameTd = document.createElement('td');
-        nameTd.textContent = i.name || i;
+
+        const ingName = typeof i === 'object' ? i.name : i;
+
+        if (highlightIngredients.some(term => ingName.toLowerCase().includes(term))) {
+          nameTd.innerHTML = `<span class="bg-warning">${ingName}</span>`;
+        } else {
+          nameTd.textContent = ingName;
+        }
 
         const qtyTd = document.createElement('td');
         qtyTd.textContent = i.quantity || '';
@@ -722,113 +903,325 @@ function displayRecipes(list, containerId = 'recipeResults') {
     }
 
     table.appendChild(tbody);
+    body.appendChild(table);
 
-    // Instructions
+    // ➤ Instructions
     const instructions = document.createElement('p');
     instructions.innerHTML = `<strong>Instructions:</strong> ${r.instructions}`;
+    body.appendChild(instructions);
+
+    // ➤ Buttons row: Mark as Made + Plan Meal
+    const buttonRow = document.createElement('div');
+    buttonRow.className = 'd-flex align-items-center gap-2 mt-3';
 
     const madeBtn = document.createElement('button');
     madeBtn.className = 'btn btn-success btn-sm';
     madeBtn.textContent = 'Mark as Made';
     madeBtn.onclick = (e) => markAsMade(r.name, e.target);
-    
-    console.log("📦 Recipe:", r.name, r.tags);
 
-    // Append all
-    body.appendChild(titleRow);
-    // Tags Section
-    if (r.tags && r.tags.length > 0) {
-      const tagsRow = document.createElement('div');
-      tagsRow.className = 'mb-2';
+    const planArea = document.createElement('div');
+    planArea.className = 'plan-area';
 
-      r.tags.forEach(tag => {
-        const tagBadge = document.createElement('span');
-        tagBadge.className = 'badge bg-secondary me-1';
-        tagBadge.textContent = tag;
-        tagsRow.appendChild(tagBadge);
-      });
+    const planBtn = document.createElement('button');
+    planBtn.className = 'btn btn-primary btn-sm';
+    planBtn.textContent = '➕ Plan Meal';
+    planBtn.onclick = () => openPlanMealForm(r, planArea);
 
-      body.appendChild(tagsRow);
-    }
+    planArea.appendChild(planBtn);
 
-    body.appendChild(ingredientsHeader);
-    body.appendChild(table);
-    body.appendChild(instructions);
-    body.appendChild(madeBtn);
+    buttonRow.appendChild(madeBtn);
+    buttonRow.appendChild(planArea);
+
+    body.appendChild(buttonRow);
+
     card.appendChild(body);
     container.appendChild(card);
   });
 }
 
-function openInlineEditor(recipeId, card) {
-  const recipe = recipes.find(r => r.id === recipeId);
-  if (!recipe) return alert("Recipe not found.");
 
-  card.innerHTML = ''; // Clear the card for editing
+function openPlanMealForm(recipe, container) {
+  // Prevent multiple openings
+  if (container.querySelector('input[type="date"]')) return;
 
-  const form = document.createElement('div');
-  form.className = 'p-2';
+  container.innerHTML = ''; // clear the Plan Meal button
 
-  // Name
-  const nameInput = document.createElement('input');
-  nameInput.className = 'form-control mb-2';
-  nameInput.value = recipe.name;
+  const dateInput = document.createElement('input');
+  dateInput.type = 'date';
+  dateInput.className = 'form-control form-control-sm';
+  dateInput.style.maxWidth = '150px'; // keep it compact inline
 
-  // Tags
-  const tagsInput = document.createElement('input');
-  tagsInput.className = 'form-control mb-2';
-  tagsInput.value = (recipe.tags || []).join(', ');
-
-  // Ingredients Grid
-  const ingredientsLabel = document.createElement('label');
-  ingredientsLabel.textContent = "Ingredients:";
-  
-  const ingredientsDiv = document.createElement('div');
-  ingredientsDiv.id = 'editIngredientsGrid';
-  ingredientsDiv.className = 'mb-3';
-
-  (recipe.ingredients || []).forEach(ing => {
-    addIngredientEditRow(ingredientsDiv, ing.name || ing, ing.quantity || '', ing.unit || '');
-  });
-
-  // Add button to add new ingredient rows
-  const addIngBtn = document.createElement('button');
-  addIngBtn.className = 'btn btn-sm btn-secondary mb-2';
-  addIngBtn.textContent = '➕ Add Ingredient';
-  addIngBtn.onclick = (e) => {
-    e.preventDefault();
-    addIngredientEditRow(ingredientsDiv);
-  };
-
-  // Instructions
-  const instructionsInput = document.createElement('textarea');
-  instructionsInput.className = 'form-control mb-2';
-  instructionsInput.rows = 4;
-  instructionsInput.value = recipe.instructions;
-
-  // Save / Cancel Buttons
   const saveBtn = document.createElement('button');
-  saveBtn.className = 'btn btn-success me-2';
-  saveBtn.textContent = '💾 Save';
-  saveBtn.onclick = () => saveInlineEdit(recipeId, nameInput, tagsInput, ingredientsDiv, instructionsInput);
+  saveBtn.className = 'btn btn-success btn-sm';
+  saveBtn.textContent = '💾';
 
   const cancelBtn = document.createElement('button');
-  cancelBtn.className = 'btn btn-outline-secondary';
-  cancelBtn.textContent = '❌ Cancel';
-  cancelBtn.onclick = () => showRecipeFilter(); // reload original cards
+  cancelBtn.className = 'btn btn-outline-secondary btn-sm';
+  cancelBtn.textContent = '❌';
 
-  // Assemble
-  form.appendChild(nameInput);
-  form.appendChild(tagsInput);
-  form.appendChild(ingredientsLabel);
-  form.appendChild(ingredientsDiv);
-  form.appendChild(addIngBtn);
-  form.appendChild(instructionsInput);
+  // Inline flex for form
+  const form = document.createElement('div');
+  form.className = 'd-flex align-items-center gap-2';
+  form.appendChild(dateInput);
   form.appendChild(saveBtn);
   form.appendChild(cancelBtn);
 
-  card.appendChild(form);
+  container.appendChild(form);
+
+  saveBtn.onclick = () => {
+    const selectedDate = dateInput.value;
+    if (!selectedDate) {
+      dateInput.classList.add('is-invalid');
+      return;
+    }
+
+    db.collection("planning").add({
+      date: selectedDate,
+      recipeId: recipe.id,
+      recipeName: recipe.name
+    }).then(() => {
+      console.log("✅ Meal planned:", recipe.name, "on", selectedDate);
+      container.innerHTML = '<span class="text-success fw-bold">✅ Planned!</span>';
+      setTimeout(() => {
+        container.innerHTML = '';
+        const planBtn = document.createElement('button');
+        planBtn.className = 'btn btn-primary btn-sm';
+        planBtn.textContent = '➕ Plan Meal';
+        planBtn.onclick = () => openPlanMealForm(recipe, container);
+        container.appendChild(planBtn);
+      }, 2000);
+    }).catch(err => {
+      console.error("❌ Failed to plan meal:", err);
+      container.innerHTML = '<span class="text-danger fw-bold">❌ Failed</span>';
+      setTimeout(() => {
+        container.innerHTML = '';
+        const planBtn = document.createElement('button');
+        planBtn.className = 'btn btn-primary btn-sm';
+        planBtn.textContent = '➕ Plan Meal';
+        planBtn.onclick = () => openPlanMealForm(recipe, container);
+        container.appendChild(planBtn);
+      }, 2000);
+    });
+  };
+
+  cancelBtn.onclick = () => {
+    container.innerHTML = '';
+    const planBtn = document.createElement('button');
+    planBtn.className = 'btn btn-primary btn-sm';
+    planBtn.textContent = '➕ Plan Meal';
+    planBtn.onclick = () => openPlanMealForm(recipe, container);
+    container.appendChild(planBtn);
+  };
 }
+
+
+
+function highlightStars(container, rating) {
+  const stars = container.querySelectorAll('i');
+  stars.forEach((star, idx) => {
+    star.className = idx < rating ? 'bi bi-star-fill text-warning' : 'bi bi-star text-warning';
+  });
+}
+
+function resetStars(container, rating) {
+  const stars = container.querySelectorAll('i');
+  stars.forEach((star, idx) => {
+    star.className = idx < rating ? 'bi bi-star-fill text-warning' : 'bi bi-star text-warning';
+  });
+}
+
+function updateRecipeRating(id, rating) {
+  db.collection('recipes').doc(id).update({ rating })
+    .then(() => {
+      console.log(`✅ Rating updated to ${rating} stars`);
+      loadRecipesFromFirestore(); // Refresh view
+    })
+    .catch(err => {
+      console.error("❌ Error updating rating:", err);
+    });
+}
+
+
+async function openInlineEditor(id, card) {
+  try {
+    const doc = await db.collection('recipes').doc(id).get();
+    if (!doc.exists) {
+      alert("Recipe not found.");
+      return;
+    }
+
+    const data = doc.data();
+    const ingredients = data.ingredients || [];
+    let editingTags = [...(data.tags || [])];
+
+    card.innerHTML = '';
+
+    const body = document.createElement('div');
+    body.className = 'card-body';
+
+    // Recipe name input
+    const nameInput = document.createElement('input');
+    nameInput.className = 'form-control mb-2';
+    nameInput.value = data.name || '';
+    body.appendChild(nameInput);
+
+    // Ingredients Grid
+    const ingredientsGrid = document.createElement('div');
+    ingredientsGrid.className = 'mb-2';
+    ingredientsGrid.innerHTML = `
+      <table class="table table-sm table-bordered mb-2">
+        <thead>
+          <tr><th>Ingredient</th><th>Qty</th><th>Unit</th></tr>
+        </thead>
+        <tbody id="editIngredientsTable-${id}"></tbody>
+      </table>
+    `;
+    body.appendChild(ingredientsGrid);
+
+    // Add Ingredient Button
+    const addBtn = document.createElement('button');
+    addBtn.className = 'btn btn-outline-secondary btn-sm mb-3';
+    addBtn.textContent = '➕ Add Ingredient';
+    addBtn.onclick = () => addIngredientRow(id);
+    body.appendChild(addBtn);
+
+    // Instructions input
+    const instructionsInput = document.createElement('textarea');
+    instructionsInput.className = 'form-control mb-2';
+    instructionsInput.rows = 4;
+    instructionsInput.value = data.instructions || '';
+    body.appendChild(instructionsInput);
+
+    // Tags section
+    const tagsWrapper = document.createElement('div');
+    tagsWrapper.className = 'mb-2';
+    tagsWrapper.innerHTML = `
+      <div id="inlineTagsContainer-${id}" class="form-control position-relative d-flex flex-wrap align-items-center gap-2 p-2" style="min-height: 45px;">
+        <span id="inlineTagsPlaceholder-${id}" class="text-muted" style="position: absolute; left: 10px; top: 8px; pointer-events: none;">🏷️ Add tags...</span>
+      </div>
+      <input type="text" id="inlineTagInput-${id}" class="form-control mt-2" placeholder="Type a tag and press Enter" />
+    `;
+    body.appendChild(tagsWrapper);
+
+    // Save/Cancel buttons
+    const btnRow = document.createElement('div');
+    btnRow.className = 'd-flex gap-2 mt-3';
+    btnRow.innerHTML = `
+      <button class="btn btn-primary btn-sm">Save</button>
+      <button class="btn btn-outline-secondary btn-sm">Cancel</button>
+    `;
+    body.appendChild(btnRow);
+
+    card.appendChild(body);
+
+    // --- 🛠 Fill Ingredients ---
+    const tbody = document.getElementById(`editIngredientsTable-${id}`);
+    ingredients.forEach(i => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><input class="form-control form-control-sm" value="${i.name || ''}"></td>
+        <td><input class="form-control form-control-sm" value="${i.quantity || ''}"></td>
+        <td><input class="form-control form-control-sm" value="${i.unit || ''}"></td>
+      `;
+      tbody.appendChild(row);
+    });
+    addIngredientRow(id); // Always have a blank row
+
+    // --- 🛠 Handle Tags ---
+    const tagInput = document.getElementById(`inlineTagInput-${id}`);
+    const tagsContainer = document.getElementById(`inlineTagsContainer-${id}`);
+    const placeholder = document.getElementById(`inlineTagsPlaceholder-${id}`);
+
+    tagInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        const value = tagInput.value.trim().toLowerCase();
+        if (value && !editingTags.includes(value)) {
+          editingTags.push(value);
+          renderInlineTags();
+        }
+        tagInput.value = '';
+      }
+    });
+
+    function renderInlineTags() {
+      tagsContainer.innerHTML = '';
+
+      if (editingTags.length === 0) {
+        placeholder.style.display = 'block';
+      } else {
+        placeholder.style.display = 'none';
+      }
+
+      editingTags.forEach(tag => {
+        const tagBadge = document.createElement('span');
+        tagBadge.className = 'badge bg-primary text-white me-1';
+        tagBadge.textContent = tag;
+        tagBadge.onclick = () => {
+          editingTags = editingTags.filter(t => t !== tag);
+          renderInlineTags();
+        };
+        tagsContainer.appendChild(tagBadge);
+      });
+    }
+
+    renderInlineTags(); // First render
+
+    // --- 🛠 Save Button ---
+    btnRow.querySelector('.btn-primary').onclick = async () => {
+      const updatedName = nameInput.value.trim();
+      const updatedInstructions = instructionsInput.value.trim();
+      const updatedIngredients = [];
+
+      const rows = document.querySelectorAll(`#editIngredientsTable-${id} tr`);
+      rows.forEach(row => {
+        const cells = row.querySelectorAll('input');
+        const name = cells[0].value.trim();
+        const quantity = cells[1].value.trim();
+        const unit = cells[2].value.trim();
+        if (name) {
+          updatedIngredients.push({ name, quantity, unit });
+        }
+      });
+
+      try {
+        await db.collection('recipes').doc(id).update({
+          name: updatedName,
+          ingredients: updatedIngredients,
+          instructions: updatedInstructions,
+          tags: editingTags,
+        });
+        console.log("✅ Recipe updated:", updatedName);
+        loadRecipesFromFirestore(); // Refresh view
+      } catch (err) {
+        console.error("Error updating recipe:", err);
+        alert("Failed to save changes.");
+      }
+    };
+
+    // --- 🛠 Cancel Button ---
+    btnRow.querySelector('.btn-outline-secondary').onclick = () => {
+      loadRecipesFromFirestore(); // Just reload
+    };
+
+    // --- 🛠 Helper: Add Ingredient Row ---
+    function addIngredientRow(editId) {
+      const tbody = document.getElementById(`editIngredientsTable-${editId}`);
+      const newRow = document.createElement('tr');
+      newRow.innerHTML = `
+        <td><input class="form-control form-control-sm" placeholder="Ingredient"></td>
+        <td><input class="form-control form-control-sm" placeholder="Qty"></td>
+        <td><input class="form-control form-control-sm" placeholder="Unit"></td>
+      `;
+      tbody.appendChild(newRow);
+    }
+
+  } catch (err) {
+    console.error("Error opening inline editor:", err);
+  }
+}
+
+
 
 function addIngredientEditRow(container, name = '', qty = '', unit = '') {
   const row = document.createElement('div');
@@ -859,7 +1252,7 @@ function addIngredientEditRow(container, name = '', qty = '', unit = '') {
   container.appendChild(row);
 }
 
-function saveInlineEdit(recipeId, nameInput, tagsInput, ingredientsDiv, instructionsInput) {
+async function saveInlineEdit(recipeId, nameInput, tagsInput, ingredientsDiv, instructionsInput) {
   const name = nameInput.value.trim();
   const tags = tagsInput.value.trim() ? tagsInput.value.trim().split(',').map(t => t.trim().toLowerCase()) : [];
   const instructions = instructionsInput.value.trim();
@@ -876,16 +1269,25 @@ function saveInlineEdit(recipeId, nameInput, tagsInput, ingredientsDiv, instruct
     }
   });
 
-  db.collection('recipes').doc(recipeId).update({
-    name,
-    tags,
-    ingredients,
-    instructions
-  }).then(() => {
+  try {
+    await db.collection('recipes').doc(recipeId).update({
+      name,
+      tags,
+      ingredients,
+      instructions
+    });
+
     console.log("✅ Recipe updated!");
-    loadRecipes().then(() => showRecipeFilter());
-  });  
+
+    await loadRecipesFromFirestore(); // <-- Make sure THIS returns a Promise!
+
+    showRecipeFilter(); // <-- Now re-renders fresh recipes
+  } catch (err) {
+    console.error("❌ Error saving recipe:", err);
+    alert('Failed to save recipe.');
+  }
 }
+
 
 
 function deleteRecipe(id) {
@@ -1108,7 +1510,11 @@ function showPlanning() {
 
     <hr />
 
-    <h6>📋 Planned Meals</h6>
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h6 class="mb-0">📋 Planned Meals</h6>
+      <button class="btn btn-danger btn-sm" onclick="clearAllPlanning(this)">🧹 Clear All</button>
+    </div>
+
     <div id="plannedMealsList"></div>
 
     <hr />
@@ -1120,6 +1526,7 @@ function showPlanning() {
   populateRecipeDropdown();
   loadPlannedMeals();
 }
+
 
 function populateRecipeDropdown() {
   const select = document.getElementById('planRecipe');
@@ -1136,45 +1543,66 @@ function addPlannedMeal() {
   const date = document.getElementById('planDate').value;
   const recipeId = document.getElementById('planRecipe').value;
 
-  if (!date || !recipeId) return alert("Please select both date and recipe.");
+  if (!date || !recipeId) {
+    alert("Please select a date and a recipe!");
+    return;
+  }
+
+  // ✅ Find the recipe object
+  const recipe = recipes.find(r => r.id === recipeId);
+
+  if (!recipe) {
+    alert("Recipe not found!");
+    return;
+  }
 
   db.collection("planning").add({
     date,
     recipeId,
-    timestamp: new Date().toISOString()
+    recipeName: recipe.name // ✅ Save recipe name along with ID
   }).then(() => {
+    console.log("✅ Meal added to planning:", recipe.name);
     loadPlannedMeals();
+  }).catch(err => {
+    console.error("❌ Error adding to planning:", err);
   });
 }
 
+
 function loadPlannedMeals() {
-  const container = document.getElementById('plannedMealsList');
-  container.innerHTML = 'Loading...';
+  const list = document.getElementById('plannedMealsList');
+  list.innerHTML = 'Loading...';
 
-  db.collection("planning")
-    .orderBy("date")
-    .get()
-    .then(snapshot => {
-      if (snapshot.empty) {
-        container.innerHTML = '<p class="text-muted">No meals planned yet.</p>';
-        return;
-      }
+  db.collection("planning").orderBy("date").get().then(snapshot => {
+    if (snapshot.empty) {
+      list.innerHTML = '<p class="text-muted">No planned meals yet.</p>';
+      return;
+    }
 
-      let html = '<ul class="list-group">';
-      snapshot.forEach(doc => {
-        const { date, recipeId } = doc.data();
-        const recipe = recipes.find(r => r.id === recipeId);
-        if (!recipe) return;
+    list.innerHTML = '';
 
-        html += `<li class="list-group-item d-flex justify-content-between align-items-center">
-          <span>${date} — ${recipe.name}</span>
-        </li>`;
-      });
-      html += '</ul>';
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const row = document.createElement('div');
+      row.className = 'd-flex justify-content-between align-items-center border-bottom py-2';
 
-      container.innerHTML = html;
+      const info = document.createElement('div');
+      info.innerHTML = `<strong>${data.date}:</strong> ${data.recipeName}`;
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'btn btn-outline-danger btn-sm';
+      deleteBtn.innerHTML = '🗑️';
+      deleteBtn.onclick = () => deletePlannedMeal(doc.id, deleteBtn);
+
+      row.appendChild(info);
+      row.appendChild(deleteBtn);
+      list.appendChild(row);
     });
+  }).catch(err => {
+    console.error("Error loading planning:", err);
+  });
 }
+
 
 function generateShoppingList() {
   const output = document.getElementById('shoppingListResults');
@@ -1230,8 +1658,49 @@ function generateShoppingList() {
   });
 }
 
+function deletePlannedMeal(planId, button) {
+  if (button.parentElement.querySelector('.confirm-delete')) return;
 
-  
+  button.style.display = 'none';
+
+  const confirmArea = document.createElement('div');
+  confirmArea.className = 'confirm-delete d-flex gap-2 align-items-center';
+
+  const confirmText = document.createElement('span');
+  confirmText.textContent = 'Confirm?';
+
+  const yesBtn = document.createElement('button');
+  yesBtn.className = 'btn btn-sm btn-danger';
+  yesBtn.textContent = 'Yes';
+  yesBtn.onclick = () => {
+    db.collection("planning").doc(planId).delete()
+      .then(() => {
+        console.log("✅ Meal removed from plan:", planId);
+        loadPlannedMeals(); // Refresh list
+      })
+      .catch(err => {
+        console.error("❌ Error removing planned meal:", err);
+        // 🛠 Restore the delete button if error
+        confirmArea.remove();
+        button.style.display = '';
+      });
+  };
+
+  const noBtn = document.createElement('button');
+  noBtn.className = 'btn btn-sm btn-outline-secondary';
+  noBtn.textContent = 'No';
+  noBtn.onclick = () => {
+    confirmArea.remove();
+    button.style.display = ''; // 🛠 Restore delete button
+  };
+
+  confirmArea.appendChild(confirmText);
+  confirmArea.appendChild(yesBtn);
+  confirmArea.appendChild(noBtn);
+
+  button.parentElement.appendChild(confirmArea);
+}
+
 window.onload = () => {
   loadRecipesFromFirestore();
 };
