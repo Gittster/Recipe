@@ -31,3 +31,4 @@ Cool concepts or requests not scheduled yet.
 
 ## ❌ Rejected / Won’t Do (for now)
 Stuff that’s out of scope or not a good fit.
+

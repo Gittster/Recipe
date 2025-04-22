@@ -1,6 +1,7 @@
 let recipes = [];
 let madeModalRecipe = '';
 let currentTags = [];
+let currentUser = null; // Global user tracker
 
 function renderTags() {
   const tagsContainer = document.getElementById('tagsContainer');
@@ -346,9 +347,10 @@ function markAsMade(recipeName, buttonElement) {
     const notes = textarea.value.trim();
 
     db.collection("history").add({
-      recipe: recipeName,
+      recipe: madeModalRecipe,
       timestamp: new Date().toISOString(),
-      notes: notes || ''
+      notes: notes || '',
+      uid: currentUser.uid // 🔥 VERY IMPORTANT
     }).then(() => {
       console.log("✅ History entry added!");
       form.innerHTML = '<div class="text-success fw-bold">✅ Marked as made!</div>';
@@ -550,10 +552,6 @@ function saveRecipe() {
     }
   });
 
-  // 🛑 INLINE Validation Feedback
-  const errorContainer = document.getElementById('recipeErrorMessage');
-  if (errorContainer) errorContainer.remove(); // Clear previous error if exists
-
   if (!name || ingredients.length === 0) {
     const error = document.createElement('div');
     error.id = 'recipeErrorMessage';
@@ -564,26 +562,34 @@ function saveRecipe() {
     return;
   }
 
+  if (!currentUser) {
+    alert('⚠️ You must be signed in to save a recipe.');
+    return;
+  }
+
   const recipe = {
     name,
-    instructions, // 📋 Even if empty, save it
+    instructions,
     ingredients,
     tags,
-    timestamp: new Date()
+    timestamp: new Date(),
+    uid: currentUser.uid // 🔥 THIS MUST BE INCLUDED
   };
 
+  console.log(recipe); 
   db.collection('recipes').add(recipe)
     .then(docRef => {
       console.log("✅ Recipe added with ID:", docRef.id);
-      toggleRecipeForm(); // Collapse the form
+      toggleRecipeForm(); // Hide form
       showSuccessMessage("✅ Recipe saved successfully!");
-      loadRecipesFromFirestore(); // Refresh list
-      currentTags = []; // Reset tags for next recipe
+      loadRecipesFromFirestore(); // Reload recipes
+      currentTags = []; // Clear tags
     })
     .catch(error => {
-      console.error("❌ Error adding recipe:", error);
+      console.error("❌ Error adding recipe:", error.message || error);
     });
 }
+
 
 function showSuccessMessage(message) {
   const view = document.getElementById('mainView');
@@ -682,7 +688,10 @@ function viewHistory() {
     <div id="historyList">Loading...</div>
   `;
 
-  db.collection("history").orderBy("timestamp", "desc").get().then(snapshot => {
+  db.collection("history")
+  .where('uid', '==', currentUser.uid)
+  .orderBy('timestamp', 'desc')
+  .get().then(snapshot => {
     const history = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     renderHistoryList(history);
   }).catch(err => {
@@ -1350,7 +1359,8 @@ function saveMadeNote() {
   db.collection("history").add({
     recipe: madeModalRecipe,
     timestamp: new Date().toISOString(),
-    notes: notes || ''
+    notes: notes || '',
+    uid: currentUser.uid // 🔥 save the user id
   }).then(() => {
     const modal = bootstrap.Modal.getInstance(document.getElementById('madeModal'));
     modal.hide();
@@ -1362,17 +1372,28 @@ function saveMadeNote() {
 }
 
 function loadRecipesFromFirestore() {
-  db.collection("recipes").get().then(snapshot => {
-    recipes = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-    console.log("Loaded recipes:", recipes); // Debug line
-    showRecipeFilter(); // Renders the recipes
-  }).catch(err => {
-    console.error("Error loading recipes from Firestore:", err);
-  });
+  if (!currentUser) {
+    recipes = [];
+    showRecipeFilter();
+    return;
+  }
+
+  db.collection('recipes')
+    .where('uid', '==', currentUser.uid) // 🔥 Only pull user’s own recipes
+    .get()
+    .then(snapshot => {
+      recipes = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      console.log("Loaded recipes:", recipes);
+      showRecipeFilter();
+    })
+    .catch(err => {
+      console.error("❌ Error loading recipes from Firestore:", err);
+    });
 }
+
 
 
 
@@ -1576,7 +1597,8 @@ function addPlannedMeal() {
   db.collection("planning").add({
     date,
     recipeId,
-    recipeName: recipe.name // ✅ Save recipe name along with ID
+    recipeName: recipe.name,
+    uid: currentUser.uid // 🔥 save the user id
   }).then(() => {
     console.log("✅ Meal added to planning:", recipe.name);
     loadPlannedMeals();
@@ -1590,7 +1612,10 @@ function loadPlannedMeals() {
   const list = document.getElementById('plannedMealsList');
   list.innerHTML = 'Loading...';
 
-  db.collection("planning").orderBy("date").get().then(snapshot => {
+  db.collection("planning")
+  .where('uid', '==', currentUser.uid)
+  .orderBy('date')
+  .get().then(snapshot => {
     if (snapshot.empty) {
       list.innerHTML = '<p class="text-muted">No planned meals yet.</p>';
       return;
@@ -1949,6 +1974,128 @@ function updateClearCheckedButton(ingredients) {
     btn.style.display = hasChecked ? 'block' : 'none';
   }
 }
+
+const auth = firebase.auth();
+
+// Utility to get initials
+function getInitials(name) {
+  if (!name) return '?';
+  const parts = name.trim().split(' ');
+  const first = parts[0]?.charAt(0).toUpperCase() || '';
+  const last = parts.length > 1 ? parts[parts.length - 1].charAt(0).toUpperCase() : '';
+  return first + last;
+}
+
+// Update auth UI
+function updateAuthUI(user) {
+  const authArea = document.getElementById('userAuthArea');
+  authArea.innerHTML = '';
+
+  if (user) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'position-relative';
+  
+    const avatarBtn = document.createElement('button');
+    avatarBtn.className = 'btn btn-outline-dark rounded-circle fw-bold';
+    avatarBtn.style.width = '45px';
+    avatarBtn.style.height = '45px';
+    avatarBtn.style.fontSize = '1rem';
+    avatarBtn.style.padding = '0';
+    avatarBtn.style.display = 'flex';
+    avatarBtn.style.alignItems = 'center';
+    avatarBtn.style.justifyContent = 'center';
+    avatarBtn.title = user.displayName || 'Account';
+    avatarBtn.textContent = getInitials(user.displayName || user.email);
+  
+    const dropdown = document.createElement('div');
+    dropdown.className = 'dropdown-menu p-2 shadow-sm user-dropdown';
+    dropdown.style.position = 'absolute';
+    dropdown.style.top = '50px';
+    dropdown.style.right = '0';
+    dropdown.style.minWidth = '120px';
+    dropdown.style.display = 'none'; // hidden by default
+  
+    const signOutBtn = document.createElement('button');
+    signOutBtn.className = 'dropdown-item text-danger';
+    signOutBtn.textContent = 'Sign Out';
+    signOutBtn.onclick = () => {
+      signOut();
+      dropdown.style.display = 'none';
+    };
+  
+    dropdown.appendChild(signOutBtn);
+  
+    avatarBtn.onclick = (e) => {
+      e.stopPropagation();
+      dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+    };
+  
+    wrapper.appendChild(avatarBtn);
+    wrapper.appendChild(dropdown);
+  
+    authArea.appendChild(wrapper);
+  }
+  
+  else {
+    // Not logged in - show Sign In button
+    const signInBtn = document.createElement('button');
+    signInBtn.className = 'btn btn-outline-dark d-flex align-items-center gap-2';
+    signInBtn.innerHTML = `
+      <i class="bi bi-person"></i> Sign in
+    `;
+    signInBtn.onclick = () => {
+      signInWithGoogle();
+    };
+
+    authArea.appendChild(signInBtn);
+  }
+}
+
+// Google Sign In
+function signInWithGoogle() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  auth.signInWithPopup(provider)
+    .then((result) => {
+      console.log("✅ Signed in:", result.user.displayName);
+      updateAuthUI(result.user);
+    })
+    .catch((error) => {
+      console.error("❌ Sign-in error:", error);
+    });
+}
+
+// Sign Out
+function signOut() {
+  auth.signOut()
+    .then(() => {
+      console.log("✅ Signed out");
+      updateAuthUI(null);
+    })
+    .catch((error) => {
+      console.error("❌ Sign-out error:", error);
+    });
+}
+
+// Watch auth state
+auth.onAuthStateChanged(user => {
+  currentUser = user; // 🔥 Save current user globally
+  updateAuthUI(user);
+  if (user) {
+    loadRecipesFromFirestore(); // Load recipes for THIS user
+  } else {
+    // Optionally show a login screen or clear recipes
+    recipes = [];
+    showRecipeFilter(); // Show empty screen
+  }
+});
+
+// Global click listener to close user dropdown
+document.addEventListener('click', function (event) {
+  const dropdown = document.querySelector('.user-dropdown');
+  if (dropdown && dropdown.style.display === 'block') {
+    dropdown.style.display = 'none';
+  }
+});
 
 
 window.onload = () => {

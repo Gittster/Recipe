@@ -94,3 +94,22 @@
     transition: opacity 0.4s ease;
   }
   
+  .dropdown-menu {
+    background-color: white;
+    border: 1px solid #ddd;
+    border-radius: 0.5rem;
+    font-size: 0.9rem;
+    z-index: 1000;
+  }
+  .dropdown-item {
+    background: none;
+    border: none;
+    width: 100%;
+    text-align: left;
+    padding: 0.5rem;
+    cursor: pointer;
+  }
+  .dropdown-item:hover {
+    background-color: #f8f9fa;
+  }
+  
