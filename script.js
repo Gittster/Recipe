@@ -57,6 +57,54 @@ async function runDoctrOCR(base64Image) {
   return result;
 }
 
+function handleOCRImage(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = async function (e) {
+    const base64Data = e.target.result.split(',')[1]; // Remove data:image prefix
+
+    try {
+      const response = await fetch("https://beamish-baklava-a99968.netlify.app/.netlify/functions/ocr", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ base64: base64Data })
+      });
+
+      const ocrResult = await response.json();
+      console.log("🧠 OCR Result:", ocrResult);
+
+      const parsed = extractRecipeFromDoctr(ocrResult);
+      fillRecipeForm(parsed);
+    } catch (err) {
+      console.error("❌ OCR call failed:", err);
+      alert("OCR failed — check the console for details.");
+    }
+  };
+
+  reader.readAsDataURL(file);
+}
+
+function extractRecipeFromDoctr(response) {
+  const blocks = response?.[0]?.pages?.[0]?.blocks || [];
+
+  const lines = blocks.flatMap(block =>
+    block.lines.map(line =>
+      line.words.map(word => word.value).join(' ')
+    )
+  );
+
+  const fullText = lines.join('\n');
+  console.log("🔎 Extracted Text:", fullText);
+
+  // 👇 Use your existing logic to parse the text into a recipe object
+  return parseOcrToRecipeFields(fullText);
+}
+
 
 function clearAllPlanning(button) {
   if (button.parentElement.querySelector('.confirm-clear')) return;
@@ -155,7 +203,7 @@ function showRecipeFilter() {
           accept="image/*"
           capture="environment"
           class="form-control"
-          onchange="handleRecipePhoto(event)"
+          onchange="handleOCRImage(event)"
         />
       </div>
 
