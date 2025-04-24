@@ -174,52 +174,156 @@ function showRecipeFilter() {
   <div id="recipeForm" class="collapsible-form mb-4">
     <div class="card card-body">
 
-      <input class="form-control mb-2" id="recipeNameInput" placeholder="Recipe name" />
+      <!-- Manual Entry -->
+      <label class="form-label fw-semibold">📛 Recipe Name</label>
+      <input class="form-control mb-3" id="recipeNameInput" placeholder="Recipe name" />
+
 
       <div class="mb-3">
-      <div id="tagsContainer" class="form-control position-relative d-flex flex-wrap align-items-center gap-2 p-2" style="min-height: 45px;">
-        <span id="tagsPlaceholder" class="text-muted" style="position: absolute; left: 10px; top: 8px; pointer-events: none;">🏷️ Add some tags...</span>
-      </div>
-      <input type="text" id="tagInput" class="form-control mt-2" placeholder="Type a tag and press Enter" />
-      </div>
-
-      <div id="ingredientsGrid" class="mb-3">
-        <label class="form-label">🧂 Ingredients</label>
+        <label class="form-label fw-semibold mt-3">🧂 Ingredients</label>
         <div id="ingredientsTable"></div>
       </div>
 
-      <textarea class="form-control mb-2" id="recipeInstructionsInput" rows="4" placeholder="Instructions"></textarea>
+      <label class="form-label fw-semibold mt-3">📝 Instructions</label>
+      <textarea class="form-control mb-3" id="recipeInstructionsInput" rows="4" placeholder="Instructions"></textarea>
 
-      <div class="d-flex gap-2">
+
+      <label class="form-label fw-semibold mt-3">🏷️ Tags</label>
+      <div class="mb-3">
+        <div id="tagsContainer" class="form-control d-flex flex-wrap align-items-center gap-2 p-2 position-relative" style="min-height: 45px; background-color: #f8f9fa; border: 1px dashed #ced4da;">
+          <span id="tagsPlaceholder" class="text-muted position-absolute" style="left: 10px; top: 8px; pointer-events: none;">Add some tags...</span>
+        </div>
+        <div class="d-flex flex-nowrap gap-2 mt-2">
+          <input type="text" id="tagInput" class="form-control" placeholder="Type a tag" style="flex: 1; min-width: 0;" />
+          <button type="button" id="tagAddButton" class="btn btn-outline-dark btn-sm flex-shrink-0" style="min-width: 90px;">Add Tag</button>
+        </div>
+      </div>
+
+
+      <hr class="my-3" style="border-top: 2px solid #ccc;" />
+
+      <div class="d-flex gap-2 mb-4">
         <button class="btn btn-outline-primary" onclick="saveRecipe()">Add Recipe</button>
         <button class="btn btn-outline-dark" onclick="toggleRecipeForm()">Cancel</button>
       </div>
 
-      <div class="mb-3">
-        <label for="recipePhotoInput" class="form-label">📷 Upload or Take a Recipe Photo</label>
-        <input
-          type="file"
-          id="recipePhotoInput"
-          accept="image/*"
-          capture="environment"
-          class="form-control"
-          onchange="handleRecipePhoto(event)"
-        />
+      <!-- ➕ OCR + Paste Cards -->
+      <div class="accordion" id="addRecipeOptionsAccordion">
+
+        <!-- 📸 OCR Section -->
+        <div class="accordion-item">
+          <h2 class="accordion-header" id="headingOCR">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOCR" aria-expanded="false" aria-controls="collapseOCR">
+              📸 Add Recipe by Photo
+            </button>
+          </h2>
+          <div id="collapseOCR" class="accordion-collapse collapse" aria-labelledby="headingOCR" data-bs-parent="#addRecipeOptionsAccordion">
+            <div class="accordion-body">
+              <label for="recipePhotoInput" class="form-label">Upload or Take a Recipe Photo</label>
+              <input
+                type="file"
+                id="recipePhotoInput"
+                accept="image/*"
+                capture="environment"
+                class="form-control mb-3"
+                onchange="handleRecipePhoto(event)"
+              />
+              <div id="photoPreviewContainer" class="mb-3"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ⌨️ Paste Text Section -->
+        <div class="accordion-item">
+          <h2 class="accordion-header" id="headingPaste">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePaste" aria-expanded="false" aria-controls="collapsePaste">
+              ⌨️ Add Recipe by Pasting Text
+            </button>
+          </h2>
+          <div id="collapsePaste" class="accordion-collapse collapse" aria-labelledby="headingPaste" data-bs-parent="#addRecipeOptionsAccordion">
+            <div class="accordion-body">
+              <label for="ocrTextPaste" class="form-label">Paste your recipe name, ingredients, and instructions below the dashed lines.</label>
+              <textarea id="ocrTextPaste" class="form-control mb-2" rows="10">
+📛 RECIPE NAME
+====================
+
+
+🧂 INGREDIENTS
+====================
+
+
+📝 INSTRUCTIONS
+====================
+
+
+</textarea>
+
+              <button class="btn btn-sm btn-outline-primary" onclick="handlePastedRecipeText()">✨ Parse Text to Fill Form</button>
+            </div>
+          </div>
+        </div>
       </div>
+    </div>
+  </div>
 
-      <!-- ✅ This goes here, inside the card -->
-      <div id="photoPreviewContainer" class="mb-3"></div>
-
-    </div> <!-- end card-body -->
-  </div> <!-- end collapsible form -->
 
   <div id="recipeResults"></div>
 `;
 
   displayRecipes(recipes, 'recipeResults');
+
+  // Attach event handler to the Add Tag button
+const tagInput = document.getElementById('tagInput');
+const tagAddButton = document.getElementById('tagAddButton');
+if (tagAddButton) {
+  tagAddButton.onclick = () => {
+    const value = tagInput.value.trim().toLowerCase();
+    if (value && !currentTags.includes(value)) {
+      currentTags.push(value);
+      renderTags();
+    }
+    tagInput.value = '';
+  };
 }
 
-function createIngredientRow(name = '', unit = '', qty = '') {
+}
+
+function handlePastedRecipeText() {
+  const textarea = document.getElementById('ocrTextPaste');
+  if (!textarea) return;
+
+  const text = textarea.value.trim();
+  if (!text) {
+    alert("Please paste a recipe first.");
+    return;
+  }
+
+  const parsed = parseOcrToRecipeFields(text);
+  fillRecipeForm(parsed);
+}
+
+function normalizeFractions(text) {
+  return text
+    .replace(/½/g, '1/2')
+    .replace(/⅓/g, '1/3')
+    .replace(/⅔/g, '2/3')
+    .replace(/¼/g, '1/4')
+    .replace(/¾/g, '3/4')
+    .replace(/⅕/g, '1/5')
+    .replace(/⅖/g, '2/5')
+    .replace(/⅗/g, '3/5')
+    .replace(/⅘/g, '4/5')
+    .replace(/⅙/g, '1/6')
+    .replace(/⅚/g, '5/6')
+    .replace(/⅛/g, '1/8')
+    .replace(/⅜/g, '3/8')
+    .replace(/⅝/g, '5/8')
+    .replace(/⅞/g, '7/8');
+}
+
+
+
+function createIngredientRow(name = '', qty = '', unit = '') {
   const row = document.createElement('div');
   row.className = 'row g-2 align-items-center mb-2';
 
@@ -233,9 +337,9 @@ function createIngredientRow(name = '', unit = '', qty = '') {
   nameCol.appendChild(nameInput);
 
   const qtyCol = document.createElement('div');
-  qtyCol.className = 'col-3';
+  qtyCol.className = 'col-2 position-relative d-flex align-items-center';
   const qtyInput = document.createElement('input');
-  qtyInput.type = 'number';
+  qtyInput.type = 'text';
   qtyInput.placeholder = 'Qty';
   qtyInput.className = 'form-control';
   qtyInput.value = qty;
@@ -250,9 +354,26 @@ function createIngredientRow(name = '', unit = '', qty = '') {
   unitInput.value = unit;
   unitCol.appendChild(unitInput);
 
+  // ✅ Delete column (1 col wide)
+  const deleteCol = document.createElement('div');
+  deleteCol.className = 'col-1 d-flex justify-content-center align-items-center';
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'btn btn-sm btn-outline-danger';
+  deleteBtn.innerHTML = '🗑️';
+  deleteBtn.title = 'Remove this ingredient';
+
+  deleteBtn.onclick = () => {
+    row.remove();
+  };
+
+  deleteCol.appendChild(deleteBtn);
+
+  // Assemble row
   row.appendChild(nameCol);
   row.appendChild(qtyCol);
   row.appendChild(unitCol);
+  row.appendChild(deleteCol);
 
   document.getElementById('ingredientsTable').appendChild(row);
 
@@ -265,6 +386,7 @@ function createIngredientRow(name = '', unit = '', qty = '') {
     });
   });
 }
+
 
 function filterRecipesByTag() {
   const search = document.getElementById('tagSearch').value.trim().toLowerCase();
@@ -520,7 +642,7 @@ function fillRecipeForm(recipe) {
   if (ingredientsTable) {
     ingredientsTable.innerHTML = '';
     recipe.ingredients.forEach(i => {
-      createIngredientRow(i.name, i.unit, i.quantity);
+      createIngredientRow(i.name, i.quantity, i.unit);
     });
     createIngredientRow(); // Add blank row at end
   }
@@ -619,6 +741,9 @@ function preprocessImage(img) {
 
 
 function parseOcrToRecipeFields(ocrText) {
+  // 🧼 Normalize Unicode fractions
+  ocrText = normalizeFractions(ocrText);
+
   const lines = ocrText.split('\n').map(l => l.trim()).filter(l => l);
 
   const recipe = {
@@ -627,13 +752,30 @@ function parseOcrToRecipeFields(ocrText) {
     instructions: ''
   };
 
+  // ... rest unchanged ...
+
+
   let inIngredients = false;
   let inInstructions = false;
   const instructionLines = [];
 
+  const knownUnits = new Set([
+    'teaspoon', 'teaspoons', 'tsp',
+    'tablespoon', 'tablespoons', 'tbsp',
+    'cup', 'cups',
+    'oz', 'ounce', 'ounces',
+    'lb', 'pound', 'pounds',
+    'clove', 'cloves',
+    'stick', 'sticks',
+    'gram', 'grams', 'g',
+    'kg', 'ml', 'l',
+    'pinch', 'dash', 'can', 'cans', 'package', 'packages',
+    'slice', 'slices', 'bunch', 'bunches'
+  ]);
+  
+
   lines.forEach(line => {
     const lower = line.toLowerCase();
-
     // ✅ Skip decorative divider lines like ============
     if (/^=+$/.test(line)) return;
 
@@ -665,20 +807,36 @@ function parseOcrToRecipeFields(ocrText) {
     }
 
     if (inIngredients) {
-      const match = line.match(/^([\d\/.\s]+)?\s*([a-zA-Z]+)?\s*(.+)$/);
+      const match = line.match(/^(\d+\s\d\/\d|\d+\/\d|\d+(?:\.\d+)?)?\s*([a-zA-Z]+)?\s+(.+)$/);
       if (match) {
         const qty = (match[1] || '').trim();
-        const unit = (match[2] || '').trim();
-        const name = (match[3] || '').trim();
+        let unit = (match[2] || '').trim().toLowerCase();
+        let name = (match[3] || '').trim();
+    
+        // ✅ If the "unit" isn't a known unit, treat it as part of the name
+        if (!knownUnits.has(unit)) {
+          name = `${unit} ${name}`.trim(); // prepend unit into name
+          unit = qty ? 'whole' : ''; // fallback unit
+        }
+
+         // ✅ Log the result for debug
+          console.log('🔍 Parsed Ingredient Line:', {
+            original: line,
+            quantity: qty,
+            unit: unit,
+            name: name
+          });
+    
         if (name) {
           recipe.ingredients.push({
             name,
             quantity: qty || '',
-            unit: unit || ''
+            unit
           });
         }
       }
     }
+     
 
     if (inInstructions) {
       instructionLines.push(line);
@@ -708,9 +866,14 @@ function saveRecipe() {
     const qty = inputs[1]?.value.trim();
     const unit = inputs[2]?.value.trim();
 
-    if (name && qty && unit) {
-      ingredients.push({ name, quantity: qty, unit });
+    if (name) { // ✅ Only require name
+      ingredients.push({
+        name,
+        quantity: qty || '',
+        unit: unit || ''
+      });
     }
+    
   });
 
   if (!name || ingredients.length === 0) {
@@ -977,7 +1140,7 @@ function displayRecipes(list, containerId = 'recipeResults', options = {}) {
 
     const editBtn = document.createElement('button');
     editBtn.className = 'btn btn-outline-primary btn-sm';
-    editBtn.innerHTML = '✏️ Edit';
+    editBtn.innerHTML = '✏️';
     editBtn.onclick = () => openInlineEditor(r.id, card);
 
     const deleteBtn = document.createElement('button');
@@ -1234,55 +1397,86 @@ async function openInlineEditor(id, card) {
     let editingTags = [...(data.tags || [])];
 
     card.innerHTML = '';
-
     const body = document.createElement('div');
     body.className = 'card-body';
 
-    // Recipe name input
+    // 📛 Recipe Name
+    const nameLabel = document.createElement('label');
+    nameLabel.className = 'form-label fw-semibold';
+    nameLabel.textContent = '📛 Recipe Name';
+    body.appendChild(nameLabel);
+
     const nameInput = document.createElement('input');
-    nameInput.className = 'form-control mb-2';
+    nameInput.className = 'form-control mb-3';
     nameInput.value = data.name || '';
     body.appendChild(nameInput);
 
-    // Ingredients Grid
+    // 🧂 Ingredients
+    const ingLabel = document.createElement('label');
+    ingLabel.className = 'form-label fw-semibold';
+    ingLabel.textContent = '🧂 Ingredients';
+    body.appendChild(ingLabel);
+
     const ingredientsGrid = document.createElement('div');
     ingredientsGrid.className = 'mb-2';
     ingredientsGrid.innerHTML = `
       <table class="table table-sm table-bordered mb-2">
         <thead>
-          <tr><th>Ingredient</th><th>Qty</th><th>Unit</th></tr>
+          <tr><th>Ingredient</th><th>Qty</th><th>Unit</th><th></th></tr>
         </thead>
         <tbody id="editIngredientsTable-${id}"></tbody>
       </table>
     `;
     body.appendChild(ingredientsGrid);
 
-    // Add Ingredient Button
     const addBtn = document.createElement('button');
     addBtn.className = 'btn btn-outline-primary btn-sm mb-3';
     addBtn.textContent = 'Add Ingredient';
     addBtn.onclick = () => addIngredientRow(id);
     body.appendChild(addBtn);
 
-    // Instructions input
-    const instructionsInput = document.createElement('textarea');
-    instructionsInput.className = 'form-control mb-2';
-    instructionsInput.rows = 4;
-    instructionsInput.value = data.instructions || '';
-    body.appendChild(instructionsInput);
+const breakLine = document.createElement('div');
+breakLine.className = 'w-100';
+body.appendChild(breakLine);
 
-    // Tags section
+const instrLabel = document.createElement('label');
+instrLabel.className = 'form-label fw-semibold mt-3';
+instrLabel.textContent = '📝 Instructions';
+body.appendChild(instrLabel);
+
+const instructionsInput = document.createElement('textarea');
+instructionsInput.className = 'form-control mb-3';
+instructionsInput.rows = 4;
+instructionsInput.value = data.instructions || '';
+body.appendChild(instructionsInput);
+
+
+    // 🏷️ Tags
+    const tagsLabel = document.createElement('label');
+    tagsLabel.className = 'form-label fw-semibold';
+    tagsLabel.textContent = '🏷️ Tags';
+    body.appendChild(tagsLabel);
+
     const tagsWrapper = document.createElement('div');
-    tagsWrapper.className = 'mb-2';
+    tagsWrapper.className = 'mb-3';
     tagsWrapper.innerHTML = `
-      <div id="inlineTagsContainer-${id}" class="form-control position-relative d-flex flex-wrap align-items-center gap-2 p-2" style="min-height: 45px;">
-        <span id="inlineTagsPlaceholder-${id}" class="text-muted" style="position: absolute; left: 10px; top: 8px; pointer-events: none;">🏷️ Add tags...</span>
+      <div id="inlineTagsContainer-${id}" class="form-control d-flex flex-wrap align-items-center gap-2 p-2 position-relative" style="min-height: 45px; background-color: #f8f9fa; border: 1px dashed #ced4da;">
+        <span id="inlineTagsPlaceholder-${id}" class="text-muted position-absolute" style="left: 10px; top: 8px; pointer-events: none;">Add some tags...</span>
       </div>
-      <input type="text" id="inlineTagInput-${id}" class="form-control mt-2" placeholder="Type a tag and press Enter" />
+      <div class="d-flex flex-nowrap mt-2 gap-2">
+        <input type="text" id="inlineTagInput-${id}" class="form-control" placeholder="Type a tag" />
+        <button type="button" id="inlineAddTagBtn-${id}" class="btn btn-outline-dark btn-sm w-25">Add Tag</button>
+      </div>
     `;
     body.appendChild(tagsWrapper);
 
-    // Save/Cancel buttons
+    const tagDivider = document.createElement('hr');
+    tagDivider.className = 'my-3'; // adds vertical spacing (mt-3 + mb-3)
+    tagDivider.style.borderTop = '2px solid #ccc'; // soft gray line
+    body.appendChild(tagDivider);
+
+
+    // Save / Cancel buttons
     const btnRow = document.createElement('div');
     btnRow.className = 'd-flex gap-2 mt-3';
     btnRow.innerHTML = `
@@ -1293,20 +1487,25 @@ async function openInlineEditor(id, card) {
 
     card.appendChild(body);
 
-    // --- 🛠 Fill Ingredients ---
+    // Populate ingredient table
     const tbody = document.getElementById(`editIngredientsTable-${id}`);
     ingredients.forEach(i => {
       const row = document.createElement('tr');
       row.innerHTML = `
-        <td><input class="form-control form-control-sm" value="${i.name || ''}"></td>
-        <td><input class="form-control form-control-sm" value="${i.quantity || ''}"></td>
-        <td><input class="form-control form-control-sm" value="${i.unit || ''}"></td>
+        <td><input class="form-control form-control-sm" value="${i.name || ''}" placeholder="Ingredient"></td>
+        <td><input class="form-control form-control-sm" value="${i.quantity || ''}" placeholder="Qty"></td>
+        <td><input class="form-control form-control-sm" value="${i.unit || ''}" placeholder="Unit"></td>
+        <td class="text-center">
+          <button class="btn btn-sm btn-outline-danger" title="Delete ingredient">🗑️</button>
+        </td>
       `;
+      row.querySelector('button').onclick = () => row.remove();
       tbody.appendChild(row);
     });
-    addIngredientRow(id); // Always have a blank row
 
-    // --- 🛠 Handle Tags ---
+    addIngredientRow(id); // always have a blank row
+
+    // Tags logic
     const tagInput = document.getElementById(`inlineTagInput-${id}`);
     const tagsContainer = document.getElementById(`inlineTagsContainer-${id}`);
     const placeholder = document.getElementById(`inlineTagsPlaceholder-${id}`);
@@ -1322,6 +1521,17 @@ async function openInlineEditor(id, card) {
         tagInput.value = '';
       }
     });
+
+    const tagAddButton = document.getElementById('tagAddButton');
+    tagAddButton.onclick = () => {
+      const value = tagInput.value.trim().toLowerCase();
+      if (value && !currentTags.includes(value)) {
+        currentTags.push(value);
+        renderTags();
+      }
+      tagInput.value = '';
+    };
+
 
     function renderInlineTags() {
       tagsContainer.innerHTML = '';
@@ -1344,9 +1554,9 @@ async function openInlineEditor(id, card) {
       });
     }
 
-    renderInlineTags(); // First render
+    renderInlineTags();
 
-    // --- 🛠 Save Button ---
+    // Save button
     btnRow.querySelector('.btn-outline-primary').onclick = async () => {
       const updatedName = nameInput.value.trim();
       const updatedInstructions = instructionsInput.value.trim();
@@ -1371,19 +1581,19 @@ async function openInlineEditor(id, card) {
           tags: editingTags,
         });
         console.log("✅ Recipe updated:", updatedName);
-        loadRecipesFromFirestore(); // Refresh view
+        loadRecipesFromFirestore(); // refresh view
       } catch (err) {
         console.error("Error updating recipe:", err);
         alert("Failed to save changes.");
       }
     };
 
-    // --- 🛠 Cancel Button ---
+    // Cancel button
     btnRow.querySelector('.btn-outline-dark').onclick = () => {
-      loadRecipesFromFirestore(); // Just reload and exit editor
+      loadRecipesFromFirestore(); // reload and exit
     };
 
-    // --- 🛠 Helper: Add Ingredient Row ---
+    // Add blank ingredient row
     function addIngredientRow(editId) {
       const tbody = document.getElementById(`editIngredientsTable-${editId}`);
       const newRow = document.createElement('tr');
@@ -1391,7 +1601,11 @@ async function openInlineEditor(id, card) {
         <td><input class="form-control form-control-sm" placeholder="Ingredient"></td>
         <td><input class="form-control form-control-sm" placeholder="Qty"></td>
         <td><input class="form-control form-control-sm" placeholder="Unit"></td>
+        <td class="text-center">
+          <button class="btn btn-sm btn-outline-danger" title="Delete ingredient">🗑️</button>
+        </td>
       `;
+      newRow.querySelector('button').onclick = () => newRow.remove();
       tbody.appendChild(newRow);
     }
 
@@ -1399,6 +1613,8 @@ async function openInlineEditor(id, card) {
     console.error("Error opening inline editor:", err);
   }
 }
+
+
 
 
 
@@ -1485,44 +1701,51 @@ function deleteRecipe(id) {
 function confirmDeleteRecipe(id, buttonElement) {
   const container = buttonElement.closest('.delete-area');
 
-  // Prevent duplicate boxes
-  if (container.querySelector('.confirm-delete')) return;
+  if (!container || container.querySelector('.confirm-delete')) return;
 
-  buttonElement.disabled = true; // disable button to prevent spam
+  // Hide the original delete button
+  buttonElement.style.display = 'none';
 
-  const confirmBox = document.createElement('div');
-  confirmBox.className = 'confirm-delete shadow bg-white border rounded d-flex align-items-center gap-2 p-2';
-  confirmBox.style.position = 'absolute';
-  confirmBox.style.top = '50%';
-  confirmBox.style.left = '110%';
-  confirmBox.style.transform = 'translateY(-50%)';
-  confirmBox.style.zIndex = '100';
-  confirmBox.innerHTML = `
-    <div class="border bg-light p-2 rounded d-flex align-items-center gap-2">
-      <span class="text-nowrap">Delete this recipe?</span>
-      <button class="btn btn-sm btn-outline-danger">Confirm</button>
-      <button class="btn btn-sm btn-outline-dark">Cancel</button>
-    </div>
-  `;
+  // Inline confirm bar (mimicking Plan Meal style)
+  const confirmBar = document.createElement('div');
+  confirmBar.className = 'confirm-delete d-inline-flex align-items-center gap-2';
 
-  // Confirm
-  confirmBox.querySelector('.btn-outline-danger').onclick = () => {
-    db.collection("recipes").doc(id).delete().then(() => {
-      loadRecipesFromFirestore();
-    }).catch(err => {
-      console.error("Error deleting recipe:", err);
-      alert("Failed to delete recipe.");
-    });
+  const text = document.createElement('span');
+  text.className = 'text-danger fw-semibold';
+  text.textContent = 'Confirm?';
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.className = 'btn btn-sm btn-outline-success';
+  confirmBtn.innerHTML = '✅';
+  confirmBtn.onclick = () => {
+    db.collection("recipes").doc(id).delete()
+      .then(() => {
+        loadRecipesFromFirestore(); // Refresh
+      })
+      .catch(err => {
+        console.error("❌ Error deleting recipe:", err);
+        alert("Failed to delete recipe.");
+        // Restore on failure
+        confirmBar.remove();
+        buttonElement.style.display = '';
+      });
   };
 
-  // Cancel
-  confirmBox.querySelector('.btn-outline-dark').onclick = () => {
-    confirmBox.remove();
-    buttonElement.disabled = false;
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn btn-sm btn-outline-danger';
+  cancelBtn.innerHTML = '❌';
+  cancelBtn.onclick = () => {
+    confirmBar.remove();
+    buttonElement.style.display = ''; // Restore original icon
   };
 
-  container.appendChild(confirmBox);
+  confirmBar.appendChild(text);
+  confirmBar.appendChild(confirmBtn);
+  confirmBar.appendChild(cancelBtn);
+
+  container.appendChild(confirmBar);
 }
+
 
 
 

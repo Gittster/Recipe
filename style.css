@@ -113,3 +113,18 @@
     background-color: #f8f9fa;
   }
   
+  .confirm-delete {
+    font-size: 0.9rem;
+    white-space: nowrap;
+  }
+  
+  [id^="inlineTagsContainer"] {
+    background-color: #f8f9fa;
+    border: 1px dashed #ced4da;
+  }
+  
+  [id^="inlineTagsPlaceholder"] {
+    opacity: 0.6;
+    font-style: italic;
+  }
+  
