@@ -581,34 +581,42 @@ function preprocessImage(img) {
   const canvas = document.getElementById('preprocessCanvas');
   const ctx = canvas.getContext('2d');
 
-  const scaleFactor = 2; // Upscale for better pixel resolution
+  const scaleFactor = 2;
   const width = img.naturalWidth * scaleFactor;
   const height = img.naturalHeight * scaleFactor;
 
   canvas.width = width;
   canvas.height = height;
 
-  ctx.filter = "grayscale(1) contrast(1.5) brightness(1.2)";
   ctx.drawImage(img, 0, 0, width, height);
-
 
   const imageData = ctx.getImageData(0, 0, width, height);
   const data = imageData.data;
 
+  // Parameters to tweak
+  const brightness = 1.1; // Lighten slightly
+  const contrast = 1.1;   // Gentle boost
+
   for (let i = 0; i < data.length; i += 4) {
     const r = data[i], g = data[i + 1], b = data[i + 2];
-    const avg = (r + g + b) / 3;
 
-    // Increase contrast manually
-    const contrast = avg > 180 ? 255 : 0;
+    // Convert to grayscale
+    let gray = 0.299 * r + 0.587 * g + 0.114 * b;
 
-    data[i] = data[i + 1] = data[i + 2] = contrast;
+    // Apply brightness and contrast adjustment
+    gray = ((gray - 128) * contrast + 128) * brightness;
+
+    // Clamp to 0–255 range
+    gray = Math.max(0, Math.min(255, gray));
+
+    // Apply grayscale to all color channels
+    data[i] = data[i + 1] = data[i + 2] = gray;
   }
 
   ctx.putImageData(imageData, 0, 0);
-
   return canvas.toDataURL();
 }
+
 
 function parseOcrToRecipeFields(ocrText) {
   const lines = ocrText.split('\n').map(l => l.trim()).filter(l => l);
