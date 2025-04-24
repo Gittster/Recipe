@@ -203,7 +203,7 @@ function showRecipeFilter() {
           accept="image/*"
           capture="environment"
           class="form-control"
-          onchange="handleOCRImage(event)"
+          onchange="handleRecipePhoto(event)"
         />
       </div>
 
@@ -356,10 +356,13 @@ function handleRecipePhoto(event) {
         const editorLabel = document.createElement('p');
       editorLabel.textContent = "📝 Editable OCR Text";
 
+      const structuredText = generateStructuredOcrTemplate(text);
       const result = document.createElement('textarea');
-      result.value = text;
-      result.rows = 10;
-      result.className = 'form-control mt-2';
+      result.value = structuredText;
+      result.rows = 12;
+      result.className = 'form-control mt-2 font-monospace';
+      result.style.whiteSpace = 'pre-wrap';
+
 
       // ✅ Add ID so we can reference it
       result.id = 'ocrTextArea';
@@ -394,6 +397,60 @@ function handleRecipePhoto(event) {
 
   reader.readAsDataURL(file);
 }
+
+function generateStructuredOcrTemplate(rawText) {
+  const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+
+  let title = '';
+  const ingredients = [];
+  const instructions = [];
+
+  let inIngredients = false;
+  let inInstructions = false;
+
+  lines.forEach((line, idx) => {
+    const lower = line.toLowerCase();
+
+    if (!title) {
+      title = line;
+      return;
+    }
+
+    if (lower.includes('ingredient')) {
+      inIngredients = true;
+      inInstructions = false;
+      return;
+    }
+
+    if (lower.includes('instruction') || lower.includes('method') || lower.includes('directions')) {
+      inIngredients = false;
+      inInstructions = true;
+      return;
+    }
+
+    if (inIngredients) {
+      ingredients.push(line);
+    } else if (inInstructions) {
+      instructions.push(line);
+    }
+  });
+
+  return [
+    '📛 RECIPE NAME',
+    '====================',
+    title,
+    '',
+    '🧂 INGREDIENTS',
+    '====================',
+    ingredients.join('\n') || '(none found)',
+    '',
+    '📝 INSTRUCTIONS',
+    '====================',
+    instructions.join('\n') || '(none found)'
+  ].join('\n');
+  
+}
+
 
 function markAsMade(recipeName, buttonElement) {
   console.log("✅ Mark as Made clicked for:", recipeName);
@@ -569,20 +626,33 @@ function parseOcrToRecipeFields(ocrText) {
   lines.forEach(line => {
     const lower = line.toLowerCase();
 
-    if (!recipe.title) {
-      recipe.title = line;
-      return;
-    }
+    // ✅ Skip decorative divider lines like ============
+    if (/^=+$/.test(line)) return;
 
-    if (lower.includes('ingredient')) {
+    // ✅ Section switching — keep these to set flags
+    if (lower.includes('ingredient') || lower.includes('🧂')) {
       inIngredients = true;
       inInstructions = false;
       return;
     }
 
-    if (lower.includes('instruction') || lower.includes('method') || lower.includes('directions')) {
+    if (
+      lower.includes('instruction') ||
+      lower.includes('method') ||
+      lower.includes('directions') ||
+      lower.includes('📝')
+    ) {
       inInstructions = true;
       inIngredients = false;
+      return;
+    }
+
+    if (lower.includes('📛')) {
+      return;
+    }
+
+    if (!recipe.title) {
+      recipe.title = line;
       return;
     }
 
@@ -610,6 +680,9 @@ function parseOcrToRecipeFields(ocrText) {
   recipe.instructions = instructionLines.join(' ').trim();
   return recipe;
 }
+
+
+
 
 
 function saveRecipe() {
