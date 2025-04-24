@@ -46,7 +46,10 @@ function clearAllPlanning(button) {
   yesBtn.className = 'btn btn-sm btn-outline-danger';
   yesBtn.textContent = 'Yes';
   yesBtn.onclick = () => {
-    db.collection("planning").get().then(snapshot => {
+    db.collection("planning")
+    .where('uid', '==', currentUser.uid)
+    .get()
+    .then(snapshot => {
       const batch = db.batch();
       snapshot.forEach(doc => batch.delete(doc.ref));
       return batch.commit();
@@ -453,7 +456,9 @@ function preprocessImage(img) {
   canvas.width = width;
   canvas.height = height;
 
+  ctx.filter = "grayscale(1) contrast(1.5) brightness(1.2)";
   ctx.drawImage(img, 0, 0, width, height);
+
 
   const imageData = ctx.getImageData(0, 0, width, height);
   const data = imageData.data;
@@ -989,7 +994,8 @@ function openPlanMealForm(recipe, container) {
     db.collection("planning").add({
       date: selectedDate,
       recipeId: recipe.id,
-      recipeName: recipe.name
+      recipeName: recipe.name,
+      uid: currentUser.uid // ✅ REQUIRED BY SECURITY RULES
     }).then(() => {
       console.log("✅ Meal planned:", recipe.name, "on", selectedDate);
       container.innerHTML = '<span class="text-success fw-bold">✅ Planned!</span>';
@@ -1526,6 +1532,8 @@ function showPlanning() {
 
     <div id="plannedMealsList" class="mb-4"></div>
 
+    <hr />
+
     <h5 class="mb-3">🛒 Shopping List</h5>
 
     <div class="d-flex justify-content-between align-items-center mb-2">
@@ -1561,10 +1569,6 @@ function showPlanning() {
   loadPlannedMeals();
   loadShoppingList();
 }
-
-
-
-
 
 function populateRecipeDropdown() {
   const select = document.getElementById('planRecipe');
@@ -1649,13 +1653,14 @@ function loadPlannedMeals() {
   });
 }
 
-
-
 function generateShoppingList() {
   const output = document.getElementById('shoppingListResults');
   output.innerHTML = 'Generating...';
 
-  db.collection("planning").get().then(snapshot => {
+  db.collection("planning")
+  .where('uid', '==', currentUser.uid)
+  .get()
+  .then(snapshot => {
     if (snapshot.empty) {
       output.innerHTML = '<p class="text-muted">No planned meals found.</p>';
       return;
@@ -1691,13 +1696,14 @@ function generateShoppingList() {
     renderShoppingList(ingredients);
 
     // Save it to Firestore!
-    db.collection("shopping").doc('current').set({ ingredients })
+    db.collection("shopping").doc(currentUser.uid).set({
+      ingredients,
+      uid: currentUser.uid
+      })
       .then(() => console.log("✅ Shopping list saved to cloud"))
       .catch(err => console.error("❌ Failed to save shopping list:", err));
   });
 }
-
-
 
 function deletePlannedMeal(planId, button) {
   if (button.parentElement.querySelector('.confirm-delete')) return;
@@ -1779,7 +1785,10 @@ function renderShoppingList(ingredients) {
     deleteBtn.innerHTML = '🗑️';
     deleteBtn.onclick = () => {
       ingredients.splice(idx, 1); // Remove from local array
-      db.collection("shopping").doc('current').set({ ingredients }) // Save updated
+      db.collection("shopping").doc(currentUser.uid).set({
+        ingredients,
+        uid: currentUser.uid // ✅ Required by your Firestore rules
+      })
         .then(() => {
           renderShoppingList(ingredients); // Re-render
         })
@@ -1806,7 +1815,10 @@ function renderShoppingList(ingredients) {
       }
 
       ingredients[idx].checked = checkbox.checked;
-      db.collection("shopping").doc('current').set({ ingredients });
+      db.collection("shopping").doc(currentUser.uid).set({
+        ingredients,
+        uid: currentUser.uid
+      });
     });
 
     checkbox.addEventListener('change', () => {
@@ -1819,7 +1831,10 @@ function renderShoppingList(ingredients) {
       }
 
       ingredients[idx].checked = checkbox.checked;
-      db.collection("shopping").doc('current').set({ ingredients });
+      db.collection("shopping").doc(currentUser.uid).set({
+        ingredients,
+        uid: currentUser.uid
+      });
     });
   });
 
@@ -1832,21 +1847,38 @@ function renderShoppingList(ingredients) {
 
 
 function loadShoppingList() {
-  db.collection("shopping").doc('current').get().then(doc => {
+  const uid = currentUser.uid;
+  const docRef = db.collection("shopping").doc(uid);
+
+  docRef.get().then(doc => {
     const clearBtn = document.getElementById('clearShoppingListBtn');
 
-    if (doc.exists && doc.data().ingredients && doc.data().ingredients.length > 0) {
-      renderShoppingList(doc.data().ingredients);
-      if (clearBtn) clearBtn.disabled = false;
+    if (doc.exists) {
+      const data = doc.data();
+      if (data.ingredients && data.ingredients.length > 0) {
+        renderShoppingList(data.ingredients);
+        if (clearBtn) clearBtn.disabled = false;
+      } else {
+        document.getElementById('shoppingListResults').innerHTML = '<p class="text-muted">No shopping list generated.</p>';
+        if (clearBtn) clearBtn.disabled = true;
+      }
     } else {
-      document.getElementById('shoppingListResults').innerHTML = '<p class="text-muted">No shopping list generated.</p>';
-      if (clearBtn) clearBtn.disabled = true;
+      // 🆕 Create an empty shopping list document scoped to user
+      docRef.set({
+        ingredients: [],
+        uid: uid
+      }).then(() => {
+        console.log("✅ Initialized empty shopping list for", uid);
+        document.getElementById('shoppingListResults').innerHTML = '<p class="text-muted">No shopping list generated.</p>';
+        if (clearBtn) clearBtn.disabled = true;
+      }).catch(err => {
+        console.error("❌ Failed to initialize shopping list:", err);
+      });
     }
   }).catch(err => {
     console.error("❌ Failed to load shopping list:", err);
   });
 }
-
 
 function clearShoppingList() {
   console.log("🛠️ clearShoppingList() clicked");
@@ -1887,7 +1919,7 @@ function clearShoppingList() {
 
   // Confirm YES
   yesBtn.onclick = () => {
-    db.collection("shopping").doc('current').delete().then(() => {
+    db.collection("shopping").doc(currentUser.uid).delete().then(() => {
       document.getElementById('shoppingListResults').innerHTML = '<p class="text-muted">No shopping list generated.</p>';
       console.log("✅ Shopping list cleared.");
 
@@ -1939,13 +1971,13 @@ function clearCheckedIngredients() {
 
   // Yes clears
   yesBtn.onclick = () => {
-    db.collection("shopping").doc('current').get().then(doc => {
+    db.collection("shopping").doc(currentUser.uid).get().then(doc => {
       if (!doc.exists) return;
 
       const data = doc.data();
       const filtered = data.ingredients.filter(ing => !ing.checked);
 
-      return db.collection("shopping").doc('current').set({ ingredients: filtered })
+      return db.collection("shopping").doc(currentUser.uid).set({ ingredients, uid: currentUser.uid })
         .then(() => {
           renderShoppingList(filtered);
           console.log("✅ Cleared checked items");
