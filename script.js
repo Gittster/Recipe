@@ -985,10 +985,15 @@ function displayRecipes(list, containerId = 'recipeResults', options = {}) {
     deleteBtn.innerHTML = '🗑️';
     deleteBtn.onclick = () => confirmDeleteRecipe(r.id, deleteBtn);
 
+    // ✅ Wrap delete button in .delete-area with relative positioning
+    const deleteArea = document.createElement('div');
+    deleteArea.className = 'delete-area position-relative d-inline-block';
+    deleteArea.appendChild(deleteBtn);
+
     const buttonGroup = document.createElement('div');
     buttonGroup.className = 'd-flex gap-2 align-items-center';
     buttonGroup.appendChild(editBtn);
-    buttonGroup.appendChild(deleteBtn);
+    buttonGroup.appendChild(deleteArea);
 
     titleRow.appendChild(title);
     titleRow.appendChild(buttonGroup);
@@ -1110,6 +1115,7 @@ function displayRecipes(list, containerId = 'recipeResults', options = {}) {
     container.appendChild(card);
   });
 }
+
 
 
 function openPlanMealForm(recipe, container) {
@@ -1485,10 +1491,15 @@ function confirmDeleteRecipe(id, buttonElement) {
   buttonElement.disabled = true; // disable button to prevent spam
 
   const confirmBox = document.createElement('div');
-  confirmBox.className = 'confirm-delete mt-2';
+  confirmBox.className = 'confirm-delete shadow bg-white border rounded d-flex align-items-center gap-2 p-2';
+  confirmBox.style.position = 'absolute';
+  confirmBox.style.top = '50%';
+  confirmBox.style.left = '110%';
+  confirmBox.style.transform = 'translateY(-50%)';
+  confirmBox.style.zIndex = '100';
   confirmBox.innerHTML = `
     <div class="border bg-light p-2 rounded d-flex align-items-center gap-2">
-      <span>Delete this recipe?</span>
+      <span class="text-nowrap">Delete this recipe?</span>
       <button class="btn btn-sm btn-outline-danger">Confirm</button>
       <button class="btn btn-sm btn-outline-dark">Cancel</button>
     </div>
