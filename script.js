@@ -31,6 +31,33 @@ function renderTags() {
   });
 }
 
+async function runDoctrOCR(base64Image) {
+  const hfToken = "hf_XXXXXXXXXXXX"; // ⚠️ Never expose this directly in production
+  const url = "https://api-inference.huggingface.co/models/mindee/doctr-end-to-end";
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${hfToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      inputs: {
+        image: base64Image
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error("API failed: " + error);
+  }
+
+  const result = await response.json();
+  return result;
+}
+
+
 function clearAllPlanning(button) {
   if (button.parentElement.querySelector('.confirm-clear')) return;
 
