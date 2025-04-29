@@ -2767,15 +2767,20 @@ document.addEventListener('click', function (event) {
 
 function showSharedOverlay(recipe) {
   const overlay = document.createElement('div');
-  overlay.className = 'position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-75 d-flex justify-content-center align-items-center';
+  overlay.className = 'position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-75 d-flex justify-content-center align-items-start overflow-auto';
   overlay.style.zIndex = 2000;
+  overlay.style.padding = '2rem';
 
   const card = document.createElement('div');
-  card.className = 'card shadow-lg p-4';
+  card.className = 'card shadow-lg p-4 position-relative';
   card.style.maxWidth = '600px';
   card.style.width = '95%';
+  card.style.margin = 'auto';
 
   card.innerHTML = `
+    <!-- Close button in top-right -->
+    <button type="button" class="btn-close position-absolute top-0 end-0 m-2" aria-label="Close"></button>
+
     <h4 class="mb-3">${recipe.name}</h4>
 
     <div class="mb-2">
@@ -2795,20 +2800,38 @@ function showSharedOverlay(recipe) {
 
     <div class="d-flex justify-content-end gap-2 mt-3">
       <button id="saveSharedBtn" class="btn btn-outline-success">Save to My Recipes</button>
-      <button class="btn btn-outline-light" onclick="this.closest('.position-fixed').remove()">Close</button>
+      <button class="btn btn-outline-dark">Close</button>
     </div>
   `;
 
   overlay.appendChild(card);
   document.body.appendChild(overlay);
 
-  // Save button handler (handles auth status)
+  // Handle close via outside click
+  overlay.addEventListener('click', (e) => {
+    if (!card.contains(e.target)) overlay.remove();
+  });
+
+  // Close via top-right "X" button
+  const closeBtn = card.querySelector('.btn-close');
+  if (closeBtn) closeBtn.onclick = () => overlay.remove();
+
+  // Close via footer button
+  const footerCloseBtn = card.querySelector('.btn-outline-dark');
+  if (footerCloseBtn) footerCloseBtn.onclick = () => overlay.remove();
+
+  // Save button logic
   const saveBtn = document.getElementById('saveSharedBtn');
+
+  // Update button text based on login state
+  if (!currentUser) {
+    saveBtn.textContent = 'Sign up and Save to My Recipes';
+  }
+
   saveBtn.onclick = () => {
     if (!currentUser) {
-      // Save to localStorage and prompt login
       localStorage.setItem('pendingSharedRecipe', JSON.stringify(recipe));
-      signInWithGoogle();
+      showSignInPermissionsPrompt();
       return;
     }
 
@@ -2816,6 +2839,101 @@ function showSharedOverlay(recipe) {
     overlay.remove();
   };
 }
+
+
+function showSignInPrompt() {
+  const overlay = document.createElement('div');
+  overlay.className = 'position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-75 d-flex justify-content-center align-items-center';
+  overlay.style.zIndex = 3000;
+
+  const card = document.createElement('div');
+  card.className = 'card shadow-lg p-4 text-center';
+  card.style.maxWidth = '400px';
+  card.style.width = '90%';
+
+  card.innerHTML = `
+    <h5 class="mb-3">Sign in to save recipes</h5>
+    <p class="text-muted mb-4">
+      Recipes you save are linked to your Google account so you can access them from any device.  
+      We don’t access your email, contacts, or post anything — sign-in is only used to keep your data private and secure.
+    </p>
+    <div class="d-flex flex-column gap-2">
+      <button class="btn btn-primary">Sign in with Google</button>
+      <button class="btn btn-outline-secondary">Cancel</button>
+    </div>
+  `;
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  const [signInBtn, cancelBtn] = card.querySelectorAll('button');
+
+  signInBtn.onclick = () => {
+    overlay.remove();
+    signInWithGoogle();
+  };
+
+  cancelBtn.onclick = () => overlay.remove();
+
+  overlay.addEventListener('click', (e) => {
+    if (!card.contains(e.target)) overlay.remove();
+  });
+}
+
+function showSignInPermissionsPrompt() {
+  const overlay = document.createElement('div');
+  overlay.className = 'position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-75 d-flex justify-content-center align-items-center';
+  overlay.style.zIndex = 3000;
+
+  const card = document.createElement('div');
+  card.className = 'card shadow-lg p-4 text-center';
+  card.style.maxWidth = '450px';
+  card.style.width = '90%';
+  card.style.overflowY = 'auto';
+  card.style.maxHeight = '90vh'; // allows scrolling if needed on small screens
+
+  card.innerHTML = `
+    <h5 class="mb-3">Why we ask you to sign in</h5>
+
+    <p class="text-muted mb-3">
+      To save recipes to your account and access them from any device, we request basic Google account information:
+    </p>
+
+    <ul class="text-start mb-4">
+      <li><strong>Name</strong>: Optional. Used for personalization only.</li>
+      <li><strong>Email address</strong>: Required to link your recipes to your account.</li>
+      <li><strong>Profile picture</strong>: Automatically included by Google but not used by us.</li>
+    </ul>
+
+    <p class="text-muted small mb-4">
+      We <strong>do not</strong> access your contacts, files, or post anything to your account.
+    </p>
+
+    <div class="d-flex flex-column gap-2">
+      <button class="btn btn-primary">Continue to Google Sign-In</button>
+      <button class="btn btn-outline-secondary">Cancel</button>
+    </div>
+  `;
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  const [continueBtn, cancelBtn] = card.querySelectorAll('button');
+
+  continueBtn.onclick = () => {
+    overlay.remove();
+    signInWithGoogle(); // your normal sign-in flow
+  };
+
+  cancelBtn.onclick = () => overlay.remove();
+
+  // Allow clicking outside the card to cancel too
+  overlay.addEventListener('click', (e) => {
+    if (!card.contains(e.target)) overlay.remove();
+  });
+}
+
+
 
 
 function saveSharedRecipe(recipe) {
