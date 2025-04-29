@@ -2737,16 +2737,25 @@ function signOut() {
 
 // Watch auth state
 auth.onAuthStateChanged(user => {
-  currentUser = user; // 🔥 Save current user globally
+  currentUser = user;
   updateAuthUI(user);
+
   if (user) {
-    loadRecipesFromFirestore(); // Load recipes for THIS user
+    loadRecipesFromFirestore();
+
+    const pending = localStorage.getItem('pendingSharedRecipe');
+    if (pending) {
+      const recipe = JSON.parse(pending);
+      localStorage.removeItem('pendingSharedRecipe');
+      saveSharedRecipe(recipe);
+      showSuccessMessage("✅ Shared recipe saved!");
+    }
   } else {
-    // Optionally show a login screen or clear recipes
     recipes = [];
-    showRecipeFilter(); // Show empty screen
+    showRecipeFilter();
   }
 });
+
 
 // Global click listener to close user dropdown
 document.addEventListener('click', function (event) {
@@ -2765,9 +2774,14 @@ function showSharedOverlay(recipe) {
   card.className = 'card shadow-lg p-4';
   card.style.maxWidth = '600px';
   card.style.width = '95%';
+
   card.innerHTML = `
     <h4 class="mb-3">${recipe.name}</h4>
-    <div class="mb-2">${(recipe.tags || []).map(tag => `<span class="badge bg-primary me-1">${tag}</span>`).join('')}</div>
+
+    <div class="mb-2">
+      ${(recipe.tags || []).map(tag => `<span class="badge bg-primary me-1">${tag}</span>`).join('')}
+    </div>
+
     <table class="table table-sm table-bordered">
       <thead><tr><th>Ingredient</th><th>Qty</th><th>Unit</th></tr></thead>
       <tbody>
@@ -2776,16 +2790,33 @@ function showSharedOverlay(recipe) {
         `).join('')}
       </tbody>
     </table>
+
     <p><strong>Instructions:</strong> ${recipe.instructions}</p>
+
     <div class="d-flex justify-content-end gap-2 mt-3">
-      <button class="btn btn-outline-success" onclick="saveSharedRecipe(${JSON.stringify(recipe).replace(/"/g, '&quot;')})">Save to My Recipes</button>
+      <button id="saveSharedBtn" class="btn btn-outline-success">Save to My Recipes</button>
       <button class="btn btn-outline-light" onclick="this.closest('.position-fixed').remove()">Close</button>
     </div>
   `;
 
   overlay.appendChild(card);
   document.body.appendChild(overlay);
+
+  // Save button handler (handles auth status)
+  const saveBtn = document.getElementById('saveSharedBtn');
+  saveBtn.onclick = () => {
+    if (!currentUser) {
+      // Save to localStorage and prompt login
+      localStorage.setItem('pendingSharedRecipe', JSON.stringify(recipe));
+      signInWithGoogle();
+      return;
+    }
+
+    saveSharedRecipe(recipe);
+    overlay.remove();
+  };
 }
+
 
 function saveSharedRecipe(recipe) {
   if (!currentUser) {
