@@ -1448,8 +1448,7 @@ function shareRecipe(recipeId) {
 
   db.collection('sharedRecipes').add(shareableData)
     .then(docRef => {
-      const shareUrl = `${window.location.origin}?sharedId=${docRef.id}`;
-
+      const shareUrl = `${window.location.origin}${window.location.pathname}?sharedId=${docRef.id}`;
       if (navigator.share) {
         navigator.share({
           title: recipe.name,
