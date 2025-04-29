@@ -573,6 +573,20 @@ function generateStructuredOcrTemplate(rawText) {
   
 }
 
+function deleteHistoryEntry(entryId, cardElement) {
+  if (!confirm("Are you sure you want to delete this history entry?")) return;
+
+  db.collection('history').doc(entryId).delete()
+    .then(() => {
+      console.log('✅ History entry deleted:', entryId);
+      cardElement.remove(); // Instantly remove from the view
+    })
+    .catch((err) => {
+      console.error('❌ Failed to delete history entry:', err);
+      alert('Failed to delete history entry.');
+    });
+}
+
 
 function markAsMade(recipeName, buttonElement) {
   console.log("✅ Mark as Made clicked for:", recipeName);
@@ -591,23 +605,55 @@ function markAsMade(recipeName, buttonElement) {
   textarea.rows = 2;
   textarea.placeholder = 'Optional comment...';
 
+  // 💾 Save button
   const saveBtn = document.createElement('button');
-  saveBtn.className = 'btn btn-outline-dark btn-sm me-2';
-  saveBtn.textContent = '💾 Save';
+  saveBtn.className = 'btn btn-outline-dark btn-sm';
+  saveBtn.innerHTML = '💾 Save';
 
+  // ❌ Cancel button
   const cancelBtn = document.createElement('button');
   cancelBtn.className = 'btn btn-outline-danger btn-sm';
-  cancelBtn.textContent = '❌ Cancel';
+  cancelBtn.innerHTML = '❌ Cancel';
 
-  // Save note
+  // 📅 Made Date label
+  const dateLabel = document.createElement('label');
+  dateLabel.textContent = 'Made date:';
+  dateLabel.className = 'form-label mb-0 ms-3 fw-semibold';
+  dateLabel.style.whiteSpace = 'nowrap';
+
+  // 🗓️ Date picker
+  const dateInput = document.createElement('input');
+  dateInput.type = 'date';
+  dateInput.className = 'form-control form-control-sm';
+  dateInput.style.maxWidth = '150px';
+
+  // Default to today
+  const today = new Date().toISOString().split('T')[0];
+  dateInput.value = today;
+
+  // ➕ Controls container
+  const controls = document.createElement('div');
+  controls.className = 'd-flex align-items-center gap-2 flex-wrap';
+
+  controls.appendChild(saveBtn);
+  controls.appendChild(cancelBtn);
+  controls.appendChild(dateLabel);
+  controls.appendChild(dateInput);
+
+  // 💾 Save logic
   saveBtn.onclick = () => {
     const notes = textarea.value.trim();
-
+    const timestamp = new Date(dateInput.value).toISOString();
+  
+    // 🔥 Find the full recipe object
+    const recipeObj = recipes.find(r => r.name === recipeName);
+  
     db.collection("history").add({
-      recipe: madeModalRecipe,
-      timestamp: new Date().toISOString(),
+      recipe: recipeName,
+      tags: recipeObj?.tags || [], // ✅ Save tags too!
+      timestamp: timestamp,
       notes: notes || '',
-      uid: currentUser.uid // 🔥 VERY IMPORTANT
+      uid: currentUser.uid
     }).then(() => {
       console.log("✅ History entry added!");
       form.innerHTML = '<div class="text-success fw-bold">✅ Marked as made!</div>';
@@ -617,16 +663,17 @@ function markAsMade(recipeName, buttonElement) {
       alert('Failed to save history.');
     });
   };
+  
 
-  // Cancel editing
+  // ❌ Cancel logic
   cancelBtn.onclick = () => form.remove();
 
   form.appendChild(textarea);
-  form.appendChild(saveBtn);
-  form.appendChild(cancelBtn);
-
+  form.appendChild(controls);
   card.appendChild(form);
 }
+
+
 
 
 
@@ -1008,9 +1055,13 @@ function viewHistory() {
   view.className = 'section-history';
   view.innerHTML = `
     <h5 class="mb-3">🕘 Recipe History</h5>
-    <input type="text" class="form-control mb-3" id="historySearch" placeholder="Search history..." oninput="filterHistory()" />
+
+    <input type="text" class="form-control mb-2" id="historySearch" placeholder="Search notes or recipe name..." oninput="filterHistory()" />
+    <input type="text" class="form-control mb-3" id="historyTagSearch" placeholder="Filter by tag..." oninput="filterHistory()" />
+
     <div id="historyList">Loading...</div>
   `;
+
 
   db.collection("history")
   .where('uid', '==', currentUser.uid)
@@ -1025,7 +1076,7 @@ function viewHistory() {
 }
 
 
-function renderHistoryList(entries) {
+function renderHistoryList(entries, highlightTags = []) {
   const container = document.getElementById('historyList');
   container.innerHTML = '';
 
@@ -1036,37 +1087,138 @@ function renderHistoryList(entries) {
 
   entries.forEach(entry => {
     const card = document.createElement('div');
-    card.className = 'card';
+    card.className = 'card mb-3 shadow-sm';
 
     const body = document.createElement('div');
-    body.className = 'card-body';
+    body.className = 'card-body d-flex justify-content-between align-items-start';
 
-    body.innerHTML = `
+    const textArea = document.createElement('div');
+
+    const tagHtml = (entry.tags && entry.tags.length > 0)
+      ? `
+        <div class="mb-2">
+          <strong>Tags:</strong><br />
+          ${entry.tags.map(tag => {
+            const lowerTag = tag.toLowerCase();
+            const isHighlighted = highlightTags.includes(lowerTag);
+            const badgeClass = isHighlighted
+              ? 'badge bg-warning text-dark me-1 mt-1'
+              : 'badge bg-primary text-white me-1 mt-1';
+            return `<span class="${badgeClass}">${tag}</span>`;
+          }).join('')}
+        </div>
+      `
+      : '';
+
+    textArea.innerHTML = `
       <h5 class="card-title">${entry.recipe}</h5>
-      <p><strong>Date:</strong> ${new Date(entry.timestamp).toLocaleString()}</p>
+      <p><strong>Date:</strong> ${new Date(entry.timestamp).toLocaleDateString()}</p>
+      ${tagHtml}
       <p><strong>Notes:</strong> ${entry.notes || '(No notes)'}</p>
     `;
 
+    const deleteArea = document.createElement('div');
+    deleteArea.className = 'delete-area';
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn btn-outline-danger btn-sm flex-shrink-0';
+    deleteBtn.innerHTML = '🗑️';
+    deleteBtn.title = 'Delete entry';
+    deleteBtn.onclick = () => confirmDeleteHistory(entry.id, deleteArea, card);
+
+    deleteArea.appendChild(deleteBtn);
+
+    body.appendChild(textArea);
+    body.appendChild(deleteArea);
     card.appendChild(body);
     container.appendChild(card);
   });
 }
 
+
+
+
 function filterHistory() {
   const query = document.getElementById('historySearch').value.toLowerCase();
+  const tagSearch = document.getElementById('historyTagSearch').value.toLowerCase();
+  const tagTerms = tagSearch.split(',').map(t => t.trim()).filter(Boolean);
 
-  db.collection("history").orderBy("timestamp", "desc").get().then(snapshot => {
-    const allEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  db.collection("history")
+    .where("uid", "==", currentUser.uid)
+    .orderBy("timestamp", "desc")
+    .get()
+    .then(snapshot => {
+      const allEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    const filtered = query
-      ? allEntries.filter(entry =>
+      const filtered = allEntries.filter(entry => {
+        const matchesText = !query || (
           entry.recipe.toLowerCase().includes(query) ||
           (entry.notes && entry.notes.toLowerCase().includes(query))
-        )
-      : allEntries;
+        );
 
-    renderHistoryList(filtered);
-  });
+        const entryTags = (entry.tags || []).map(t => t.toLowerCase());
+        const matchesTags = tagTerms.length === 0 || tagTerms.every(term =>
+          entryTags.some(tag => tag.startsWith(term))
+        );
+
+        return matchesText && matchesTags;
+      });
+
+      renderHistoryList(filtered, tagTerms);
+    });
+}
+
+
+function confirmDeleteHistory(entryId, deleteArea, cardElement) {
+  if (deleteArea.querySelector('.confirm-delete')) return;
+
+  deleteArea.innerHTML = '';
+
+  const confirmArea = document.createElement('div');
+  confirmArea.className = 'confirm-delete d-flex align-items-center gap-2';
+
+  // Styled confirm text
+  const confirmText = document.createElement('span');
+  confirmText.className = 'fw-semibold text-danger';
+  confirmText.textContent = 'Confirm?';
+
+  // ✅ Confirm button
+  const yesBtn = document.createElement('button');
+  yesBtn.className = 'btn btn-sm btn-outline-success';
+  yesBtn.innerHTML = '✅';
+  yesBtn.title = 'Confirm delete';
+  yesBtn.onclick = () => {
+    db.collection('history').doc(entryId).delete()
+      .then(() => {
+        console.log('✅ History entry deleted:', entryId);
+        cardElement.remove();
+      })
+      .catch((err) => {
+        console.error('❌ Failed to delete history entry:', err);
+        alert('Failed to delete entry.');
+        deleteArea.innerHTML = '';
+      });
+  };
+
+  // ❌ Cancel button
+  const noBtn = document.createElement('button');
+  noBtn.className = 'btn btn-sm btn-outline-danger';
+  noBtn.innerHTML = '❌';
+  noBtn.title = 'Cancel';
+  noBtn.onclick = () => {
+    deleteArea.innerHTML = '';
+    const restoreBtn = document.createElement('button');
+    restoreBtn.className = 'btn btn-outline-danger btn-sm flex-shrink-0';
+    restoreBtn.innerHTML = '🗑️';
+    restoreBtn.title = 'Delete entry';
+    restoreBtn.onclick = () => confirmDeleteHistory(entryId, deleteArea, cardElement);
+    deleteArea.appendChild(restoreBtn);
+  };
+
+  confirmArea.appendChild(confirmText);
+  confirmArea.appendChild(yesBtn);
+  confirmArea.appendChild(noBtn);
+  deleteArea.appendChild(confirmArea);
 }
 
 
@@ -1138,6 +1290,13 @@ function displayRecipes(list, containerId = 'recipeResults', options = {}) {
     title.style.minWidth = '150px';
     title.textContent = r.name;
 
+    const shareBtn = document.createElement('button');
+    shareBtn.className = 'btn btn-outline-secondary btn-sm btn-share';
+    shareBtn.innerHTML = '🔗';
+    shareBtn.title = 'Share recipe';
+    shareBtn.onclick = () => shareRecipe(r.id);
+    card.dataset.recipeId = r.id;
+
     const editBtn = document.createElement('button');
     editBtn.className = 'btn btn-outline-primary btn-sm';
     editBtn.innerHTML = '✏️';
@@ -1155,6 +1314,7 @@ function displayRecipes(list, containerId = 'recipeResults', options = {}) {
 
     const buttonGroup = document.createElement('div');
     buttonGroup.className = 'd-flex gap-2 align-items-center';
+    buttonGroup.prepend(shareBtn);
     buttonGroup.appendChild(editBtn);
     buttonGroup.appendChild(deleteArea);
 
@@ -1277,6 +1437,39 @@ function displayRecipes(list, containerId = 'recipeResults', options = {}) {
     card.appendChild(body);
     container.appendChild(card);
   });
+}
+
+function shareRecipe(recipeId) {
+  const recipe = recipes.find(r => r.id === recipeId);
+  if (!recipe) return;
+
+  const { id, uid, ...shareableData } = recipe;
+  const encoded = encodeURIComponent(JSON.stringify(shareableData));
+  const shareUrl = `${window.location.origin}?shared=${encoded}`;
+
+  // Locate the button and its container
+  const card = document.querySelector(`[data-recipe-id="${recipeId}"]`);
+  const shareBtn = card?.querySelector('.btn-share');
+  if (!shareBtn) return;
+
+  navigator.clipboard.writeText(shareUrl)
+    .then(() => {
+      // Swap button with message
+      const message = document.createElement('span');
+      message.textContent = '✅ Link copied!';
+      message.className = 'text-success fw-semibold';
+
+      shareBtn.replaceWith(message);
+
+      // Restore button after 2.5 seconds
+      setTimeout(() => {
+        message.replaceWith(shareBtn);
+      }, 2500);
+    })
+    .catch(err => {
+      console.error("❌ Failed to copy:", err);
+      alert("Could not copy the link.");
+    });
 }
 
 
@@ -1841,11 +2034,11 @@ function renderIngredientList(data) {
 
     body.innerHTML = `
       <h5 class="card-title text-capitalize">${item.name}</h5>
-      ${r.tags && r.tags.length > 0 ? `
+      ${item.tags && item.tags.length > 0 ? `
         <div class="mb-2">
-          ${r.tags.map(tag => `<span class="badge bg-secondary me-1">${tag}</span>`).join('')}
+          ${item.tags.map(tag => `<span class="badge bg-secondary me-1">${tag}</span>`).join('')}
         </div>
-      ` : ''}
+      ` : ''}      
       <p>🧬 <strong>Made of:</strong> ${item.components.length ? item.components.join(', ') : '—'}</p>
       <p>📏 <strong>Unit:</strong> ${item.unit}</p>
       <p>💲 <strong>Cost:</strong> $${item.cost.toFixed(2)}</p>
@@ -2519,7 +2712,74 @@ document.addEventListener('click', function (event) {
   }
 });
 
+function showSharedOverlay(recipe) {
+  const overlay = document.createElement('div');
+  overlay.className = 'position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-75 d-flex justify-content-center align-items-center';
+  overlay.style.zIndex = 2000;
+
+  const card = document.createElement('div');
+  card.className = 'card shadow-lg p-4';
+  card.style.maxWidth = '600px';
+  card.style.width = '95%';
+  card.innerHTML = `
+    <h4 class="mb-3">${recipe.name}</h4>
+    <div class="mb-2">${(recipe.tags || []).map(tag => `<span class="badge bg-primary me-1">${tag}</span>`).join('')}</div>
+    <table class="table table-sm table-bordered">
+      <thead><tr><th>Ingredient</th><th>Qty</th><th>Unit</th></tr></thead>
+      <tbody>
+        ${(recipe.ingredients || []).map(i => `
+          <tr><td>${i.name}</td><td>${i.quantity}</td><td>${i.unit}</td></tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <p><strong>Instructions:</strong> ${recipe.instructions}</p>
+    <div class="d-flex justify-content-end gap-2 mt-3">
+      <button class="btn btn-outline-success" onclick="saveSharedRecipe(${JSON.stringify(recipe).replace(/"/g, '&quot;')})">Save to My Recipes</button>
+      <button class="btn btn-outline-light" onclick="this.closest('.position-fixed').remove()">Close</button>
+    </div>
+  `;
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+}
+
+function saveSharedRecipe(recipe) {
+  if (!currentUser) {
+    alert("Please sign in first.");
+    return;
+  }
+
+  const newRecipe = {
+    ...recipe,
+    uid: currentUser.uid,
+    timestamp: new Date()
+  };
+
+  db.collection("recipes").add(newRecipe).then(() => {
+    alert("✅ Recipe saved!");
+    document.querySelector('.position-fixed').remove();
+    loadRecipesFromFirestore();
+  }).catch(err => {
+    console.error("❌ Error saving shared recipe:", err);
+    alert("Failed to save recipe.");
+  });
+
+  history.replaceState({}, document.title, window.location.pathname);
+}
+
 
 window.onload = () => {
-  loadRecipesFromFirestore();
+  const params = new URLSearchParams(window.location.search);
+  const shared = params.get('shared');
+
+  if (shared) {
+    try {
+      const sharedRecipe = JSON.parse(decodeURIComponent(shared));
+      showSharedOverlay(sharedRecipe);
+    } catch (err) {
+      console.error("❌ Invalid shared data:", err);
+    }
+  } else {
+    loadRecipesFromFirestore();
+  }
 };
