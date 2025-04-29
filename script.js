@@ -1447,30 +1447,42 @@ function shareRecipe(recipeId) {
   const encoded = encodeURIComponent(JSON.stringify(shareableData));
   const shareUrl = `${window.location.origin}?shared=${encoded}`;
 
-  // Locate the button and its container
+  // ✅ Use Web Share API on supported mobile devices
+  if (navigator.share) {
+    navigator.share({
+      title: recipe.name,
+      text: "Check out this recipe!",
+      url: shareUrl
+    }).then(() => {
+      console.log("✅ Shared successfully.");
+    }).catch(err => {
+      console.error("❌ Share failed:", err);
+    });
+    return;
+  }
+
+  // ❌ Fallback for desktop or unsupported browsers: copy link + show "Link copied!"
   const card = document.querySelector(`[data-recipe-id="${recipeId}"]`);
   const shareBtn = card?.querySelector('.btn-share');
   if (!shareBtn) return;
 
   navigator.clipboard.writeText(shareUrl)
     .then(() => {
-      // Swap button with message
       const message = document.createElement('span');
       message.textContent = '✅ Link copied!';
       message.className = 'text-success fw-semibold';
 
       shareBtn.replaceWith(message);
-
-      // Restore button after 2.5 seconds
       setTimeout(() => {
         message.replaceWith(shareBtn);
       }, 2500);
     })
     .catch(err => {
-      console.error("❌ Failed to copy:", err);
+      console.error("❌ Clipboard copy failed:", err);
       alert("Could not copy the link.");
     });
 }
+
 
 
 
