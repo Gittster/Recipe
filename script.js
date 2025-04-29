@@ -1443,45 +1443,48 @@ function shareRecipe(recipeId) {
   const recipe = recipes.find(r => r.id === recipeId);
   if (!recipe) return;
 
-  const { id, uid, ...shareableData } = recipe;
-  const encoded = encodeURIComponent(JSON.stringify(shareableData));
-  const shareUrl = `${window.location.origin}?shared=${encoded}`;
+  // Remove private/internal fields before sharing
+  const { id, uid, timestamp, ...shareableData } = recipe;
 
-  // ✅ Use Web Share API on supported mobile devices
-  if (navigator.share) {
-    navigator.share({
-      title: recipe.name,
-      text: "Check out this recipe!",
-      url: shareUrl
-    }).then(() => {
-      console.log("✅ Shared successfully.");
-    }).catch(err => {
-      console.error("❌ Share failed:", err);
-    });
-    return;
-  }
+  db.collection('sharedRecipes').add(shareableData)
+    .then(docRef => {
+      const shareUrl = `${window.location.origin}?sharedId=${docRef.id}`;
 
-  // ❌ Fallback for desktop or unsupported browsers: copy link + show "Link copied!"
-  const card = document.querySelector(`[data-recipe-id="${recipeId}"]`);
-  const shareBtn = card?.querySelector('.btn-share');
-  if (!shareBtn) return;
+      if (navigator.share) {
+        navigator.share({
+          title: recipe.name,
+          text: "Check out this recipe!",
+          url: shareUrl
+        }).then(() => {
+          console.log("✅ Shared successfully.");
+        }).catch(err => {
+          console.error("❌ Share failed:", err);
+        });
+      } else {
+        // Fallback: copy to clipboard
+        navigator.clipboard.writeText(shareUrl)
+          .then(() => {
+            const card = document.querySelector(`[data-recipe-id="${recipeId}"]`);
+            const shareBtn = card?.querySelector('.btn-share');
+            if (!shareBtn) return;
 
-  navigator.clipboard.writeText(shareUrl)
-    .then(() => {
-      const message = document.createElement('span');
-      message.textContent = '✅ Link copied!';
-      message.className = 'text-success fw-semibold';
+            const message = document.createElement('span');
+            message.textContent = '✅ Link copied!';
+            message.className = 'text-success fw-semibold';
 
-      shareBtn.replaceWith(message);
-      setTimeout(() => {
-        message.replaceWith(shareBtn);
-      }, 2500);
+            shareBtn.replaceWith(message);
+            setTimeout(() => {
+              message.replaceWith(shareBtn);
+            }, 2500);
+          });
+      }
     })
     .catch(err => {
-      console.error("❌ Clipboard copy failed:", err);
-      alert("Could not copy the link.");
+      console.error("❌ Error creating share link:", err);
+      alert("Failed to create share link.");
     });
 }
+
 
 
 
@@ -2782,16 +2785,25 @@ function saveSharedRecipe(recipe) {
 
 window.onload = () => {
   const params = new URLSearchParams(window.location.search);
-  const shared = params.get('shared');
+  const sharedId = params.get('sharedId');
 
-  if (shared) {
-    try {
-      const sharedRecipe = JSON.parse(decodeURIComponent(shared));
-      showSharedOverlay(sharedRecipe);
-    } catch (err) {
-      console.error("❌ Invalid shared data:", err);
-    }
+  if (sharedId) {
+    db.collection('sharedRecipes').doc(sharedId).get()
+      .then(doc => {
+        if (doc.exists) {
+          const sharedRecipe = doc.data();
+          showSharedOverlay(sharedRecipe);
+          history.replaceState({}, document.title, window.location.pathname); // Clear URL
+        } else {
+          console.error("❌ Shared recipe not found.");
+          alert("Shared recipe not found.");
+        }
+      })
+      .catch(err => {
+        console.error("❌ Error loading shared recipe:", err);
+      });
   } else {
     loadRecipesFromFirestore();
   }
 };
+
