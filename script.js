@@ -1281,9 +1281,9 @@ function displayRecipes(list, containerId = 'recipeResults', options = {}) {
     const body = document.createElement('div');
     body.className = 'card-body';
 
-    // ➤ Title and Edit/Delete buttons row
     const titleRow = document.createElement('div');
-    titleRow.className = 'd-flex justify-content-between align-items-center mb-3 gap-2';
+    titleRow.className = 'd-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2';
+
 
     const title = document.createElement('span');
     title.className = 'badge bg-warning text-dark fs-5 py-2 px-3 mb-0';
@@ -1439,56 +1439,79 @@ function displayRecipes(list, containerId = 'recipeResults', options = {}) {
   });
 }
 
-function shareRecipe(recipeId) {
+function hashRecipe(recipe) {
+  const { name, ingredients, instructions, tags } = recipe;
+  const data = JSON.stringify({ name, ingredients, instructions, tags });
+  let hash = 0, i, chr;
+  for (i = 0; i < data.length; i++) {
+    chr = data.charCodeAt(i);
+    hash = ((hash << 5) - hash) + chr;
+    hash |= 0; // Convert to 32bit integer
+  }
+  return hash.toString();
+}
+
+
+async function shareRecipe(recipeId) {
   const recipe = recipes.find(r => r.id === recipeId);
   if (!recipe) return;
 
   const { id, uid, timestamp, ...shareableData } = recipe;
-  
-  db.collection('sharedRecipes').add(shareableData)
-    .then(docRef => {
-      let baseUrl;
-      if (location.hostname.includes('github.io')) {
-        baseUrl = 'https://gittster.github.io/Recipe';
-      } else {
-        baseUrl = `${window.location.origin}${window.location.pathname.replace(/\/index\.html$/, '')}`;
-      }
+  const recipeHash = hashRecipe(shareableData);
 
-      const shareUrl = `${baseUrl}?sharedId=${docRef.id}`;
+  const sharedRef = db.collection('sharedRecipes');
+  const querySnapshot = await sharedRef.where('hash', '==', recipeHash).limit(1).get();
 
-      if (navigator.share) {
-        navigator.share({
-          title: recipe.name,
-          text: "Check out this recipe!",
-          url: shareUrl
-        }).then(() => {
-          console.log("✅ Shared successfully.");
-        }).catch(err => {
-          console.error("❌ Share failed:", err);
-        });
-      } else {
-        navigator.clipboard.writeText(shareUrl)
-          .then(() => {
-            const card = document.querySelector(`[data-recipe-id="${recipeId}"]`);
-            const shareBtn = card?.querySelector('.btn-share');
-            if (!shareBtn) return;
+  let docId;
 
-            const message = document.createElement('span');
-            message.textContent = '✅ Link copied!';
-            message.className = 'text-success fw-semibold';
-
-            shareBtn.replaceWith(message);
-            setTimeout(() => {
-              message.replaceWith(shareBtn);
-            }, 2500);
-          });
-      }
-    })
-    .catch(err => {
-      console.error("❌ Error creating share link:", err);
-      alert("Failed to create share link.");
+  if (!querySnapshot.empty) {
+    // ✅ Found an existing shared recipe
+    docId = querySnapshot.docs[0].id;
+  } else {
+    // ❌ No existing share — create new
+    const docRef = await sharedRef.add({
+      ...shareableData,
+      hash: recipeHash,
+      createdAt: new Date()
     });
+    docId = docRef.id;
+  }
+
+  const baseUrl = location.hostname.includes('github.io')
+    ? 'https://gittster.github.io/Recipe'
+    : `${window.location.origin}${window.location.pathname.replace(/\/index\.html$/, '')}`;
+
+  const shareUrl = `${baseUrl}?sharedId=${docId}`;
+
+  if (navigator.share) {
+    navigator.share({
+      title: recipe.name,
+      text: "Check out this recipe!",
+      url: shareUrl
+    }).then(() => {
+      console.log("✅ Shared successfully.");
+    }).catch(err => {
+      console.error("❌ Share failed:", err);
+    });
+  } else {
+    navigator.clipboard.writeText(shareUrl)
+      .then(() => {
+        const card = document.querySelector(`[data-recipe-id="${recipeId}"]`);
+        const shareBtn = card?.querySelector('.btn-share');
+        if (!shareBtn) return;
+
+        const message = document.createElement('span');
+        message.textContent = '✅ Link copied!';
+        message.className = 'text-success fw-semibold';
+
+        shareBtn.replaceWith(message);
+        setTimeout(() => {
+          message.replaceWith(shareBtn);
+        }, 2500);
+      });
+  }
 }
+
 
 
 
