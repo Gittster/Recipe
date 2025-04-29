@@ -1443,12 +1443,19 @@ function shareRecipe(recipeId) {
   const recipe = recipes.find(r => r.id === recipeId);
   if (!recipe) return;
 
-  // Remove private/internal fields before sharing
   const { id, uid, timestamp, ...shareableData } = recipe;
-
+  
   db.collection('sharedRecipes').add(shareableData)
     .then(docRef => {
-      const shareUrl = `${window.location.origin}${window.location.pathname}?sharedId=${docRef.id}`;
+      let baseUrl;
+      if (location.hostname.includes('github.io')) {
+        baseUrl = 'https://gittster.github.io/Recipe';
+      } else {
+        baseUrl = `${window.location.origin}${window.location.pathname.replace(/\/index\.html$/, '')}`;
+      }
+
+      const shareUrl = `${baseUrl}?sharedId=${docRef.id}`;
+
       if (navigator.share) {
         navigator.share({
           title: recipe.name,
@@ -1460,7 +1467,6 @@ function shareRecipe(recipeId) {
           console.error("❌ Share failed:", err);
         });
       } else {
-        // Fallback: copy to clipboard
         navigator.clipboard.writeText(shareUrl)
           .then(() => {
             const card = document.querySelector(`[data-recipe-id="${recipeId}"]`);
@@ -1483,6 +1489,7 @@ function shareRecipe(recipeId) {
       alert("Failed to create share link.");
     });
 }
+
 
 
 
