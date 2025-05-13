@@ -88,8 +88,12 @@ exports.handler = async (event) => {
                 let responseText = candidate.content.parts[0].text;
 
                 // Clean the response to ensure it's valid JSON
-                // Sometimes the model might wrap the JSON in backticks or add "json" prefix
-                responseText = responseText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+                // 1. Remove ```json from the start (case-insensitive, multiline for safety)
+                responseText = responseText.replace(/^```json\s*/im, '');
+                // 2. Remove ``` from the end (case-insensitive, multiline for safety)
+                responseText = responseText.replace(/\s*```$/im, '');
+                // 3. CRUCIAL: Trim any remaining leading/trailing whitespace (newlines, spaces)
+                responseText = responseText.trim();
 
                 try {
                     const recipeJson = JSON.parse(responseText);
@@ -97,24 +101,34 @@ exports.handler = async (event) => {
                     if (recipeJson.name && Array.isArray(recipeJson.ingredients) && recipeJson.instructions && Array.isArray(recipeJson.tags)) {
                         return {
                             statusCode: 200,
-                            body: JSON.stringify(recipeJson), // Send the parsed JSON
+                            headers, 
+                            body: JSON.stringify(recipeJson),
                         };
                     } else {
-                        console.error("Generated JSON is missing required recipe fields:", recipeText);
-                        throw new Error("AI response did not match expected recipe structure.");
+                        console.error("Generated JSON is missing required recipe fields:", responseText);
+                        // Return the cleaned responseText so frontend can see what was attempted for parsing
+                        return {
+                            statusCode: 500,
+                            headers,
+                            body: JSON.stringify({ error: "AI response did not match expected recipe structure.", rawResponse: responseText }),
+                        };
                     }
                 } catch (parseError) {
-                    console.error("Error parsing AI response as JSON:", parseError, "\nRaw response was:", responseText);
-                    // Fallback: return the raw text if it's not parsable but might still be useful for debugging
-                    // Or return a more structured error
+                    console.error("Error parsing AI response as JSON:", parseError, "\nRaw response that failed parsing was:", responseText);
                     return {
                         statusCode: 500,
+                        headers,
                         body: JSON.stringify({ error: "AI response was not valid JSON.", rawResponse: responseText }),
                     };
                 }
             } else {
                  console.error("AI response candidate has no content parts:", candidate);
-                 throw new Error("AI response candidate has no content parts.");
+                 // Return an error object that can be parsed by the frontend
+                 return {
+                    statusCode: 500,
+                    headers,
+                    body: JSON.stringify({ error: "AI response candidate has no content parts." }),
+                };
             }
         } else {
             console.error("No candidates in AI response or empty response:", result.response);
