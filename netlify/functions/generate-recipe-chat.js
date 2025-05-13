@@ -1,13 +1,8 @@
 // functions/generate-recipe-chat.js
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require("@google/generative-ai");
 
-const MODEL_NAME = "gemini-1.5-flash";
+const MODEL_NAME = "gemini-1.5-flash"; // Or another suitable model
 const API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
-
-// Define your app's origin. Since you're running from Netlify, this is for consistency
-// or if you ever need to call it from a different subdomain/localhost for testing.
-// Using your Netlify app's domain is good. '*' is also an option for wider testing.
-const ALLOWED_ORIGIN = "https://beamish-baklava-a99968.netlify.app";
 
 exports.handler = async (event) => {
     // Define the headers object at the top of the handler
@@ -17,29 +12,14 @@ exports.handler = async (event) => {
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Content-Type": "application/json" // Ensure all responses are marked as JSON
     };
-
-    // Handle OPTIONS preflight request (good practice for CORS)
-    if (event.httpMethod === 'OPTIONS') {
-        return {
-            statusCode: 204,
-            headers: headers, // Use the defined headers
-            body: '',
-        };
-    }
-
     if (event.httpMethod !== 'POST') {
-        return {
-            statusCode: 405,
-            headers: headers, // Use the defined headers
-            body: JSON.stringify({ error: 'Method Not Allowed' }), // Stringify body
-        };
+        return { statusCode: 405, body: 'Method Not Allowed' };
     }
 
     if (!API_KEY) {
         console.error("Missing Google Gemini API Key");
         return {
             statusCode: 500,
-            headers: headers, // Use the defined headers
             body: JSON.stringify({ error: "Server configuration error: Missing API Key." }),
         };
     }
@@ -51,22 +31,19 @@ exports.handler = async (event) => {
         if (!userPrompt || typeof userPrompt !== 'string' || userPrompt.trim() === '') {
             return {
                 statusCode: 400,
-                headers: headers, // Use the defined headers
                 body: JSON.stringify({ error: 'Bad Request: "prompt" is required and must be a non-empty string.' }),
             };
         }
     } catch (error) {
         console.error("Error parsing request body:", error);
-        return {
-            statusCode: 400,
-            headers: headers, // Use the defined headers
-            body: JSON.stringify({ error: "Bad Request: Invalid JSON in request body." })
-        };
+        return { statusCode: 400, body: JSON.stringify({ error: "Bad Request: Invalid JSON in request body." }) };
     }
 
     const genAI = new GoogleGenerativeAI(API_KEY);
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
+    // IMPORTANT: Prompt Engineering is key!
+    // Guide the AI to return a JSON structure that matches your frontend's needs.
     const fullPrompt = `
         You are a helpful recipe assistant called Chef Bot.
         A user wants a recipe. Their request is: "${userPrompt}"
@@ -92,10 +69,10 @@ exports.handler = async (event) => {
     `;
 
     const generationConfig = {
-        temperature: 0.7,
+        temperature: 0.7, // Adjust for creativity vs. predictability
         topK: 1,
         topP: 1,
-        maxOutputTokens: 2048,
+        maxOutputTokens: 2048, // Adjust as needed
     };
 
     const safetySettings = [
@@ -116,82 +93,60 @@ exports.handler = async (event) => {
             const candidate = result.response.candidates[0];
             if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
                 let responseText = candidate.content.parts[0].text;
+
+                // Clean the response to ensure it's valid JSON
+                // 1. Remove ```json from the start (case-insensitive, multiline for safety)
                 responseText = responseText.replace(/^```json\s*/im, '');
+                // 2. Remove ``` from the end (case-insensitive, multiline for safety)
                 responseText = responseText.replace(/\s*```$/im, '');
+                // 3. CRUCIAL: Trim any remaining leading/trailing whitespace (newlines, spaces)
                 responseText = responseText.trim();
 
                 try {
-                    // This is line 124 (or around it) in your deployed function
                     const recipeJson = JSON.parse(responseText);
-                    // ... (rest of your success logic)
+                    // Basic validation of the parsed JSON structure
+                    if (recipeJson.name && Array.isArray(recipeJson.ingredients) && recipeJson.instructions && Array.isArray(recipeJson.tags)) {
+                        return {
+                            statusCode: 200,
+                            headers, 
+                            body: JSON.stringify(recipeJson),
+                        };
+                    } else {
+                        console.error("Generated JSON is missing required recipe fields:", responseText);
+                        // Return the cleaned responseText so frontend can see what was attempted for parsing
+                        return {
+                            statusCode: 500,
+                            headers,
+                            body: JSON.stringify({ error: "AI response did not match expected recipe structure.", rawResponse: responseText }),
+                        };
+                    }
                 } catch (parseError) {
                     console.error("Error parsing AI response as JSON:", parseError, "\nRaw response that failed parsing was:", responseText);
-
-                    // START: DETAILED CHARACTER INSPECTION
-                    if (responseText && typeof responseText === 'string') {
-                        const errorPositionMatch = parseError.message.match(/position\s+(\d+)/);
-                        // Use the position from the error message, default to 0 if not found (though it should be there)
-                        const allegedErrorPosition = errorPositionMatch ? parseInt(errorPositionMatch[1], 10) : 0;
-                        
-                        const contextChars = 25; // Number of characters to show before and after the error position
-                        let debugString = `\n--- Character Details Around Position ${allegedErrorPosition} ---\n`;
-                        const startIndex = Math.max(0, allegedErrorPosition - contextChars);
-                        const endIndex = Math.min(responseText.length, allegedErrorPosition + contextChars + 1);
-                        
-                        debugString += `Segment: ...${responseText.substring(startIndex, endIndex)}...\n`;
-
-                        for (let i = startIndex; i < endIndex; i++) {
-                            const char = responseText[i];
-                            const charCode = responseText.charCodeAt(i);
-                            // Highlight the alleged error position
-                            const highlight = (i === allegedErrorPosition) ? " <--- ERROR HERE" : "";
-                            debugString += `Pos: ${i}, Char: '${char.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t")}' (Code: ${charCode})${highlight}\n`;
-                        }
-                        console.error(debugString);
-                    }
-                    // END: DETAILED CHARACTER INSPECTION
-
                     return {
                         statusCode: 500,
-                        headers: headers,
-                        body: JSON.stringify({ 
-                            error: "AI response was not valid JSON.", 
-                            rawResponse: responseText, // Good to keep sending this back to the client for its own debugging
-                            parseErrorMessage: parseError.message // Send the specific parse error message
-                        }),
+                        headers,
+                        body: JSON.stringify({ error: "AI response was not valid JSON.", rawResponse: responseText }),
                     };
                 }
             } else {
-                console.error("AI response candidate has no content parts:", candidate);
-                return {
+                 console.error("AI response candidate has no content parts:", candidate);
+                 // Return an error object that can be parsed by the frontend
+                 return {
                     statusCode: 500,
-                    headers: headers, // Use defined headers
+                    headers,
                     body: JSON.stringify({ error: "AI response candidate has no content parts." }),
                 };
             }
         } else {
-            // This was `throw new Error(...)` before. Changing to return a proper object.
-            const errorMessage = "AI did not return a usable response candidate.";
-            console.error(errorMessage, result.response);
-            return {
-                statusCode: 500,
-                headers: headers, // Use defined headers
-                body: JSON.stringify({ error: errorMessage, details: result.response }),
-            };
+            console.error("No candidates in AI response or empty response:", result.response);
+            throw new Error("AI did not return a usable response candidate.");
         }
 
-    } catch (error) { // This is the outermost catch (around line 120)
-        const errorMessage = error && error.message ? error.message : "Unknown error during API call or response processing.";
-        const errorStack = error && error.stack ? error.stack : "No stack available.";
-        console.error("Error calling Gemini API or processing response (outer catch):", {
-            message: errorMessage,
-            stack: errorStack,
-            errorObject: error
-        });
+    } catch (error) {
+        console.error("Error calling Gemini API or processing response:", error);
         return {
             statusCode: 500,
-            headers: headers, // Use defined headers HERE
-            body: JSON.stringify({ error: `Failed to generate recipe: ${errorMessage}` }),
+            body: JSON.stringify({ error: `Failed to generate recipe: ${error.message}` }),
         };
     }
 };
