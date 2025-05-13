@@ -2,6 +2,8 @@ let recipes = [];
 let madeModalRecipe = '';
 let currentTags = [];
 let currentUser = null; // Global user tracker
+let currentChatbotRecipe = null;
+let chatbotModalElement = null; // To keep a reference to the modal DOM element
 
 function renderTags() {
   const tagsContainer = document.getElementById('tagsContainer');
@@ -2711,23 +2713,39 @@ function signOut() {
 
 // Watch auth state
 auth.onAuthStateChanged(user => {
-  currentUser = user;
-  updateAuthUI(user);
+    currentUser = user;
+    updateAuthUI(user);
 
-  if (user) {
-    loadRecipesFromFirestore();
+    if (user) {
+        loadRecipesFromFirestore();
 
-    const pending = localStorage.getItem('pendingSharedRecipe');
-    if (pending) {
-      const recipe = JSON.parse(pending);
-      localStorage.removeItem('pendingSharedRecipe');
-      saveSharedRecipe(recipe);
-      showSuccessMessage("✅ Shared recipe saved!");
+        const pendingShared = localStorage.getItem('pendingSharedRecipe');
+        if (pendingShared) {
+            const recipe = JSON.parse(pendingShared);
+            localStorage.removeItem('pendingSharedRecipe');
+            saveSharedRecipe(recipe); // Your existing function
+            showSuccessMessage("✅ Shared recipe saved!");
+        }
+
+        // Add this for pending chatbot recipes
+        const pendingChatbot = localStorage.getItem('pendingChatbotRecipe');
+        if (pendingChatbot) {
+            currentChatbotRecipe = JSON.parse(pendingChatbot); // Load it into currentChatbotRecipe
+            localStorage.removeItem('pendingChatbotRecipe');
+            saveCurrentChatbotRecipe(); // Then try to save it
+            // showSuccessMessage is handled by saveCurrentChatbotRecipe
+        }
+
+    } else {
+        recipes = [];
+        showRecipeFilter();
+        // Optionally, if chatbot modal is open and user signs out, handle UI changes
+        const saveChatbotRecipeBtn = document.getElementById('saveChatbotRecipeBtn');
+        if (saveChatbotRecipeBtn) {
+            // saveChatbotRecipeBtn.textContent = 'Sign In to Save';
+            // saveChatbotRecipeBtn.onclick = () => showSignInPermissionsPrompt(); // or similar
+        }
     }
-  } else {
-    recipes = [];
-    showRecipeFilter();
-  }
 });
 
 
@@ -2907,7 +2925,249 @@ function showSignInPermissionsPrompt() {
   });
 }
 
+// Helper function to generate HTML for recipe display (can be used by shared overlay too)
+function generateRecipeDisplayHTML(recipe) {
+    if (!recipe || !recipe.name) return '<p class="text-muted mt-3">Recipe details will appear here once generated.</p>';
 
+    return `
+        <h4 class="mb-3 mt-3 chatbot-recipe-name">${recipe.name}</h4>
+        <div class="mb-2 chatbot-recipe-tags">
+            ${(recipe.tags || []).map(tag => `<span class="badge bg-primary me-1">${tag}</span>`).join('')}
+        </div>
+        <table class="table table-sm table-bordered chatbot-recipe-ingredients">
+            <thead><tr><th>Ingredient</th><th>Qty</th><th>Unit</th></tr></thead>
+            <tbody>
+                ${(recipe.ingredients || []).map(i => `
+                    <tr>
+                        <td>${i.name || ''}</td>
+                        <td>${i.quantity || ''}</td>
+                        <td>${i.unit || ''}</td>
+                    </tr>
+                `).join('')}
+                 ${(recipe.ingredients && recipe.ingredients.length === 0) ? '<tr><td colspan="3" class="text-muted">No ingredients listed.</td></tr>' : ''}
+            </tbody>
+        </table>
+        <p class="chatbot-recipe-instructions"><strong>Instructions:</strong> ${recipe.instructions || 'No instructions provided.'}</p>
+    `;
+}
+
+
+function showChatbotModal() {
+    // Remove existing modal if any to prevent duplicates
+    if (chatbotModalElement && chatbotModalElement.parentNode) {
+        chatbotModalElement.remove();
+    }
+    currentChatbotRecipe = null; // Reset any previously generated recipe
+
+    chatbotModalElement = document.createElement('div');
+    chatbotModalElement.className = 'position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-75 d-flex justify-content-center align-items-start overflow-auto';
+    chatbotModalElement.style.zIndex = 2000; // Ensure it's on top
+    chatbotModalElement.style.padding = '2rem';
+
+    const card = document.createElement('div');
+    card.className = 'card shadow-lg p-4 position-relative';
+    card.style.maxWidth = '700px'; // Wider for input and recipe
+    card.style.width = '95%';
+    card.style.margin = 'auto';
+
+    card.innerHTML = `
+        <button type="button" class="btn-close position-absolute top-0 end-0 m-3" aria-label="Close"></button>
+        <h4 class="mb-3"><i class="bi bi-robot"></i> Chef Bot - AI Recipe Assistant</h4>
+        
+        <div class="mb-3">
+            <label for="chatbotQueryInput" class="form-label">Describe the recipe you'd like Chef Bot to create:</label>
+            <textarea class="form-control" id="chatbotQueryInput" rows="3" placeholder="e.g., 'a spicy vegetarian curry with chickpeas and spinach for two people'"></textarea>
+        </div>
+        <button id="askChefBotBtn" class="btn btn-primary mb-3">Ask Chef Bot to Generate</button>
+        
+        <hr/>
+        <div id="chatbotRecipeDisplayArea">
+            ${generateRecipeDisplayHTML(null)} </div>
+        
+        <div class="d-flex justify-content-end gap-2 mt-4">
+            <button id="saveChatbotRecipeBtn" class="btn btn-outline-success" disabled>Save to My Recipes</button>
+            <button id="closeChatbotModalBtn" class="btn btn-outline-dark">Close</button>
+        </div>
+    `;
+
+    chatbotModalElement.appendChild(card);
+    document.body.appendChild(chatbotModalElement);
+
+    // Event Listeners
+    const closeButton = card.querySelector('.btn-close');
+    const askChefBotBtn = card.querySelector('#askChefBotBtn');
+    const saveChatbotRecipeBtn = card.querySelector('#saveChatbotRecipeBtn');
+    const closeChatbotModalBtn = card.querySelector('#closeChatbotModalBtn');
+    const chatbotQueryInput = card.querySelector('#chatbotQueryInput');
+    const chatbotRecipeDisplayArea = card.querySelector('#chatbotRecipeDisplayArea');
+
+    const closeModal = () => {
+        if (chatbotModalElement && chatbotModalElement.parentNode) {
+            chatbotModalElement.remove();
+        }
+        chatbotModalElement = null;
+        currentChatbotRecipe = null;
+    };
+
+    closeButton.onclick = closeModal;
+    closeChatbotModalBtn.onclick = closeModal;
+    chatbotModalElement.addEventListener('click', (e) => { // Click outside card to close
+        if (!card.contains(e.target)) {
+            closeModal();
+        }
+    });
+
+    askChefBotBtn.onclick = async () => {
+        const query = chatbotQueryInput.value.trim();
+        if (!query) {
+            alert("Please describe the recipe you want.");
+            return;
+        }
+
+        askChefBotBtn.disabled = true;
+        askChefBotBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...';
+        chatbotRecipeDisplayArea.innerHTML = '<p class="text-muted mt-3">Chef Bot is thinking... <i class="bi bi-cpu"></i></p>';
+        saveChatbotRecipeBtn.disabled = true;
+        currentChatbotRecipe = null; // Clear previous recipe
+
+        try {
+            const response = await fetch("/.netlify/functions/generate-recipe-chat", { // This is your Netlify function endpoint
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ prompt: query })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: `HTTP error ${response.status}` }));
+                console.error("Chatbot API error response:", errorData);
+                throw new Error(errorData.error || `Chef Bot is having trouble right now (Status: ${response.status}).`);
+            }
+
+            currentChatbotRecipe = await response.json(); // Expecting JSON from our Netlify function
+
+            if (currentChatbotRecipe && currentChatbotRecipe.name && currentChatbotRecipe.ingredients && currentChatbotRecipe.instructions && currentChatbotRecipe.tags) {
+                chatbotRecipeDisplayArea.innerHTML = generateRecipeDisplayHTML(currentChatbotRecipe);
+                saveChatbotRecipeBtn.disabled = false;
+            } else {
+                console.error("Received unexpected recipe structure:", currentChatbotRecipe);
+                chatbotRecipeDisplayArea.innerHTML = '<p class="text-danger mt-3">Sorry, Chef Bot couldn\'t generate a well-structured recipe for that. Please try a different request or check the console.</p>';
+            }
+        } catch (error) {
+            console.error("Chatbot fetch error:", error);
+            chatbotRecipeDisplayArea.innerHTML = `<p class="text-danger mt-3">An error occurred: ${error.message}. Please try again.</p>`;
+        } finally {
+            askChefBotBtn.disabled = false;
+            askChefBotBtn.innerHTML = 'Ask Chef Bot to Generate';
+        }
+    };
+
+    saveChatbotRecipeBtn.onclick = () => {
+        if (!currentChatbotRecipe) {
+            alert("No recipe to save.");
+            return;
+        }
+        if (!currentUser) {
+            // If you have a pending recipe mechanism like for shared recipes:
+            localStorage.setItem('pendingChatbotRecipe', JSON.stringify(currentChatbotRecipe));
+            showSignInPermissionsPrompt(); // Or your preferred sign-in prompt
+            // closeModal(); // Optionally close modal after prompting sign-in
+            return;
+        }
+        saveCurrentChatbotRecipe();
+    };
+}
+
+// Mock function to simulate chatbot response
+function getMockChatbotRecipe(userQuery) {
+    console.log("Chef Bot received query (mock):", userQuery);
+    // Example: Try to make the recipe somewhat relevant to the query if it's simple
+    let recipeName = "Chef Bot's Special";
+    let ingredients = [
+        { name: "Main Ingredient (from query)", quantity: "1", unit: "unit" },
+        { name: "Spice Blend", quantity: "1", unit: "tbsp" },
+        { name: "Vegetable Medley", quantity: "1", unit: "cup" },
+        { name: "Aromatic Garnish", quantity: "some", unit: "" }
+    ];
+    let instructions = "1. Prepare the main ingredient. 2. Sauté with spice blend and vegetables. 3. Cook until done. 4. Garnish and serve.";
+    let tags = ["ai-generated", "quick-idea"];
+
+    if (userQuery.toLowerCase().includes("pasta")) {
+        recipeName = "AI Pasta Primavera";
+        ingredients = [
+            { name: "Pasta", quantity: "200", unit: "g" },
+            { name: "Mixed Vegetables (broccoli, carrots, bell peppers)", quantity: "1.5", unit: "cups" },
+            { name: "Olive Oil", quantity: "2", unit: "tbsp" },
+            { name: "Garlic", quantity: "2", unit: "cloves" },
+            { name: "Parmesan Cheese", quantity: "1/4", unit: "cup" },
+            { name: "Salt and Pepper", quantity: "to", unit: "taste" }
+        ];
+        instructions = "1. Cook pasta according to package directions. 2. While pasta cooks, sauté minced garlic in olive oil. Add mixed vegetables and cook until tender-crisp. 3. Drain pasta and add it to the vegetables. 4. Stir in Parmesan cheese, salt, and pepper. Serve immediately.";
+        tags = ["pasta", "vegetarian", "easy", "ai-generated"];
+    } else if (userQuery.toLowerCase().includes("chicken curry")) {
+        recipeName = "Simple AI Chicken Curry";
+        ingredients = [
+            { name: "Chicken Breast (cubed)", quantity: "1", unit: "lb" },
+            { name: "Onion (chopped)", quantity: "1", unit: "medium" },
+            { name: "Garlic (minced)", quantity: "2", unit: "cloves" },
+            { name: "Ginger (grated)", quantity: "1", unit: "tsp" },
+            { name: "Curry Powder", quantity: "2", unit: "tbsp" },
+            { name: "Coconut Milk", quantity: "1", unit: "can (13.5oz)" },
+            { name: "Diced Tomatoes (canned)", quantity: "1", unit: "can (14.5oz)" },
+            { name: "Vegetable Oil", quantity: "1", unit: "tbsp" },
+            { name: "Salt", quantity: "to", unit: "taste" },
+            { name: "Cilantro (chopped, for garnish)", quantity: "2", unit: "tbsp" }
+        ];
+        instructions = "1. Heat oil in a large pan. Add onion, cook until soft. Add garlic and ginger, cook for 1 min. 2. Stir in curry powder. Add chicken and cook until browned. 3. Pour in coconut milk and diced tomatoes. Bring to a simmer. 4. Reduce heat, cover, and cook for 15-20 mins, or until chicken is cooked through. 5. Season with salt. Garnish with cilantro. Serve with rice or naan.";
+        tags = ["chicken", "curry", "dinner", "ai-generated"];
+    }
+
+
+    return {
+        name: recipeName,
+        ingredients: ingredients,
+        instructions: instructions,
+        tags: tags
+    };
+}
+
+function saveCurrentChatbotRecipe() {
+    if (!currentUser || !currentChatbotRecipe) {
+        alert("Cannot save recipe. Ensure you are signed in and a recipe is generated.");
+        return;
+    }
+
+    const recipeToSave = {
+        ...currentChatbotRecipe, // Spread the fields from the chatbot recipe
+        uid: currentUser.uid,
+        timestamp: new Date(),
+        // Ensure all required fields for your 'recipes' collection are present
+        // If chatbot doesn't provide 'rating', 'source', etc., set defaults or leave them out if optional
+        rating: currentChatbotRecipe.rating || 0, 
+        // Add any other default fields your `saveRecipe` function might expect
+    };
+
+    // Validate essential fields if necessary, similar to saveRecipe()
+    if (!recipeToSave.name || !recipeToSave.ingredients || recipeToSave.ingredients.length === 0) {
+        alert("The generated recipe is incomplete (missing name or ingredients). Cannot save.");
+        return;
+    }
+
+    db.collection("recipes").add(recipeToSave)
+        .then(docRef => {
+            console.log("✅ Chatbot recipe saved with ID:", docRef.id);
+            showSuccessMessage("✅ Recipe from Chef Bot saved successfully!");
+            if (chatbotModalElement && chatbotModalElement.parentNode) {
+                chatbotModalElement.remove(); // Close modal
+            }
+            chatbotModalElement = null;
+            currentChatbotRecipe = null;
+            loadRecipesFromFirestore(); // Refresh your main recipe list
+        })
+        .catch(error => {
+            console.error("❌ Error saving chatbot recipe:", error);
+            alert("Failed to save the recipe from Chef Bot. Please try again.");
+        });
+}
 
 
 function saveSharedRecipe(recipe) {

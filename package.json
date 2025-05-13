@@ -18,6 +18,7 @@
   },
   "homepage": "https://github.com/Gittster/Recipe#readme",
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "node-fetch": "^3.3.2"
   }
 }
