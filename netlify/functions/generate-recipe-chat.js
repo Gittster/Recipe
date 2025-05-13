@@ -121,27 +121,44 @@ exports.handler = async (event) => {
                 responseText = responseText.trim();
 
                 try {
+                    // This is line 124 (or around it) in your deployed function
                     const recipeJson = JSON.parse(responseText);
-                    if (recipeJson.name && Array.isArray(recipeJson.ingredients) && recipeJson.instructions && Array.isArray(recipeJson.tags)) {
-                        return {
-                            statusCode: 200,
-                            headers: headers, // Use defined headers
-                            body: JSON.stringify(recipeJson),
-                        };
-                    } else {
-                        console.error("Generated JSON is missing required recipe fields:", responseText);
-                        return {
-                            statusCode: 500,
-                            headers: headers, // Use defined headers
-                            body: JSON.stringify({ error: "AI response did not match expected recipe structure.", rawResponse: responseText }),
-                        };
-                    }
+                    // ... (rest of your success logic)
                 } catch (parseError) {
                     console.error("Error parsing AI response as JSON:", parseError, "\nRaw response that failed parsing was:", responseText);
+
+                    // START: DETAILED CHARACTER INSPECTION
+                    if (responseText && typeof responseText === 'string') {
+                        const errorPositionMatch = parseError.message.match(/position\s+(\d+)/);
+                        // Use the position from the error message, default to 0 if not found (though it should be there)
+                        const allegedErrorPosition = errorPositionMatch ? parseInt(errorPositionMatch[1], 10) : 0;
+                        
+                        const contextChars = 25; // Number of characters to show before and after the error position
+                        let debugString = `\n--- Character Details Around Position ${allegedErrorPosition} ---\n`;
+                        const startIndex = Math.max(0, allegedErrorPosition - contextChars);
+                        const endIndex = Math.min(responseText.length, allegedErrorPosition + contextChars + 1);
+                        
+                        debugString += `Segment: ...${responseText.substring(startIndex, endIndex)}...\n`;
+
+                        for (let i = startIndex; i < endIndex; i++) {
+                            const char = responseText[i];
+                            const charCode = responseText.charCodeAt(i);
+                            // Highlight the alleged error position
+                            const highlight = (i === allegedErrorPosition) ? " <--- ERROR HERE" : "";
+                            debugString += `Pos: ${i}, Char: '${char.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t")}' (Code: ${charCode})${highlight}\n`;
+                        }
+                        console.error(debugString);
+                    }
+                    // END: DETAILED CHARACTER INSPECTION
+
                     return {
                         statusCode: 500,
-                        headers: headers, // Use defined headers
-                        body: JSON.stringify({ error: "AI response was not valid JSON.", rawResponse: responseText }),
+                        headers: headers,
+                        body: JSON.stringify({ 
+                            error: "AI response was not valid JSON.", 
+                            rawResponse: responseText, // Good to keep sending this back to the client for its own debugging
+                            parseErrorMessage: parseError.message // Send the specific parse error message
+                        }),
                     };
                 }
             } else {
