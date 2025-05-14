@@ -24,16 +24,18 @@ function initializeLocalDB() {
     // Increment the version number if you're changing the schema after users might have version 1
     // For development, you can clear your browser's IndexedDB for the site to start fresh with a new schema.
     // Or, handle upgrades: https://dexie.org/docs/Tutorial/Design#database-versioning
-    localDB.version(2).stores({ // Assuming version 1 had recipes and history
+    localDB.version(3).stores({ // Increment version if 'shoppingList' store is new or changing structure
         recipes: '++localId, name, timestamp, *tags',
         history: '++localId, recipeName, timestamp, *tags',
-        planning: '++localId, date, recipeLocalId, recipeName' // NEW: For local planning entries
-                                                            // recipeLocalId links to the recipe in the local 'recipes' store
+        planning: '++localId, date, recipeLocalId, recipeName',
+        shoppingList: '++id, name, ingredients' // NEW or UPDATED: for local shopping list
+                                                // '++id' simple auto-incrementing key
+                                                // 'name' could be a generic name like "localShoppingList"
+                                                // 'ingredients' will be an array of ingredient objects
     }).upgrade(tx => {
-        // This upgrade function will run if a user had version 1.
-        // For version 2, we're adding the 'planning' store.
-        // No data migration needed from old stores for this specific change.
-        console.log("Upgrading RecipeAppDB to version 2, adding 'planning' store.");
+        console.log("Upgrading RecipeAppDB to version 3, ensuring 'shoppingList' store is present/updated.");
+        // If version 2 didn't have shoppingList or had a different structure,
+        // you might need to handle that here. For adding a new table, this is often enough.
     });
 
 
@@ -2828,56 +2830,152 @@ function confirmDeletePlannedMeal(planId, deleteAreaContainer, listItemElement) 
     deleteAreaContainer.appendChild(confirmControls);
 }
 
-function generateShoppingList() {
-  const output = document.getElementById('shoppingListResults');
-  output.innerHTML = 'Generating...';
+async function generateShoppingList() { // Made async
+    const outputContainer = document.getElementById('shoppingListResults');
+    if (!outputContainer) return;
+    outputContainer.innerHTML = '<div class="list-group-item text-muted">Generating shopping list... <span class="spinner-border spinner-border-sm"></span></div>';
+    document.getElementById('clearShoppingListBtn').disabled = true;
 
-  db.collection("planning")
-  .where('uid', '==', currentUser.uid)
-  .get()
-  .then(snapshot => {
-    if (snapshot.empty) {
-      output.innerHTML = '<p class="text-muted">No planned meals found.</p>';
-      return;
-    }
 
-    const recipeIds = snapshot.docs.map(doc => doc.data().recipeId);
-    const ingredientMap = {};
+    const ingredientMap = {}; // To aggregate ingredients
 
-    recipeIds.forEach(id => {
-      const recipe = recipes.find(r => r.id === id);
-      if (!recipe || !recipe.ingredients) return;
+    if (currentUser) {
+        // --- LOGGED IN: Generate from Firestore planned meals ---
+        try {
+            const planningSnapshot = await db.collection("planning")
+                .where('uid', '==', currentUser.uid)
+                .get();
 
-      recipe.ingredients.forEach(ing => {
-        const key = `${ing.name}|${ing.unit}`.toLowerCase();
-        const qty = parseFloat(ing.quantity) || 0;
+            if (planningSnapshot.empty) {
+                outputContainer.innerHTML = '<div class="list-group-item text-muted text-center">No meals planned in your account to generate a list from.</div>';
+                return;
+            }
 
-        if (!ingredientMap[key]) {
-          ingredientMap[key] = { ...ing, quantity: qty };
-        } else {
-          ingredientMap[key].quantity += qty;
+            const recipeIds = planningSnapshot.docs.map(doc => doc.data().recipeId);
+
+            // Ensure `recipes` array (loaded from Firestore) is available
+            if (!recipes || recipes.length === 0) {
+                console.warn("Firestore recipes not loaded, attempting to reload for shopping list.");
+                await loadRecipesFromFirestore(); // Make sure loadRecipesFromFirestore is async and populates `recipes`
+                if (!recipes || recipes.length === 0) {
+                     outputContainer.innerHTML = '<p class="text-danger text-center">Could not load recipe details for shopping list.</p>';
+                     return;
+                }
+            }
+            
+            recipeIds.forEach(id => {
+                const recipe = recipes.find(r => r.id === id); // r.id is Firestore doc ID
+                if (recipe && recipe.ingredients) {
+                    recipe.ingredients.forEach(ing => {
+                        const key = `${ing.name}|${ing.unit}`.toLowerCase();
+                        const qty = parseFloat(ing.quantity) || 0;
+                        if (!ingredientMap[key]) {
+                            ingredientMap[key] = { ...ing, quantity: qty, checked: false };
+                        } else {
+                            ingredientMap[key].quantity += qty;
+                        }
+                    });
+                }
+            });
+
+            const aggregatedIngredients = Object.values(ingredientMap);
+            renderShoppingList(aggregatedIngredients); // Your existing function
+
+            // Save to Firestore shopping collection
+            await db.collection("shopping").doc(currentUser.uid).set({
+                ingredients: aggregatedIngredients,
+                uid: currentUser.uid,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            console.log("✅ Shopping list saved to Firestore for user", currentUser.uid);
+            if (aggregatedIngredients.length > 0) {
+                document.getElementById('clearShoppingListBtn').disabled = false;
+            }
+
+        } catch (err) {
+            console.error("❌ Error generating shopping list from Firestore:", err);
+            outputContainer.innerHTML = '<p class="text-danger text-center">Error generating shopping list.</p>';
         }
-      });
-    });
 
-    // Prepare ingredients list
-    const ingredients = Object.values(ingredientMap).map(ing => ({
-      name: ing.name,
-      unit: ing.unit,
-      quantity: ing.quantity,
-      checked: false // start unchecked
-    }));
+    } else {
+        // --- NOT LOGGED IN: Generate from LocalDB planned meals ---
+        if (!localDB) {
+            outputContainer.innerHTML = '<p class="text-warning text-center">Local storage not available.</p>';
+            return;
+        }
+        try {
+            const localPlannedMeals = await localDB.planning.toArray(); // Get all local planned meals
 
-    renderShoppingList(ingredients);
+            if (!localPlannedMeals || localPlannedMeals.length === 0) {
+                outputContainer.innerHTML = '<div class="list-group-item text-muted text-center">No meals planned locally to generate a list from.</div>';
+                return;
+            }
 
-    // Save it to Firestore!
-    db.collection("shopping").doc(currentUser.uid).set({
-      ingredients,
-      uid: currentUser.uid
-      })
-      .then(() => console.log("✅ Shopping list saved to cloud"))
-      .catch(err => console.error("❌ Failed to save shopping list:", err));
-  });
+            // Ensure `recipes` array (loaded from LocalDB) is available
+            if (!recipes || recipes.length === 0) {
+                 console.warn("Local recipes not loaded, attempting to reload for shopping list.");
+                 await loadRecipesFromLocal(); // Make sure this is async and populates `recipes`
+                 if (!recipes || recipes.length === 0) {
+                     outputContainer.innerHTML = '<p class="text-danger text-center">Could not load local recipe details for shopping list.</p>';
+                     return;
+                 }
+            }
+
+            localPlannedMeals.forEach(plan => {
+                // plan.recipeLocalId is the key to find the recipe in the local `recipes` store
+                // (remember recipes loaded locally have their `localId` mapped to `id`)
+                const recipe = recipes.find(r => r.id === plan.recipeLocalId);
+                if (recipe && recipe.ingredients) {
+                    recipe.ingredients.forEach(ing => {
+                        const key = `${ing.name}|${ing.unit}`.toLowerCase();
+                        // Ensure quantity is parsed correctly, default to 0 if not a number
+                        let qtyToAdd = 0;
+                        if (typeof ing.quantity === 'string' && ing.quantity.includes('/')) {
+                            // Basic fraction handling e.g., "1/2" -> 0.5, "1 1/2" -> 1.5
+                            // This can be made more robust if needed
+                            try {
+                                qtyToAdd = ing.quantity.split(' ').reduce((acc, part) => {
+                                    const fractionParts = part.split('/');
+                                    return acc + (fractionParts.length === 2 ? parseFloat(fractionParts[0]) / parseFloat(fractionParts[1]) : parseFloat(part) || 0);
+                                }, 0);
+                            } catch { qtyToAdd = 0; }
+                        } else {
+                            qtyToAdd = parseFloat(ing.quantity) || 0;
+                        }
+                        
+                        if (!ingredientMap[key]) {
+                            ingredientMap[key] = { ...ing, quantity: qtyToAdd, checked: false };
+                        } else {
+                            ingredientMap[key].quantity += qtyToAdd;
+                        }
+                    });
+                }
+            });
+
+            const aggregatedIngredients = Object.values(ingredientMap);
+            renderShoppingList(aggregatedIngredients); // Your existing function
+
+            // Save to LocalDB shoppingList store
+            // We'll overwrite the existing local list (assuming only one for anonymous user)
+            // Using a known ID/name for the single local list, or just clearing and adding.
+            // For simplicity, let's clear and add.
+            await localDB.shoppingList.clear(); // Clear any old list
+            if (aggregatedIngredients.length > 0) {
+                await localDB.shoppingList.add({
+                    id: "localUserShoppingList", // Use a fixed ID
+                    name: "My Local Shopping List", 
+                    ingredients: aggregatedIngredients,
+                    updatedAt: new Date().toISOString()
+                });
+                document.getElementById('clearShoppingListBtn').disabled = false;
+            }
+            console.log("✅ Shopping list saved to LocalDB.");
+
+        } catch (err) {
+            console.error("❌ Error generating shopping list from LocalDB:", err.stack || err);
+            outputContainer.innerHTML = '<p class="text-danger text-center">Error generating local shopping list.</p>';
+        }
+    }
 }
 
 function confirmClearAllPlanning(button) { // Renamed to reflect it shows a confirmation
@@ -3000,194 +3098,285 @@ function deletePlannedMeal(planId, button) {
 }
 
 function renderShoppingList(ingredients) {
-  const output = document.getElementById('shoppingListResults');
-  output.innerHTML = '';
+    const outputContainer = document.getElementById('shoppingListResults');
+    const clearBtn = document.getElementById('clearShoppingListBtn'); // To enable/disable it
 
-  const list = document.createElement('ul');
-  list.className = 'list-group';
+    if (!outputContainer) {
+        console.error("Shopping list output container not found!");
+        return;
+    }
+    outputContainer.innerHTML = ''; // Clear previous list or messages
 
-  ingredients.forEach((ing, idx) => {
-    const item = document.createElement('li');
-    item.className = 'list-group-item d-flex justify-content-between align-items-center';
-    item.dataset.index = idx;
-
-    const leftSide = document.createElement('div');
-    leftSide.className = 'd-flex align-items-center gap-2';
-
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.className = 'form-check-input';
-    checkbox.checked = ing.checked;
-
-    const label = document.createElement('span');
-    label.textContent = `${ing.quantity} ${ing.unit} ${ing.name}`;
-
-    if (checkbox.checked) {
-      label.style.textDecoration = 'line-through';
-      label.style.opacity = '0.6';
+    if (!ingredients || ingredients.length === 0) {
+        outputContainer.innerHTML = '<div class="list-group-item text-muted text-center">Your shopping list is empty. Generate one from planned meals!</div>';
+        if (clearBtn) clearBtn.disabled = true;
+        return;
     }
 
-    leftSide.appendChild(checkbox);
-    leftSide.appendChild(label);
+    const listGroup = document.createElement('ul');
+    listGroup.className = 'list-group shopping-list-group'; // Added custom class for potential styling
 
-    // 🗑️ Delete button
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'btn btn-outline-danger btn-sm';
-    deleteBtn.innerHTML = '🗑️';
-    deleteBtn.onclick = () => {
-      ingredients.splice(idx, 1); // Remove from local array
-      db.collection("shopping").doc(currentUser.uid).set({
-        ingredients,
-        uid: currentUser.uid // ✅ Required by your Firestore rules
-      })
-        .then(() => {
-          renderShoppingList(ingredients); // Re-render
-        })
-        .catch(err => {
-          console.error("❌ Failed to update shopping list:", err);
-        });
+    // Helper function to update the persisted shopping list
+    const updatePersistedShoppingList = async (updatedIngredients) => {
+        if (currentUser) {
+            // --- LOGGED IN: Update Firestore ---
+            try {
+                await db.collection("shopping").doc(currentUser.uid).set({
+                    ingredients: updatedIngredients,
+                    uid: currentUser.uid,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                console.log("Firestore shopping list updated.");
+            } catch (err) {
+                console.error("Error updating Firestore shopping list:", err);
+                alert("Could not save changes to your shopping list. Please try again.");
+                // Optionally, you might want to revert the UI change if saving fails.
+            }
+        } else {
+            // --- NOT LOGGED IN: Update LocalDB ---
+            if (!localDB) {
+                console.error("LocalDB not initialized. Cannot update local shopping list.");
+                alert("Local storage not available to save shopping list changes.");
+                return;
+            }
+            try {
+                // Assuming a single shopping list document with a fixed ID for anonymous users
+                await localDB.shoppingList.put({
+                    id: "localUserShoppingList",
+                    name: "My Local Shopping List",
+                    ingredients: updatedIngredients,
+                    updatedAt: new Date().toISOString()
+                });
+                console.log("LocalDB shopping list updated.");
+            } catch (err) {
+                console.error("Error updating LocalDB shopping list:", err.stack || err);
+                alert("Could not save changes to your local shopping list. Please try again.");
+            }
+        }
+        // Update the state of the "Clear Shopping List" button
+        if (clearBtn) {
+            clearBtn.disabled = updatedIngredients.length === 0;
+        }
     };
 
-    item.appendChild(leftSide);
-    item.appendChild(deleteBtn);
-    list.appendChild(item);
+    ingredients.forEach((ing, index) => {
+        const item = document.createElement('li');
+        item.className = 'list-group-item d-flex justify-content-between align-items-center shopping-list-item';
+        // Use a unique key for data-attribute if needed, though index works for direct manipulation here
+        item.dataset.index = index;
 
-    // 📦 Click anywhere in left side toggles checkbox
-    item.addEventListener('click', (e) => {
-      if (e.target === deleteBtn || e.target === checkbox) return; // Ignore clicking delete/checkbox
+        const leftSide = document.createElement('div');
+        leftSide.className = 'd-flex align-items-center form-check'; // Using form-check for better alignment
 
-      checkbox.checked = !checkbox.checked;
-      if (checkbox.checked) {
-        label.style.textDecoration = 'line-through';
-        label.style.opacity = '0.6';
-      } else {
-        label.style.textDecoration = 'none';
-        label.style.opacity = '1';
-      }
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'form-check-input me-2'; // Bootstrap class for checkboxes
+        checkbox.checked = ing.checked || false; // Default to false if undefined
+        checkbox.id = `shopping-item-${index}`; // Unique ID for label association
 
-      ingredients[idx].checked = checkbox.checked;
-      db.collection("shopping").doc(currentUser.uid).set({
-        ingredients,
-        uid: currentUser.uid
-      });
+        const label = document.createElement('label');
+        label.className = 'form-check-label shopping-item-label';
+        label.htmlFor = `shopping-item-${index}`; // Associate label with checkbox
+        // Format quantity nicely (e.g., handle whole numbers without decimals if they are .0)
+        let displayQuantity = ing.quantity;
+        if (typeof ing.quantity === 'number' && ing.quantity % 1 === 0) {
+            displayQuantity = ing.quantity; // Keep as whole number
+        } else if (typeof ing.quantity === 'number') {
+            displayQuantity = ing.quantity.toFixed(2).replace(/\.00$/, ''); // Show up to 2 decimals, remove trailing .00
+        }
+        label.textContent = `${displayQuantity} ${ing.unit || ''} ${ing.name}`;
+
+        if (checkbox.checked) {
+            label.style.textDecoration = 'line-through';
+            label.style.opacity = '0.6';
+        }
+
+        leftSide.appendChild(checkbox);
+        leftSide.appendChild(label);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-outline-danger btn-sm py-0 px-1 shopping-item-delete-btn';
+        deleteBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
+        deleteBtn.title = `Remove ${ing.name}`;
+
+        // Event listener for checkbox change
+        checkbox.addEventListener('change', () => {
+            ingredients[index].checked = checkbox.checked;
+            if (checkbox.checked) {
+                label.style.textDecoration = 'line-through';
+                label.style.opacity = '0.6';
+            } else {
+                label.style.textDecoration = 'none';
+                label.style.opacity = '1';
+            }
+            updatePersistedShoppingList([...ingredients]); // Pass a copy of the array
+        });
+
+        // Event listener for clicking the label or item area (excluding the delete button)
+        // to toggle the checkbox
+        item.addEventListener('click', (e) => {
+            // Prevent toggling if the click was on the delete button itself or the checkbox input
+            if (e.target === deleteBtn || e.target.closest('.shopping-item-delete-btn') === deleteBtn || e.target === checkbox) {
+                return;
+            }
+            checkbox.checked = !checkbox.checked;
+            // Manually trigger the 'change' event on the checkbox so its listener fires
+            checkbox.dispatchEvent(new Event('change'));
+        });
+
+        // Event listener for delete button
+        deleteBtn.onclick = (e) => {
+            e.stopPropagation(); // Prevent item click listener from firing
+            ingredients.splice(index, 1); // Remove item from the array
+            renderShoppingList(ingredients); // Re-render the entire list (simple way to update UI)
+            updatePersistedShoppingList([...ingredients]); // Persist the change (pass a copy)
+            if (ingredients.length === 0) {
+                 showSuccessMessage("Shopping list emptied!");
+            }
+        };
+
+        item.appendChild(leftSide);
+        item.appendChild(deleteBtn);
+        listGroup.appendChild(item);
     });
 
-    checkbox.addEventListener('change', () => {
-      if (checkbox.checked) {
-        label.style.textDecoration = 'line-through';
-        label.style.opacity = '0.6';
-      } else {
-        label.style.textDecoration = 'none';
-        label.style.opacity = '1';
-      }
+    outputContainer.appendChild(listGroup);
 
-      ingredients[idx].checked = checkbox.checked;
-      db.collection("shopping").doc(currentUser.uid).set({
-        ingredients,
-        uid: currentUser.uid
-      });
-    });
-  });
-
-  output.appendChild(list);
-
-  const clearBtn = document.getElementById('clearShoppingListBtn');
-  if (clearBtn) clearBtn.disabled = ingredients.length === 0;
-}
-
-
-
-function loadShoppingList() {
-  const uid = currentUser.uid;
-  const docRef = db.collection("shopping").doc(uid);
-
-  docRef.get().then(doc => {
-    const clearBtn = document.getElementById('clearShoppingListBtn');
-
-    if (doc.exists) {
-      const data = doc.data();
-      if (data.ingredients && data.ingredients.length > 0) {
-        renderShoppingList(data.ingredients);
-        if (clearBtn) clearBtn.disabled = false;
-      } else {
-        document.getElementById('shoppingListResults').innerHTML = '<p class="text-muted">No shopping list generated.</p>';
-        if (clearBtn) clearBtn.disabled = true;
-      }
-    } else {
-      // 🆕 Create an empty shopping list document scoped to user
-      docRef.set({
-        ingredients: [],
-        uid: uid
-      }).then(() => {
-        console.log("✅ Initialized empty shopping list for", uid);
-        document.getElementById('shoppingListResults').innerHTML = '<p class="text-muted">No shopping list generated.</p>';
-        if (clearBtn) clearBtn.disabled = true;
-      }).catch(err => {
-        console.error("❌ Failed to initialize shopping list:", err);
-      });
+    // Enable or disable the "Clear Shopping List" button based on whether the list has items
+    if (clearBtn) {
+        clearBtn.disabled = ingredients.length === 0;
     }
-  }).catch(err => {
-    console.error("❌ Failed to load shopping list:", err);
-  });
 }
 
-function clearShoppingList() {
-  console.log("🛠️ clearShoppingList() clicked");
-  
-  const clearBtn = document.getElementById('clearShoppingListBtn');
-  if (!clearBtn) {
-    console.log("❌ clearShoppingListBtn not found");
-    return;
-  }
 
-  // Prevent multiple confirms
-  if (clearBtn.parentElement.querySelector('.confirm-clear-shopping')) {
-    console.log("❌ Already confirming");
-    return;
-  }
 
-  clearBtn.style.display = 'none'; // Hide original button
+async function loadShoppingList() { // Made async
+    const outputContainer = document.getElementById('shoppingListResults');
+    const clearBtn = document.getElementById('clearShoppingListBtn');
+    if (!outputContainer || !clearBtn) return;
 
-  const confirmArea = document.createElement('div');
-  confirmArea.className = 'confirm-clear-shopping d-flex gap-2 align-items-center';
+    outputContainer.innerHTML = '<div class="list-group-item text-muted">Loading shopping list...</div>';
+    clearBtn.disabled = true;
 
-  const confirmText = document.createElement('span');
-  confirmText.textContent = 'Clear entire shopping list?';
+    if (currentUser) {
+        // --- LOGGED IN: Load from Firebase ---
+        try {
+            const docRef = db.collection("shopping").doc(currentUser.uid);
+            const doc = await docRef.get();
+            if (doc.exists) {
+                const data = doc.data();
+                if (data.ingredients && data.ingredients.length > 0) {
+                    renderShoppingList(data.ingredients);
+                    clearBtn.disabled = false;
+                } else {
+                    outputContainer.innerHTML = '<div class="list-group-item text-muted text-center">Generate a list from your planned meals.</div>';
+                }
+            } else {
+                outputContainer.innerHTML = '<div class="list-group-item text-muted text-center">No shopping list found. Generate one!</div>';
+                // Optional: Initialize an empty list document if it's critical for other logic
+                // await docRef.set({ ingredients: [], uid: currentUser.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+            }
+        } catch (err) {
+            console.error("❌ Failed to load shopping list from Firestore:", err);
+            outputContainer.innerHTML = '<p class="text-danger text-center">Error loading shopping list.</p>';
+        }
+    } else {
+        // --- NOT LOGGED IN: Load from LocalDB ---
+        if (!localDB) {
+            outputContainer.innerHTML = '<p class="text-warning text-center">Local storage not available.</p>';
+            return;
+        }
+        try {
+            // Assuming we use a fixed ID for the anonymous user's shopping list
+            const localShoppingList = await localDB.shoppingList.get("localUserShoppingList");
+            if (localShoppingList && localShoppingList.ingredients && localShoppingList.ingredients.length > 0) {
+                renderShoppingList(localShoppingList.ingredients);
+                clearBtn.disabled = false;
+            } else {
+                outputContainer.innerHTML = '<div class="list-group-item text-muted text-center">No local shopping list. Generate one from locally planned meals!</div>';
+            }
+        } catch (err) {
+            console.error("❌ Failed to load shopping list from LocalDB:", err.stack || err);
+            outputContainer.innerHTML = '<p class="text-danger text-center">Error loading local shopping list.</p>';
+        }
+    }
+}
 
-  const yesBtn = document.createElement('button');
-  yesBtn.className = 'btn btn-sm btn-outline-danger';
-  yesBtn.textContent = 'Yes';
+function confirmClearShoppingList() {
+    const clearBtn = document.getElementById('clearShoppingListBtn');
+    if (!clearBtn || clearBtn.disabled) return;
 
-  const noBtn = document.createElement('button');
-  noBtn.className = 'btn btn-sm btn-outline-dark';
-  noBtn.textContent = 'No';
+    const existingConfirm = clearBtn.parentElement.querySelector('.confirm-clear-shopping-controls');
+    if (existingConfirm) {
+        existingConfirm.remove();
+        clearBtn.style.display = 'inline-block';
+        return;
+    }
 
-  confirmArea.appendChild(confirmText);
-  confirmArea.appendChild(yesBtn);
-  confirmArea.appendChild(noBtn);
+    clearBtn.style.display = 'none';
 
-  clearBtn.parentElement.appendChild(confirmArea);
+    const confirmControls = document.createElement('span');
+    confirmControls.className = 'confirm-clear-shopping-controls ms-2';
+    // ... (setup confirmText, yesBtn, noBtn as in confirmClearAllPlanning) ...
+    const confirmText = document.createElement('span'); /* ... */
+    const yesBtn = document.createElement('button');    /* ... */
+    const noBtn = document.createElement('button');     /* ... */
+    confirmText.textContent = "Clear entire shopping list?";
+    yesBtn.className = 'btn btn-sm btn-danger me-1'; yesBtn.innerHTML = 'Yes, Clear';
+    noBtn.className = 'btn btn-sm btn-secondary'; noBtn.innerHTML = 'No';
 
-  // Confirm YES
-  yesBtn.onclick = () => {
-    db.collection("shopping").doc(currentUser.uid).delete().then(() => {
-      document.getElementById('shoppingListResults').innerHTML = '<p class="text-muted">No shopping list generated.</p>';
-      console.log("✅ Shopping list cleared.");
 
-      // Clean up confirm box
-      confirmArea.remove();
-      clearBtn.disabled = true; // Disable after clearing
-      clearBtn.style.display = 'block';
-    }).catch(err => {
-      console.error("❌ Failed to clear shopping list:", err);
-    });
-  };
+    const cleanupAndRestore = () => {
+        confirmControls.remove();
+        clearBtn.style.display = 'inline-block';
+    };
 
-  // Cancel NO
-  noBtn.onclick = () => {
-    confirmArea.remove();
-    clearBtn.style.display = 'block'; // Restore the original button
-  };
+    yesBtn.onclick = async () => { // Made async
+        const outputContainer = document.getElementById('shoppingListResults');
+        if (currentUser) {
+            // --- LOGGED IN: Clear Firebase shopping list for this user ---
+            try {
+                await db.collection("shopping").doc(currentUser.uid).set({ ingredients: [], uid: currentUser.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+                if(outputContainer) outputContainer.innerHTML = '<div class="list-group-item text-muted text-center">Shopping list cleared.</div>';
+                clearBtn.disabled = true;
+                console.log("✅ Firestore shopping list cleared.");
+                showSuccessMessage("Shopping list cleared from your account.");
+            } catch (err) {
+                console.error("❌ Failed to clear Firestore shopping list:", err);
+                alert("Error clearing shopping list: " + err.message);
+            } finally {
+                cleanupAndRestore();
+            }
+        } else {
+            // --- NOT LOGGED IN: Clear LocalDB shopping list ---
+            if (!localDB) {
+                alert("Local storage not available.");
+                cleanupAndRestore();
+                return;
+            }
+            try {
+                // Remove the specific item or clear the ingredients array within it
+                await localDB.shoppingList.put({ id: "localUserShoppingList", name: "My Local Shopping List", ingredients: [], updatedAt: new Date().toISOString() });
+                // Or if you want to delete the whole record: await localDB.shoppingList.delete("localUserShoppingList");
+                if(outputContainer) outputContainer.innerHTML = '<div class="list-group-item text-muted text-center">Local shopping list cleared.</div>';
+                clearBtn.disabled = true;
+                console.log("✅ LocalDB shopping list cleared.");
+                showSuccessMessage("Local shopping list cleared.");
+            } catch (err) {
+                console.error("❌ Failed to clear LocalDB shopping list:", err.stack || err);
+                alert("Error clearing local shopping list: " + err.message);
+            } finally {
+                cleanupAndRestore();
+            }
+        }
+    };
+    noBtn.onclick = cleanupAndRestore;
+    // ... (append confirmText, yesBtn, noBtn to confirmControls) ...
+    // ... (append confirmControls to clearBtn.parentElement) ...
+    confirmControls.appendChild(confirmText);
+    confirmControls.appendChild(yesBtn);
+    confirmControls.appendChild(noBtn);
+    clearBtn.parentElement.appendChild(confirmControls);
 }
 
 
