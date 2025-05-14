@@ -17,27 +17,31 @@ document.addEventListener('DOMContentLoaded', () => {
 function initializeLocalDB() {
     if (!window.indexedDB) {
         console.warn("IndexedDB not supported by this browser. Local storage features will be limited.");
-        // You could fall back to localStorage for very basic things or disable local features.
         return;
     }
 
     localDB = new Dexie("RecipeAppDB");
-    localDB.version(1).stores({
-        recipes: '++localId, name, timestamp', // ++localId for auto-generated primary key, name & timestamp for potential indexing/sorting
-        // We can add more stores later for history, planning, etc.
-        // For 'recipes', we'll store the whole recipe object.
-        // 'name' and 'timestamp' are examples of indexes.
-        // If your recipe objects saved to Firebase have an 'id' (Firebase doc ID),
-        // you might want a different key for local: '++id, firebaseId, name, timestamp'
-        // For anonymous users, we'll generate a local ID.
+    // Increment the version number if you're changing the schema after users might have version 1
+    // For development, you can clear your browser's IndexedDB for the site to start fresh with a new schema.
+    // Or, handle upgrades: https://dexie.org/docs/Tutorial/Design#database-versioning
+    localDB.version(2).stores({ // Assuming version 1 had recipes and history
+        recipes: '++localId, name, timestamp, *tags',
+        history: '++localId, recipeName, timestamp, *tags',
+        planning: '++localId, date, recipeLocalId, recipeName' // NEW: For local planning entries
+                                                            // recipeLocalId links to the recipe in the local 'recipes' store
+    }).upgrade(tx => {
+        // This upgrade function will run if a user had version 1.
+        // For version 2, we're adding the 'planning' store.
+        // No data migration needed from old stores for this specific change.
+        console.log("Upgrading RecipeAppDB to version 2, adding 'planning' store.");
     });
 
+
     localDB.open().then(() => {
-        console.log("RecipeAppDB (IndexedDB via Dexie) opened successfully.");
+        console.log("RecipeAppDB (IndexedDB via Dexie) opened successfully with stores: recipes, history, planning.");
     }).catch(err => {
         console.error("Failed to open RecipeAppDB:", err.stack || err);
-        // Handle error, perhaps disable local storage features
-        localDB = null; // Ensure localDB is null if opening failed
+        localDB = null;
     });
 }
 
@@ -730,88 +734,106 @@ function deleteHistoryEntry(entryId, cardElement) {
 
 
 function markAsMade(recipeName, buttonElement) {
-  console.log("✅ Mark as Made clicked for:", recipeName);
+    console.log("Mark as Made clicked for:", recipeName);
 
-  const card = buttonElement.closest('.card');
-  if (!card) return;
+    const card = buttonElement.closest('.card');
+    if (!card) return;
+    if (card.querySelector('.mark-made-form')) return; // Prevent multiple forms
 
-  // Prevent multiple open forms
-  if (card.querySelector('.mark-made-form')) return;
+    const form = document.createElement('div');
+    form.className = 'mark-made-form mt-3 p-3 border rounded bg-light-subtle'; // Used bg-light-subtle for BS5
 
-  const form = document.createElement('div');
-  form.className = 'mark-made-form mt-3 p-2 border rounded bg-light';
+    const textarea = document.createElement('textarea');
+    textarea.className = 'form-control mb-2';
+    textarea.rows = 2;
+    textarea.placeholder = 'Optional comment...';
 
-  const textarea = document.createElement('textarea');
-  textarea.className = 'form-control mb-2';
-  textarea.rows = 2;
-  textarea.placeholder = 'Optional comment...';
+    const dateLabel = document.createElement('label');
+    dateLabel.textContent = 'Made date:';
+    dateLabel.className = 'form-label mb-0 ms-md-3 fw-semibold'; // ms-md-3 for spacing on medium+ screens
+    dateLabel.style.whiteSpace = 'nowrap';
 
-  // 💾 Save button
-  const saveBtn = document.createElement('button');
-  saveBtn.className = 'btn btn-outline-dark btn-sm';
-  saveBtn.innerHTML = '💾 Save';
+    const dateInput = document.createElement('input');
+    dateInput.type = 'date';
+    dateInput.className = 'form-control form-control-sm d-inline-block'; // d-inline-block for layout
+    dateInput.style.maxWidth = '150px';
+    dateInput.value = new Date().toISOString().split('T')[0]; // Default to today
 
-  // ❌ Cancel button
-  const cancelBtn = document.createElement('button');
-  cancelBtn.className = 'btn btn-outline-danger btn-sm';
-  cancelBtn.innerHTML = '❌ Cancel';
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'btn btn-outline-success btn-sm'; // Changed to success
+    saveBtn.innerHTML = '<i class="bi bi-check-lg"></i> Save';
 
-  // 📅 Made Date label
-  const dateLabel = document.createElement('label');
-  dateLabel.textContent = 'Made date:';
-  dateLabel.className = 'form-label mb-0 ms-3 fw-semibold';
-  dateLabel.style.whiteSpace = 'nowrap';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-outline-secondary btn-sm'; // Changed to secondary
+    cancelBtn.innerHTML = '<i class="bi bi-x-lg"></i> Cancel';
 
-  // 🗓️ Date picker
-  const dateInput = document.createElement('input');
-  dateInput.type = 'date';
-  dateInput.className = 'form-control form-control-sm';
-  dateInput.style.maxWidth = '150px';
+    const controls = document.createElement('div');
+    controls.className = 'd-flex align-items-center gap-2 flex-wrap mt-2'; // Added mt-2 and flex-wrap
+    controls.appendChild(saveBtn);
+    controls.appendChild(cancelBtn);
+    controls.appendChild(dateLabel);
+    controls.appendChild(dateInput);
 
-  // Default to today
-  const today = new Date().toISOString().split('T')[0];
-  dateInput.value = today;
+    saveBtn.onclick = () => {
+        const notes = textarea.value.trim();
+        // Ensure date is treated as local, then get start of day in UTC for consistent ISO string
+        const localDate = new Date(dateInput.value + 'T00:00:00'); // Treat selected date as local
+        const timestamp = localDate.toISOString();
 
-  // ➕ Controls container
-  const controls = document.createElement('div');
-  controls.className = 'd-flex align-items-center gap-2 flex-wrap';
+        // Find the full recipe object to get tags if available
+        // This assumes `recipes` array is populated with current view (local or cloud)
+        const recipeObj = recipes.find(r => r.name === recipeName);
+        const recipeTags = recipeObj && recipeObj.tags ? recipeObj.tags : [];
 
-  controls.appendChild(saveBtn);
-  controls.appendChild(cancelBtn);
-  controls.appendChild(dateLabel);
-  controls.appendChild(dateInput);
+        const historyEntry = {
+            recipeName: recipeName, // Changed from 'recipe' to 'recipeName' for clarity with localDB schema
+            tags: recipeTags,
+            timestamp: timestamp,
+            notes: notes || '',
+        };
 
-  // 💾 Save logic
-  saveBtn.onclick = () => {
-    const notes = textarea.value.trim();
-    const timestamp = new Date(dateInput.value).toISOString();
-  
-    // 🔥 Find the full recipe object
-    const recipeObj = recipes.find(r => r.name === recipeName);
-  
-    db.collection("history").add({
-      recipe: recipeName,
-      tags: recipeObj?.tags || [], // ✅ Save tags too!
-      timestamp: timestamp,
-      notes: notes || '',
-      uid: currentUser.uid
-    }).then(() => {
-      console.log("✅ History entry added!");
-      form.innerHTML = '<div class="text-success fw-bold">✅ Marked as made!</div>';
-      setTimeout(() => form.remove(), 2000);
-    }).catch(err => {
-      console.error("❌ Failed to save history:", err);
-      alert('Failed to save history.');
-    });
-  };
-  
+        if (currentUser) {
+            // --- LOGGED IN: Save to Firebase ---
+            historyEntry.uid = currentUser.uid;
+            db.collection("history").add(historyEntry)
+                .then(() => {
+                    console.log("✅ History entry added to Firestore!");
+                    form.innerHTML = '<div class="text-success fw-bold p-2">✅ Marked as made!</div>';
+                    setTimeout(() => form.remove(), 2000);
+                })
+                .catch(err => {
+                    console.error("❌ Failed to save history to Firestore:", err);
+                    alert('Failed to save history: ' + err.message);
+                });
+        } else {
+            // --- NOT LOGGED IN: Save to LocalDB ---
+            if (!localDB) {
+                alert("Local storage not available. Please sign in.");
+                console.error("Attempted to save local history, but localDB is not initialized.");
+                return;
+            }
+            historyEntry.localId = generateLocalUUID(); // Add localId for IndexedDB
+            // No UID needed for local anonymous history
 
-  // ❌ Cancel logic
-  cancelBtn.onclick = () => form.remove();
+            localDB.history.add(historyEntry)
+                .then(() => {
+                    console.log("✅ History entry added to LocalDB!");
+                    form.innerHTML = '<div class="text-success fw-bold p-2">✅ Marked as made (saved locally)!</div>';
+                    setTimeout(() => form.remove(), 2000);
+                })
+                .catch(err => {
+                    console.error("❌ Failed to save history to LocalDB:", err.stack || err);
+                    alert('Failed to save history locally: ' + err.message);
+                });
+        }
+    };
 
-  form.appendChild(textarea);
-  form.appendChild(controls);
-  card.appendChild(form);
+    cancelBtn.onclick = () => form.remove();
+
+    form.appendChild(textarea);
+    form.appendChild(controls);
+    card.appendChild(form);
+    textarea.focus(); // Focus on the textarea
 }
 
 
@@ -1236,174 +1258,267 @@ function showRandomRecipe() {
 
 
 function viewHistory() {
-  const view = document.getElementById('mainView');
-  view.className = 'section-history';
-  view.innerHTML = `
-    <h5 class="mb-3">🕘 Recipe History</h5>
+    const view = document.getElementById('mainView');
+    view.className = 'section-history'; // For potential specific styling
+    view.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recipe History</h5>
+            </div>
+        <input type="text" class="form-control mb-2" id="historySearch" placeholder="Search notes or recipe name..." oninput="filterHistory()" />
+        <input type="text" class="form-control mb-3" id="historyTagSearch" placeholder="Filter by tag (e.g., dinner,easy)..." oninput="filterHistory()" />
+        <div id="historyListContainer">
+            <div id="historyList" class="mt-2">Loading...</div>
+        </div>
+    `;
 
-    <input type="text" class="form-control mb-2" id="historySearch" placeholder="Search notes or recipe name..." oninput="filterHistory()" />
-    <input type="text" class="form-control mb-3" id="historyTagSearch" placeholder="Filter by tag..." oninput="filterHistory()" />
-
-    <div id="historyList">Loading...</div>
-  `;
-
-
-  db.collection("history")
-  .where('uid', '==', currentUser.uid)
-  .orderBy('timestamp', 'desc')
-  .get().then(snapshot => {
-    const history = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    renderHistoryList(history);
-  }).catch(err => {
-    console.error("Error loading history:", err);
-    document.getElementById('historyList').innerHTML = '<p>Error loading history</p>';
-  });
+    if (currentUser) {
+        // --- LOGGED IN: Load from Firebase ---
+        console.log("Loading history from Firestore for user:", currentUser.uid);
+        db.collection("history")
+            .where('uid', '==', currentUser.uid)
+            .orderBy('timestamp', 'desc')
+            .get()
+            .then(snapshot => {
+                const historyEntries = snapshot.docs.map(doc => ({ firestoreId: doc.id, ...doc.data() }));
+                // Pass firestoreId as 'id' for renderHistoryList if it expects 'id' for deletion
+                renderHistoryList(historyEntries.map(e => ({ ...e, id: e.firestoreId })));
+            })
+            .catch(err => {
+                console.error("Error loading history from Firestore:", err);
+                document.getElementById('historyList').innerHTML = '<p class="text-danger">Error loading history.</p>';
+            });
+    } else {
+        // --- NOT LOGGED IN: Load from LocalDB ---
+        console.log("Loading history from LocalDB.");
+        if (!localDB) {
+            document.getElementById('historyList').innerHTML = '<p class="text-warning">Local storage not available.</p>';
+            return;
+        }
+        localDB.history.orderBy('timestamp').reverse().toArray()
+            .then(historyEntries => {
+                // Pass localId as 'id' for renderHistoryList
+                renderHistoryList(historyEntries.map(e => ({ ...e, id: e.localId })));
+            })
+            .catch(err => {
+                console.error("Error loading history from LocalDB:", err.stack || err);
+                document.getElementById('historyList').innerHTML = '<p class="text-danger">Error loading local history.</p>';
+            });
+    }
 }
 
 
 function renderHistoryList(entries, highlightTags = []) {
-  const container = document.getElementById('historyList');
-  container.innerHTML = '';
+    const container = document.getElementById('historyList');
+    if (!container) {
+        console.error("History list container not found");
+        return;
+    }
+    container.innerHTML = '';
 
-  if (entries.length === 0) {
-    container.innerHTML = '<p>No history found.</p>';
-    return;
-  }
+    if (!entries || entries.length === 0) {
+        container.innerHTML = '<div class="alert alert-light text-center" role="alert">No history found. Try marking some recipes as made!</div>';
+        return;
+    }
 
-  entries.forEach(entry => {
-    const card = document.createElement('div');
-    card.className = 'card mb-3 shadow-sm';
+    entries.forEach(entry => { // 'entry.id' will be firestoreId or localId
+        const card = document.createElement('div');
+        card.className = 'card mb-3 shadow-sm';
 
-    const body = document.createElement('div');
-    body.className = 'card-body d-flex justify-content-between align-items-start';
+        const body = document.createElement('div');
+        body.className = 'card-body'; // Removed d-flex for simpler layout, can be re-added
 
-    const textArea = document.createElement('div');
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'flex-grow-1';
 
-    const tagHtml = (entry.tags && entry.tags.length > 0)
-      ? `
-        <div class="mb-2">
-          <strong>Tags:</strong><br />
-          ${entry.tags.map(tag => {
-            const lowerTag = tag.toLowerCase();
-            const isHighlighted = highlightTags.includes(lowerTag);
-            const badgeClass = isHighlighted
-              ? 'badge bg-warning text-dark me-1 mt-1'
-              : 'badge bg-primary text-white me-1 mt-1';
-            return `<span class="${badgeClass}">${tag}</span>`;
-          }).join('')}
-        </div>
-      `
-      : '';
+        const title = document.createElement('h6'); // Changed to h6 for better semantics
+        title.className = 'card-title mb-1';
+        title.textContent = entry.recipeName || entry.recipe; // Use recipeName
 
-    textArea.innerHTML = `
-      <h5 class="card-title">${entry.recipe}</h5>
-      <p><strong>Date:</strong> ${new Date(entry.timestamp).toLocaleDateString()}</p>
-      ${tagHtml}
-      <p><strong>Notes:</strong> ${entry.notes || '(No notes)'}</p>
-    `;
+        const dateText = document.createElement('p');
+        dateText.className = 'card-text text-muted small mb-1';
+        dateText.innerHTML = `<i class="bi bi-calendar-check"></i> Made on: ${new Date(entry.timestamp).toLocaleDateString()}`;
+        
+        contentDiv.appendChild(title);
+        contentDiv.appendChild(dateText);
 
-    const deleteArea = document.createElement('div');
-    deleteArea.className = 'delete-area';
+        if (entry.tags && entry.tags.length > 0) {
+            const tagsDiv = document.createElement('div');
+            tagsDiv.className = 'mb-2 history-tags';
+            entry.tags.forEach(tag => {
+                const lowerTag = tag.toLowerCase();
+                const isHighlighted = highlightTags.some(ht => lowerTag.includes(ht.toLowerCase()));
+                const badgeClass = isHighlighted ? 'badge bg-warning text-dark me-1 mt-1' : 'badge bg-secondary me-1 mt-1'; // Using bg-secondary
+                const tagBadge = document.createElement('span');
+                tagBadge.className = badgeClass;
+                tagBadge.textContent = tag;
+                tagsDiv.appendChild(tagBadge);
+            });
+            contentDiv.appendChild(tagsDiv);
+        }
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'btn btn-outline-danger btn-sm flex-shrink-0';
-    deleteBtn.innerHTML = '🗑️';
-    deleteBtn.title = 'Delete entry';
-    deleteBtn.onclick = () => confirmDeleteHistory(entry.id, deleteArea, card);
+        if (entry.notes) {
+            const notesText = document.createElement('p');
+            notesText.className = 'card-text small';
+            notesText.innerHTML = `<strong>Notes:</strong> ${entry.notes}`;
+            contentDiv.appendChild(notesText);
+        }
 
-    deleteArea.appendChild(deleteBtn);
+        const deleteButtonDiv = document.createElement('div');
+        deleteButtonDiv.className = 'mt-2 text-end delete-area-history'; // For styling the button container if needed
 
-    body.appendChild(textArea);
-    body.appendChild(deleteArea);
-    card.appendChild(body);
-    container.appendChild(card);
-  });
-}
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-outline-danger btn-sm flex-shrink-0';
+        deleteBtn.innerHTML = '<i class="bi bi-trash"></i> Delete';
+        deleteBtn.title = 'Delete this history entry';
+        // `entry.id` is already correctly set to firestoreId or localId by viewHistory()
+        deleteBtn.onclick = () => confirmDeleteHistory(entry.id, deleteButtonDiv, card); 
 
-
-
-
-function filterHistory() {
-  const query = document.getElementById('historySearch').value.toLowerCase();
-  const tagSearch = document.getElementById('historyTagSearch').value.toLowerCase();
-  const tagTerms = tagSearch.split(',').map(t => t.trim()).filter(Boolean);
-
-  db.collection("history")
-    .where("uid", "==", currentUser.uid)
-    .orderBy("timestamp", "desc")
-    .get()
-    .then(snapshot => {
-      const allEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-      const filtered = allEntries.filter(entry => {
-        const matchesText = !query || (
-          entry.recipe.toLowerCase().includes(query) ||
-          (entry.notes && entry.notes.toLowerCase().includes(query))
-        );
-
-        const entryTags = (entry.tags || []).map(t => t.toLowerCase());
-        const matchesTags = tagTerms.length === 0 || tagTerms.every(term =>
-          entryTags.some(tag => tag.startsWith(term))
-        );
-
-        return matchesText && matchesTags;
-      });
-
-      renderHistoryList(filtered, tagTerms);
+        deleteButtonDiv.appendChild(deleteBtn);
+        
+        body.appendChild(contentDiv);
+        body.appendChild(deleteButtonDiv); // Add delete button div to the card body
+        card.appendChild(body);
+        container.appendChild(card);
     });
 }
 
 
-function confirmDeleteHistory(entryId, deleteArea, cardElement) {
-  if (deleteArea.querySelector('.confirm-delete')) return;
 
-  deleteArea.innerHTML = '';
 
-  const confirmArea = document.createElement('div');
-  confirmArea.className = 'confirm-delete d-flex align-items-center gap-2';
+async function filterHistory() { // Made async for potential localDB operations
+    const query = document.getElementById('historySearch').value.toLowerCase().trim();
+    const tagSearch = document.getElementById('historyTagSearch').value.toLowerCase().trim();
+    const tagTerms = tagSearch.split(',').map(t => t.trim()).filter(Boolean);
 
-  // Styled confirm text
-  const confirmText = document.createElement('span');
-  confirmText.className = 'fw-semibold text-danger';
-  confirmText.textContent = 'Confirm?';
+    if (currentUser) {
+        // --- LOGGED IN: Filter Firestore data ---
+        db.collection("history")
+            .where("uid", "==", currentUser.uid)
+            .orderBy("timestamp", "desc")
+            .get()
+            .then(snapshot => {
+                const allEntries = snapshot.docs.map(doc => ({ firestoreId: doc.id, ...doc.data() }));
+                const filtered = allEntries.filter(entry => {
+                    const recipeName = entry.recipeName || entry.recipe || "";
+                    const notes = entry.notes || "";
+                    const matchesText = !query || (
+                        recipeName.toLowerCase().includes(query) ||
+                        notes.toLowerCase().includes(query)
+                    );
+                    const entryTags = (entry.tags || []).map(t => t.toLowerCase());
+                    const matchesTags = tagTerms.length === 0 || tagTerms.every(term =>
+                        entryTags.some(tag => tag.startsWith(term))
+                    );
+                    return matchesText && matchesTags;
+                });
+                renderHistoryList(filtered.map(e => ({...e, id: e.firestoreId })), tagTerms);
+            })
+            .catch(err => {
+                console.error("Error filtering Firestore history:", err);
+                document.getElementById('historyList').innerHTML = '<p class="text-danger">Error filtering history.</p>';
+            });
+    } else {
+        // --- NOT LOGGED IN: Filter LocalDB data ---
+        if (!localDB) {
+            document.getElementById('historyList').innerHTML = '<p class="text-warning">Local storage not available to filter.</p>';
+            return;
+        }
+        try {
+            const allEntries = await localDB.history.orderBy('timestamp').reverse().toArray();
+            const filtered = allEntries.filter(entry => {
+                const recipeName = entry.recipeName || ""; // Ensure recipeName exists
+                const notes = entry.notes || "";
+                const matchesText = !query || (
+                    recipeName.toLowerCase().includes(query) ||
+                    notes.toLowerCase().includes(query)
+                );
+                const entryTags = (entry.tags || []).map(t => t.toLowerCase());
+                const matchesTags = tagTerms.length === 0 || tagTerms.every(term =>
+                    entryTags.some(tag => tag.startsWith(term))
+                );
+                return matchesText && matchesTags;
+            });
+            renderHistoryList(filtered.map(e => ({...e, id: e.localId })), tagTerms);
+        } catch (err) {
+            console.error("Error filtering LocalDB history:", err.stack || err);
+            document.getElementById('historyList').innerHTML = '<p class="text-danger">Error filtering local history.</p>';
+        }
+    }
+}
 
-  // ✅ Confirm button
-  const yesBtn = document.createElement('button');
-  yesBtn.className = 'btn btn-sm btn-outline-success';
-  yesBtn.innerHTML = '✅';
-  yesBtn.title = 'Confirm delete';
-  yesBtn.onclick = () => {
-    db.collection('history').doc(entryId).delete()
-      .then(() => {
-        console.log('✅ History entry deleted:', entryId);
-        cardElement.remove();
-      })
-      .catch((err) => {
-        console.error('❌ Failed to delete history entry:', err);
-        alert('Failed to delete entry.');
-        deleteArea.innerHTML = '';
-      });
-  };
 
-  // ❌ Cancel button
-  const noBtn = document.createElement('button');
-  noBtn.className = 'btn btn-sm btn-outline-danger';
-  noBtn.innerHTML = '❌';
-  noBtn.title = 'Cancel';
-  noBtn.onclick = () => {
-    deleteArea.innerHTML = '';
-    const restoreBtn = document.createElement('button');
-    restoreBtn.className = 'btn btn-outline-danger btn-sm flex-shrink-0';
-    restoreBtn.innerHTML = '🗑️';
-    restoreBtn.title = 'Delete entry';
-    restoreBtn.onclick = () => confirmDeleteHistory(entryId, deleteArea, cardElement);
-    deleteArea.appendChild(restoreBtn);
-  };
+function confirmDeleteHistory(entryId, deleteAreaContainer, cardElement) {
+    // Ensure deleteAreaContainer is valid and not already showing confirmation
+    if (!deleteAreaContainer || deleteAreaContainer.querySelector('.confirm-delete-history-controls')) return;
 
-  confirmArea.appendChild(confirmText);
-  confirmArea.appendChild(yesBtn);
-  confirmArea.appendChild(noBtn);
-  deleteArea.appendChild(confirmArea);
+    // Temporarily hide or clear previous content of deleteAreaContainer (like the original delete button if it was inside)
+    const originalButton = deleteAreaContainer.querySelector('button'); // Assuming the button is inside
+    if (originalButton) originalButton.style.display = 'none';
+
+
+    const confirmControls = document.createElement('div');
+    confirmControls.className = 'confirm-delete-history-controls d-flex align-items-center gap-2 justify-content-end'; // For inline display
+
+    const confirmText = document.createElement('span');
+    confirmText.className = 'text-danger small me-2';
+    confirmText.textContent = 'Really delete?';
+
+    const yesBtn = document.createElement('button');
+    yesBtn.className = 'btn btn-danger btn-sm'; // Changed to danger for yes
+    yesBtn.innerHTML = '<i class="bi bi-check-lg"></i> Yes';
+    yesBtn.title = 'Confirm delete';
+
+    const noBtn = document.createElement('button');
+    noBtn.className = 'btn btn-secondary btn-sm'; // Changed to secondary for no
+    noBtn.innerHTML = '<i class="bi bi-x-lg"></i> No';
+    noBtn.title = 'Cancel delete';
+
+    const cleanupConfirmationUI = () => {
+        confirmControls.remove();
+        if (originalButton) originalButton.style.display = ''; // Restore original button
+    };
+
+    yesBtn.onclick = () => {
+        if (currentUser) {
+            // --- LOGGED IN: Delete from Firebase ---
+            db.collection('history').doc(entryId).delete()
+                .then(() => {
+                    console.log('✅ History entry deleted from Firestore:', entryId);
+                    cardElement.remove(); // Remove from view
+                    showSuccessMessage("History entry deleted.");
+                })
+                .catch((err) => {
+                    console.error('❌ Failed to delete history entry from Firestore:', err);
+                    alert('Failed to delete history entry: ' + err.message);
+                    cleanupConfirmationUI(); // Restore UI on failure
+                });
+        } else {
+            // --- NOT LOGGED IN: Delete from LocalDB ---
+            if (!localDB) {
+                alert("Local storage not available.");
+                cleanupConfirmationUI();
+                return;
+            }
+            localDB.history.delete(entryId) // entryId here is the localId
+                .then(() => {
+                    console.log('✅ History entry deleted from LocalDB:', entryId);
+                    cardElement.remove(); // Remove from view
+                    showSuccessMessage("Local history entry deleted.");
+                })
+                .catch(err => {
+                    console.error('❌ Failed to delete history entry from LocalDB:', err.stack || err);
+                    alert('Failed to delete local history entry: ' + err.message);
+                    cleanupConfirmationUI(); // Restore UI on failure
+                });
+        }
+    };
+
+    noBtn.onclick = cleanupConfirmationUI;
+
+    confirmControls.appendChild(confirmText);
+    confirmControls.appendChild(yesBtn);
+    confirmControls.appendChild(noBtn);
+    deleteAreaContainer.appendChild(confirmControls); // Add controls to the provided container
 }
 
 
@@ -1704,78 +1819,104 @@ async function shareRecipe(recipeId) {
 
 
 function openPlanMealForm(recipe, container) {
-  // Prevent multiple openings
-  if (container.querySelector('input[type="date"]')) return;
-
-  container.innerHTML = ''; // clear the Plan Meal button
-
-  const dateInput = document.createElement('input');
-  dateInput.type = 'date';
-  dateInput.className = 'form-control form-control-sm';
-  dateInput.style.maxWidth = '150px'; // keep it compact inline
-
-  const saveBtn = document.createElement('button');
-  saveBtn.className = 'btn btn-outline-dark btn-sm';
-  saveBtn.textContent = '💾';
-
-  const cancelBtn = document.createElement('button');
-  cancelBtn.className = 'btn btn-outline-danger btn-sm';
-  cancelBtn.textContent = '❌';
-
-  // Inline flex for form
-  const form = document.createElement('div');
-  form.className = 'd-flex align-items-center gap-2';
-  form.appendChild(dateInput);
-  form.appendChild(saveBtn);
-  form.appendChild(cancelBtn);
-
-  container.appendChild(form);
-
-  saveBtn.onclick = () => {
-    const selectedDate = dateInput.value;
-    if (!selectedDate) {
-      dateInput.classList.add('is-invalid');
-      return;
+    // Prevent multiple openings
+    if (container.querySelector('input[type="date"]')) {
+        // If form is already open, perhaps just focus the date input or do nothing
+        const existingDateInput = container.querySelector('input[type="date"]');
+        if (existingDateInput) existingDateInput.focus();
+        return;
     }
 
-    db.collection("planning").add({
-      date: selectedDate,
-      recipeId: recipe.id,
-      recipeName: recipe.name,
-      uid: currentUser.uid // ✅ REQUIRED BY SECURITY RULES
-    }).then(() => {
-      console.log("✅ Meal planned:", recipe.name, "on", selectedDate);
-      container.innerHTML = '<span class="text-success fw-bold">✅ Planned!</span>';
-      setTimeout(() => {
-        container.innerHTML = '';
-        const planBtn = document.createElement('button');
-        planBtn.className = 'btn btn-outline-primary btn-sm';
-        planBtn.textContent = 'Plan Meal';
-        planBtn.onclick = () => openPlanMealForm(recipe, container);
-        container.appendChild(planBtn);
-      }, 2000);
-    }).catch(err => {
-      console.error("❌ Failed to plan meal:", err);
-      container.innerHTML = '<span class="text-danger fw-bold">❌ Failed</span>';
-      setTimeout(() => {
-        container.innerHTML = '';
-        const planBtn = document.createElement('button');
-        planBtn.className = 'btn btn-outline-primary btn-sm';
-        planBtn.textContent = 'Plan Meal';
-        planBtn.onclick = () => openPlanMealForm(recipe, container);
-        container.appendChild(planBtn);
-      }, 2000);
-    });
-  };
+    container.innerHTML = ''; // clear the "Plan Meal" button
 
-  cancelBtn.onclick = () => {
-    container.innerHTML = '';
-    const planBtn = document.createElement('button');
-    planBtn.className = 'btn btn-outline-primary btn-sm';
-    planBtn.textContent = 'Plan Meal';
-    planBtn.onclick = () => openPlanMealForm(recipe, container);
-    container.appendChild(planBtn);
-  };
+    const formWrapper = document.createElement('div');
+    formWrapper.className = 'plan-meal-inline-form d-flex align-items-center gap-2 p-2 border rounded bg-light-subtle mt-1';
+
+
+    const dateInput = document.createElement('input');
+    dateInput.type = 'date';
+    dateInput.className = 'form-control form-control-sm';
+    dateInput.style.maxWidth = '150px';
+    dateInput.value = new Date().toISOString().split('T')[0]; // Default to today
+
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'btn btn-success btn-sm'; // Consistent styling
+    saveBtn.innerHTML = '<i class="bi bi-check-lg"></i>';
+    saveBtn.title = "Save plan";
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-secondary btn-sm'; // Consistent styling
+    cancelBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
+    cancelBtn.title = "Cancel";
+
+    formWrapper.appendChild(dateInput);
+    formWrapper.appendChild(saveBtn);
+    formWrapper.appendChild(cancelBtn);
+    container.appendChild(formWrapper);
+    dateInput.focus();
+
+    const restorePlanButton = () => {
+        container.innerHTML = ''; // Clear the form
+        const planBtn = document.createElement('button');
+        planBtn.className = 'btn btn-outline-success btn-sm'; // Original button style
+        planBtn.textContent = 'Plan Meal';
+        planBtn.onclick = () => openPlanMealForm(recipe, container);
+        container.appendChild(planBtn);
+    };
+
+    saveBtn.onclick = async () => { // Made async for localDB operations
+        const selectedDate = dateInput.value;
+        if (!selectedDate) {
+            dateInput.classList.add('is-invalid'); // Bootstrap validation styling
+            setTimeout(() => dateInput.classList.remove('is-invalid'), 2000);
+            return;
+        }
+
+        const planEntry = {
+            date: selectedDate,
+            recipeName: recipe.name,
+            // recipeId (Firestore) or recipeLocalId (LocalDB) will be set below
+        };
+
+        if (currentUser) {
+            // --- LOGGED IN: Save to Firebase ---
+            planEntry.uid = currentUser.uid; // This line was causing the error when currentUser is null
+            planEntry.recipeId = recipe.id; // This is the Firestore Document ID
+
+            try {
+                await db.collection("planning").add(planEntry);
+                console.log("✅ Meal planned in Firestore:", recipe.name, "on", selectedDate);
+                container.innerHTML = '<span class="text-success fw-bold small p-2">✅ Planned!</span>';
+                // No need to call loadPlannedMeals() from here if showPlanning() is the main view
+                // However, if you want the main Planning page to auto-refresh if it's visible, you could.
+            } catch (err) {
+                console.error("❌ Failed to plan meal in Firestore:", err);
+                container.innerHTML = '<span class="text-danger fw-bold small p-2">❌ Failed</span>';
+            }
+        } else {
+            // --- NOT LOGGED IN: Save to LocalDB ---
+            if (!localDB) {
+                alert("Local storage not available. Please sign in to plan meals.");
+                restorePlanButton(); // Restore button as form submission is effectively cancelled
+                return;
+            }
+            planEntry.localId = generateLocalUUID();
+            planEntry.recipeLocalId = recipe.id; // This is the localId from the recipes store
+
+            try {
+                await localDB.planning.add(planEntry);
+                console.log("✅ Meal planned in LocalDB:", recipe.name, "on", selectedDate);
+                container.innerHTML = '<span class="text-success fw-bold small p-2">✅ Planned (Locally)!</span>';
+            } catch (err) {
+                console.error("❌ Failed to plan meal in LocalDB:", err.stack || err);
+                container.innerHTML = '<span class="text-danger fw-bold small p-2">❌ Failed (Local)</span>';
+            }
+        }
+        // After 2 seconds, restore the "Plan Meal" button
+        setTimeout(restorePlanButton, 2000);
+    };
+
+    cancelBtn.onclick = restorePlanButton;
 }
 
 
@@ -2387,137 +2528,304 @@ function loadIngredientsFromFirestore() {
 }
 
 function showPlanning() {
-  const view = document.getElementById('mainView');
-  view.className = 'section-planning';
-  view.innerHTML = `
-    <h5 class="mb-3">📋 Planned Meals</h5>
+    const view = document.getElementById('mainView');
+    view.className = 'section-planning container py-3'; // Added container and padding
+    view.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0"><i class="bi bi-calendar-week"></i> Planned Meals</h5>
+            <button id="clearAllPlanningBtn" class="btn btn-outline-danger btn-sm" onclick="confirmClearAllPlanning(this)">
+                <i class="bi bi-trash3"></i> Clear All Planned
+            </button>
+        </div>
+        <div id="plannedMealsList" class="mb-4 list-group"></div> <hr class="my-4" />
 
-    <div class="d-flex justify-content-between align-items-center mb-2">
-      <h6 class="mb-0">Planned Meals</h6>
-      <button id="clearPlanningBtn" class="btn btn-outline-danger btn-sm" onclick="clearAllPlanning(this)">🧹 Clear Planned Meals</button>
-    </div>
+        <h5 class="mb-3"><i class="bi bi-calendar-plus"></i> Plan a New Meal</h5>
+        <div class="card card-body bg-light-subtle mb-4"> <div class="row g-3">
+                <div class="col-md-6">
+                    <label for="planDate" class="form-label fw-semibold">Select Date:</label>
+                    <input type="date" class="form-control" id="planDate" value="${new Date().toISOString().split('T')[0]}">
+                </div>
+                <div class="col-md-6">
+                    <label for="planRecipe" class="form-label fw-semibold">Select Recipe:</label>
+                    <select id="planRecipe" class="form-select">
+                        <option value="">-- Choose a recipe --</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mt-3 text-end">
+                <button class="btn btn-success" onclick="addPlannedMeal()">
+                    <i class="bi bi-plus-circle"></i> Add to Plan
+                </button>
+            </div>
+        </div>
 
-    <div id="plannedMealsList" class="mb-4"></div>
+        <hr class="my-4" />
+        
+        <div class="d-flex justify-content-between align-items-center mb-3">
+             <h5 class="mb-0"><i class="bi bi-cart3"></i> Shopping List</h5>
+             <div> <button class="btn btn-primary me-2" onclick="generateShoppingList()">
+                    <i class="bi bi-list-check"></i> Generate Ingredient Checklist
+                </button>
+                <button id="clearShoppingListBtn" class="btn btn-outline-danger btn-sm" onclick="confirmClearShoppingList()" disabled>
+                    <i class="bi bi-trash2"></i> Clear Shopping List
+                </button>
+            </div>
+        </div>
+        <div id="shoppingListResults" class="mb-4"></div>
+    `;
 
-    <hr />
-
-    <h5 class="mb-3">🛒 Shopping List</h5>
-
-    <div class="d-flex justify-content-between align-items-center mb-2">
-      <button class="btn btn-outline-success" onclick="generateShoppingList()">🛒 Generate Ingredient Checklist</button>
-      <button id="clearShoppingListBtn" class="btn btn-outline-danger btn-sm" onclick="clearShoppingList()" disabled>🗑️ Clear Shopping List</button>
-    </div>
-
-    <div id="shoppingListResults" class="mb-4"></div>
-
-    <hr />
-
-    <h5 class="mb-3">Plan a New Meal</h5>
-
-    <div class="mb-3">
-      <label class="form-label">📅 Select Date:</label>
-      <input type="date" class="form-control" id="planDate" />
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label">🍽️ Select Recipe:</label>
-      <select id="planRecipe" class="form-select">
-        <option value="">-- Choose --</option>
-      </select>
-    </div>
-
-    <button class="btn btn-outline-success btn-sm">
-      <span class="text-success"></span> Add to Plan
-    </button>
-
-  `;
-
-  populateRecipeDropdown();
-  loadPlannedMeals();
-  loadShoppingList();
-}
-
-function populateRecipeDropdown() {
-  const select = document.getElementById('planRecipe');
-  select.innerHTML = '<option value="">-- Choose --</option>';
-  recipes.forEach(recipe => {
-    const option = document.createElement('option');
-    option.value = recipe.id;
-    option.textContent = recipe.name;
-    select.appendChild(option);
-  });
-}
-
-function addPlannedMeal() {
-  const date = document.getElementById('planDate').value;
-  const recipeId = document.getElementById('planRecipe').value;
-
-  if (!date || !recipeId) {
-    alert("Please select a date and a recipe!");
-    return;
-  }
-
-  // ✅ Find the recipe object
-  const recipe = recipes.find(r => r.id === recipeId);
-
-  if (!recipe) {
-    alert("Recipe not found!");
-    return;
-  }
-
-  db.collection("planning").add({
-    date,
-    recipeId,
-    recipeName: recipe.name,
-    uid: currentUser.uid // 🔥 save the user id
-  }).then(() => {
-    console.log("✅ Meal added to planning:", recipe.name);
+    populateRecipeDropdownForPlanning(); // Renamed for clarity
     loadPlannedMeals();
-  }).catch(err => {
-    console.error("❌ Error adding to planning:", err);
-  });
+    loadShoppingList(); // This will be adapted in the next phase
 }
 
+function populateRecipeDropdownForPlanning() {
+    const select = document.getElementById('planRecipe');
+    if (!select) return;
+    select.innerHTML = '<option value="">-- Choose a recipe --</option>';
 
-function loadPlannedMeals() {
-  const list = document.getElementById('plannedMealsList');
-  list.innerHTML = 'Loading...';
+    // The global 'recipes' array is already populated by loadInitialRecipes()
+    // with either Firestore or LocalDB recipes.
+    if (recipes && recipes.length > 0) {
+        // Sort recipes by name for the dropdown
+        const sortedRecipes = [...recipes].sort((a, b) => a.name.localeCompare(b.name));
+        sortedRecipes.forEach(recipe => {
+            const option = document.createElement('option');
+            // When not logged in, recipe.id is recipe.localId
+            // When logged in, recipe.id is Firestore doc ID
+            option.value = recipe.id; 
+            option.textContent = recipe.name;
+            select.appendChild(option);
+        });
+    } else {
+        const option = document.createElement('option');
+        option.value = "";
+        option.textContent = "No recipes available to plan";
+        option.disabled = true;
+        select.appendChild(option);
+    }
+}
 
-  db.collection("planning")
-  .where('uid', '==', currentUser.uid)
-  .orderBy('date')
-  .get().then(snapshot => {
-    if (snapshot.empty) {
-      list.innerHTML = '<p class="text-muted">No planned meals yet.</p>';
-      return;
+async function addPlannedMeal() { // Made async
+    const date = document.getElementById('planDate').value;
+    const recipeId = document.getElementById('planRecipe').value; // This will be Firestore ID or localId
+
+    if (!date || !recipeId) {
+        alert("Please select a date and a recipe!");
+        return;
     }
 
-    const ul = document.createElement('ul');
-    ul.className = 'list-group';
+    // Find the recipe object from the global 'recipes' array
+    const selectedRecipe = recipes.find(r => r.id === recipeId);
 
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      const li = document.createElement('li');
-      li.className = 'list-group-item d-flex justify-content-between align-items-center';
+    if (!selectedRecipe) {
+        alert("Selected recipe not found. Please refresh.");
+        return;
+    }
 
-      const info = document.createElement('div');
-      info.innerHTML = `<strong>${data.date}:</strong> ${data.recipeName}`;
+    const planEntry = {
+        date,
+        recipeName: selectedRecipe.name,
+        // 'recipeId' will store Firestore ID if logged in, 'recipeLocalId' will store localId if not
+    };
 
-      const deleteBtn = document.createElement('button');
-      deleteBtn.className = 'btn btn-outline-danger btn-sm';
-      deleteBtn.innerHTML = '🗑️';
-      deleteBtn.onclick = () => deletePlannedMeal(doc.id, deleteBtn);
+    if (currentUser) {
+        // --- LOGGED IN: Save to Firebase ---
+        planEntry.uid = currentUser.uid;
+        planEntry.recipeId = selectedRecipe.id; // This is the Firestore Document ID
 
-      li.appendChild(info);
-      li.appendChild(deleteBtn);
-      ul.appendChild(li);
-    });
+        try {
+            await db.collection("planning").add(planEntry);
+            console.log("✅ Meal added to Firestore planning:", selectedRecipe.name);
+            showSuccessMessage("Meal planned successfully!");
+            loadPlannedMeals(); // Refresh list
+        } catch (err) {
+            console.error("❌ Error adding to Firestore planning:", err);
+            alert("Error planning meal: " + err.message);
+        }
+    } else {
+        // --- NOT LOGGED IN: Save to LocalDB ---
+        if (!localDB) {
+            alert("Local storage not available. Please sign in to plan meals.");
+            return;
+        }
+        planEntry.localId = generateLocalUUID();
+        planEntry.recipeLocalId = selectedRecipe.id; // This is the localId from the recipes store
 
-    list.innerHTML = '';
-    list.appendChild(ul);
-  }).catch(err => {
-    console.error("Error loading planning:", err);
-  });
+        try {
+            await localDB.planning.add(planEntry);
+            console.log("✅ Meal added to LocalDB planning:", selectedRecipe.name);
+            showSuccessMessage("Meal planned locally!");
+            loadPlannedMeals(); // Refresh list
+        } catch (err) {
+            console.error("❌ Error adding to LocalDB planning:", err.stack || err);
+            alert("Error planning meal locally: " + err.message);
+        }
+    }
+}
+
+
+async function loadPlannedMeals() { // Made async
+    const listContainer = document.getElementById('plannedMealsList');
+    if (!listContainer) return;
+    listContainer.innerHTML = '<div class="list-group-item text-muted">Loading planned meals...</div>';
+
+    if (currentUser) {
+        // --- LOGGED IN: Load from Firebase ---
+        try {
+            const snapshot = await db.collection("planning")
+                .where('uid', '==', currentUser.uid)
+                .orderBy('date') // Then perhaps by recipeName or an added timestamp
+                .get();
+
+            if (snapshot.empty) {
+                listContainer.innerHTML = '<div class="list-group-item text-muted text-center">No meals planned yet.</div>';
+                return;
+            }
+            const plannedMeals = snapshot.docs.map(doc => ({ firestoreId: doc.id, ...doc.data() }));
+            renderPlannedMealsList(plannedMeals.map(p => ({ ...p, id: p.firestoreId })));
+        } catch (err) {
+            console.error("Error loading planning from Firestore:", err);
+            listContainer.innerHTML = '<div class="list-group-item text-danger text-center">Error loading planned meals.</div>';
+        }
+    } else {
+        // --- NOT LOGGED IN: Load from LocalDB ---
+        if (!localDB) {
+            listContainer.innerHTML = '<div class="list-group-item text-warning text-center">Local storage not available.</div>';
+            return;
+        }
+        try {
+            const plannedMeals = await localDB.planning.orderBy('date').toArray();
+            if (!plannedMeals || plannedMeals.length === 0) {
+                listContainer.innerHTML = '<div class="list-group-item text-muted text-center">No meals planned locally yet.</div>';
+                return;
+            }
+            renderPlannedMealsList(plannedMeals.map(p => ({ ...p, id: p.localId })));
+        } catch (err) {
+            console.error("Error loading planning from LocalDB:", err.stack || err);
+            listContainer.innerHTML = '<div class="list-group-item text-danger text-center">Error loading local planned meals.</div>';
+        }
+    }
+}
+
+function renderPlannedMealsList(plannedEntries) {
+    const listContainer = document.getElementById('plannedMealsList');
+    listContainer.innerHTML = ''; // Clear previous items or loading message
+
+    if (!plannedEntries || plannedEntries.length === 0) {
+         listContainer.innerHTML = `<div class="list-group-item text-muted text-center">No meals planned yet. Use the form below to add some!</div>`;
+        return;
+    }
+    
+    // Group by date
+    const mealsByDate = plannedEntries.reduce((acc, entry) => {
+        const date = entry.date;
+        if (!acc[date]) {
+            acc[date] = [];
+        }
+        acc[date].push(entry);
+        return acc;
+    }, {});
+
+    const sortedDates = Object.keys(mealsByDate).sort();
+
+    for (const date of sortedDates) {
+        const dateHeader = document.createElement('h6');
+        dateHeader.className = 'mt-3 mb-2 text-primary fw-bold ps-1'; // Styling for date header
+        dateHeader.textContent = new Date(date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        listContainer.appendChild(dateHeader);
+
+        mealsByDate[date].forEach(entry => {
+            const li = document.createElement('div'); // Changed to div for better styling flexibility with list-group-item
+            li.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center mb-1 rounded'; // Added mb-1 and rounded
+
+            const info = document.createElement('span');
+            info.textContent = entry.recipeName;
+            // You could add a link to view the recipe here if recipeLocalId/recipeId is available
+            // e.g., if (entry.recipeLocalId || entry.recipeId) { ... }
+
+            const deleteBtnContainer = document.createElement('div'); // Container for delete button
+            deleteBtnContainer.className = 'delete-planned-meal-area';
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn btn-outline-danger btn-sm py-0 px-1'; // Smaller padding
+            deleteBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
+            deleteBtn.title = `Remove ${entry.recipeName} from ${date}`;
+            deleteBtn.onclick = () => confirmDeletePlannedMeal(entry.id, deleteBtnContainer, li); // entry.id is firestoreId or localId
+
+            deleteBtnContainer.appendChild(deleteBtn);
+            li.appendChild(info);
+            li.appendChild(deleteBtnContainer);
+            listContainer.appendChild(li);
+        });
+    }
+}
+
+function confirmDeletePlannedMeal(planId, deleteAreaContainer, listItemElement) {
+    if (!deleteAreaContainer || deleteAreaContainer.querySelector('.confirm-delete-plan-controls')) return;
+
+    const originalButton = deleteAreaContainer.querySelector('button');
+    if (originalButton) originalButton.style.display = 'none';
+
+    const confirmControls = document.createElement('div');
+    confirmControls.className = 'confirm-delete-plan-controls d-flex align-items-center gap-1'; // Smaller gap
+
+    const confirmText = document.createElement('span');
+    confirmText.className = 'text-danger small me-1';
+    confirmText.textContent = 'Del?'; // Shorter confirm text
+
+    const yesBtn = document.createElement('button');
+    yesBtn.className = 'btn btn-danger btn-sm py-0 px-1';
+    yesBtn.innerHTML = '<i class="bi bi-check-lg"></i>';
+
+    const noBtn = document.createElement('button');
+    noBtn.className = 'btn btn-secondary btn-sm py-0 px-1';
+    noBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
+
+    const cleanupConfirmationUI = () => {
+        confirmControls.remove();
+        if (originalButton) originalButton.style.display = '';
+    };
+
+    yesBtn.onclick = async () => { // Made async
+        if (currentUser) {
+            // --- LOGGED IN: Delete from Firebase ---
+            try {
+                await db.collection("planning").doc(planId).delete();
+                console.log("✅ Meal removed from Firestore plan:", planId);
+                listItemElement.remove(); // Optimistic UI update
+                showSuccessMessage("Planned meal removed.");
+            } catch (err) {
+                console.error("❌ Error removing planned meal from Firestore:", err);
+                alert("Error removing planned meal: " + err.message);
+                cleanupConfirmationUI();
+            }
+        } else {
+            // --- NOT LOGGED IN: Delete from LocalDB ---
+            if (!localDB) {
+                alert("Local storage not available.");
+                cleanupConfirmationUI();
+                return;
+            }
+            try {
+                await localDB.planning.delete(planId); // planId is localId here
+                console.log("✅ Meal removed from LocalDB plan:", planId);
+                listItemElement.remove(); // Optimistic UI update
+                showSuccessMessage("Locally planned meal removed.");
+            } catch (err) {
+                console.error("❌ Error removing planned meal from LocalDB:", err.stack || err);
+                alert("Error removing local planned meal: " + err.message);
+                cleanupConfirmationUI();
+            }
+        }
+    };
+
+    noBtn.onclick = cleanupConfirmationUI;
+
+    confirmControls.appendChild(confirmText);
+    confirmControls.appendChild(yesBtn);
+    confirmControls.appendChild(noBtn);
+    deleteAreaContainer.appendChild(confirmControls);
 }
 
 function generateShoppingList() {
@@ -2570,6 +2878,82 @@ function generateShoppingList() {
       .then(() => console.log("✅ Shopping list saved to cloud"))
       .catch(err => console.error("❌ Failed to save shopping list:", err));
   });
+}
+
+function confirmClearAllPlanning(button) { // Renamed to reflect it shows a confirmation
+    const existingConfirm = button.parentElement.querySelector('.confirm-clear-all-planning');
+    if (existingConfirm) {
+        existingConfirm.remove(); // Remove if already there
+        button.style.display = 'inline-block'; // Show original button
+        return;
+    }
+    
+    button.style.display = 'none'; // Hide original button
+
+    const confirmArea = document.createElement('span'); // Use span for inline display next to where button was
+    confirmArea.className = 'confirm-clear-all-planning ms-2'; // Added margin
+
+    const confirmText = document.createElement('span');
+    confirmText.className = 'text-danger fw-semibold me-2 small';
+    confirmText.textContent = 'Delete ALL planned meals?';
+
+    const yesBtn = document.createElement('button');
+    yesBtn.className = 'btn btn-sm btn-danger me-1';
+    yesBtn.innerHTML = '<i class="bi bi-check-lg"></i> Yes, Clear All';
+
+    const noBtn = document.createElement('button');
+    noBtn.className = 'btn btn-sm btn-secondary';
+    noBtn.innerHTML = '<i class="bi bi-x-lg"></i> No';
+
+    const cleanupAndRestore = () => {
+        confirmArea.remove();
+        button.style.display = 'inline-block'; // Show original button
+    };
+
+    yesBtn.onclick = async () => { // Made async
+        if (currentUser) {
+            // --- LOGGED IN: Clear Firebase planning for this user ---
+            try {
+                const snapshot = await db.collection("planning").where('uid', '==', currentUser.uid).get();
+                const batch = db.batch();
+                snapshot.forEach(doc => batch.delete(doc.ref));
+                await batch.commit();
+                console.log("✅ All Firestore planning cleared for user.");
+                showSuccessMessage("All planned meals cleared from your account.");
+                loadPlannedMeals(); // Refresh the list
+            } catch (err) {
+                console.error("❌ Error clearing Firestore planning:", err);
+                alert("Error clearing planned meals: " + err.message);
+            } finally {
+                cleanupAndRestore();
+            }
+        } else {
+            // --- NOT LOGGED IN: Clear LocalDB planning ---
+            if (!localDB) {
+                alert("Local storage not available.");
+                cleanupAndRestore();
+                return;
+            }
+            try {
+                await localDB.planning.clear(); // Clears the entire 'planning' object store
+                console.log("✅ All LocalDB planning cleared.");
+                showSuccessMessage("All locally planned meals cleared.");
+                loadPlannedMeals(); // Refresh the list
+            } catch (err) {
+                console.error("❌ Error clearing LocalDB planning:", err.stack || err);
+                alert("Error clearing local planned meals: " + err.message);
+            } finally {
+                cleanupAndRestore();
+            }
+        }
+    };
+
+    noBtn.onclick = cleanupAndRestore;
+
+    confirmArea.appendChild(confirmText);
+    confirmArea.appendChild(yesBtn);
+    confirmArea.appendChild(noBtn);
+    button.parentElement.appendChild(confirmArea);
 }
 
 function deletePlannedMeal(planId, button) {
