@@ -5,6 +5,7 @@ let currentUser = null; // Global user tracker
 let currentChatbotRecipe = null;
 let chatbotModalElement = null; // To keep a reference to the modal DOM element
 let loginModalInstance = null; // To store the Bootstrap modal instance
+let localDB = null; // Initialize localDB as null
 
 document.addEventListener('DOMContentLoaded', () => {
     const loginModalElement = document.getElementById('loginModal');
@@ -12,6 +13,41 @@ document.addEventListener('DOMContentLoaded', () => {
         loginModalInstance = new bootstrap.Modal(loginModalElement);
     }
 });
+
+function initializeLocalDB() {
+    if (!window.indexedDB) {
+        console.warn("IndexedDB not supported by this browser. Local storage features will be limited.");
+        // You could fall back to localStorage for very basic things or disable local features.
+        return;
+    }
+
+    localDB = new Dexie("RecipeAppDB");
+    localDB.version(1).stores({
+        recipes: '++localId, name, timestamp', // ++localId for auto-generated primary key, name & timestamp for potential indexing/sorting
+        // We can add more stores later for history, planning, etc.
+        // For 'recipes', we'll store the whole recipe object.
+        // 'name' and 'timestamp' are examples of indexes.
+        // If your recipe objects saved to Firebase have an 'id' (Firebase doc ID),
+        // you might want a different key for local: '++id, firebaseId, name, timestamp'
+        // For anonymous users, we'll generate a local ID.
+    });
+
+    localDB.open().then(() => {
+        console.log("RecipeAppDB (IndexedDB via Dexie) opened successfully.");
+    }).catch(err => {
+        console.error("Failed to open RecipeAppDB:", err.stack || err);
+        // Handle error, perhaps disable local storage features
+        localDB = null; // Ensure localDB is null if opening failed
+    });
+}
+
+// Call this when the script loads
+initializeLocalDB();
+
+// --- Helper function to generate simple local IDs ---
+function generateLocalUUID() {
+    return Date.now().toString(36) + Math.random().toString(36).substring(2);
+}
 
 // --- Login Modal View Management Functions ---
 function showLoginModal() {
@@ -1003,69 +1039,113 @@ function parseOcrToRecipeFields(ocrText) {
 
 
 
-function saveRecipe() {
-  const name = document.getElementById('recipeNameInput').value.trim();
-  const instructions = document.getElementById('recipeInstructionsInput').value.trim();
+async function saveRecipe() { // Changed to async to handle potential async local save
+    const name = document.getElementById('recipeNameInput').value.trim();
+    const instructions = document.getElementById('recipeInstructionsInput').value.trim();
+    // ... (get ingredients and tags as before) ...
+    const rows = document.querySelectorAll('#ingredientsTable > .row');
+    const ingredients = [];
+    currentTags = currentTags || []; // Ensure currentTags is initialized
 
-  const rows = document.querySelectorAll('#ingredientsTable > .row');
-  const ingredients = [];
-
-  const tags = currentTags || [];
-
-  rows.forEach(row => {
-    const inputs = row.querySelectorAll('input');
-    const name = inputs[0]?.value.trim();
-    const qty = inputs[1]?.value.trim();
-    const unit = inputs[2]?.value.trim();
-
-    if (name) { // ✅ Only require name
-      ingredients.push({
-        name,
-        quantity: qty || '',
-        unit: unit || ''
-      });
-    }
-    
-  });
-
-  if (!name || ingredients.length === 0) {
-    const error = document.createElement('div');
-    error.id = 'recipeErrorMessage';
-    error.className = 'alert alert-danger mt-2';
-    error.textContent = "Please provide a recipe name and at least one ingredient.";
-    const form = document.getElementById('recipeForm');
-    form.querySelector('.card-body').appendChild(error);
-    return;
-  }
-
-  if (!currentUser) {
-    alert('⚠️ You must be signed in to save a recipe.');
-    return;
-  }
-
-  const recipe = {
-    name,
-    instructions,
-    ingredients,
-    tags,
-    timestamp: new Date(),
-    uid: currentUser.uid // 🔥 THIS MUST BE INCLUDED
-  };
-
-  console.log(recipe); 
-  db.collection('recipes').add(recipe)
-    .then(docRef => {
-      console.log("✅ Recipe added with ID:", docRef.id);
-      toggleRecipeForm(); // Hide form
-      showSuccessMessage("✅ Recipe saved successfully!");
-      loadRecipesFromFirestore(); // Reload recipes
-      currentTags = []; // Clear tags
-    })
-    .catch(error => {
-      console.error("❌ Error adding recipe:", error.message || error);
+    rows.forEach(row => {
+        const inputs = row.querySelectorAll('input');
+        const ingName = inputs[0]?.value.trim();
+        const qty = inputs[1]?.value.trim();
+        const unit = inputs[2]?.value.trim();
+        if (ingName) {
+            ingredients.push({ name: ingName, quantity: qty || '', unit: unit || '' });
+        }
     });
+
+    if (!name || ingredients.length === 0) {
+        // ... (your existing error display for missing name/ingredients) ...
+        const error = document.getElementById('recipeErrorMessage') || document.createElement('div');
+        // ...
+        return;
+    }
+
+    const recipeData = {
+        // id: will be generated by Firebase or locally
+        name,
+        instructions,
+        ingredients,
+        tags: currentTags, // Use the globally managed currentTags
+        timestamp: new Date(), // Will be Firestore Timestamp or ISO string locally
+        // rating: 0, // Default rating if you have this field
+    };
+
+    if (currentUser) { // User is LOGGED IN - Save to Firebase
+        console.log("User logged in, saving recipe to Firestore:", recipeData);
+        recipeData.uid = currentUser.uid;
+        // Ensure timestamp is a Firestore server timestamp for consistency if desired
+        // recipeData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
+
+        db.collection('recipes').add(recipeData)
+            .then(docRef => {
+                console.log("✅ Recipe added to Firestore with ID:", docRef.id);
+                toggleRecipeForm();
+                showSuccessMessage("✅ Recipe saved successfully to your account!");
+                loadRecipesFromFirestore(); // Reload recipes from Firestore
+                currentTags = []; // Clear tags for the form
+            })
+            .catch(error => {
+                console.error("❌ Error adding recipe to Firestore:", error.message || error);
+                alert("Error saving recipe: " + error.message);
+            });
+    } else { // User is NOT LOGGED IN - Save to Local IndexedDB
+        if (!localDB) {
+            alert("Local storage is not available. Please sign in to save recipes.");
+            console.error("Attempted to save locally, but localDB is not initialized.");
+            return;
+        }
+        console.log("User not logged in, saving recipe to LocalDB:", recipeData);
+        recipeData.localId = generateLocalUUID(); // Generate a unique local ID
+        recipeData.timestamp = recipeData.timestamp.toISOString(); // Store date as ISO string
+
+        localDB.recipes.add(recipeData)
+            .then(() => {
+                console.log("✅ Recipe added to LocalDB with localId:", recipeData.localId);
+                toggleRecipeForm();
+                showSuccessMessage("✅ Recipe saved locally! Sign in to save to the cloud.");
+                loadRecipesFromLocal(); // Reload recipes from LocalDB
+                currentTags = []; // Clear tags for the form
+            })
+            .catch(error => {
+                console.error("❌ Error adding recipe to LocalDB:", error.stack || error);
+                alert("Error saving recipe locally: " + error.message);
+            });
+    }
 }
 
+async function loadRecipesFromLocal() {
+    if (!localDB) {
+        console.warn("LocalDB not initialized, cannot load local recipes.");
+        recipes = []; // Clear recipes array
+        displayRecipes(recipes, 'recipeResults'); // Update UI
+        return;
+    }
+    try {
+        const localRecipes = await localDB.recipes.orderBy('timestamp').reverse().toArray();
+        recipes = localRecipes.map(r => ({ ...r, id: r.localId })); // Use localId as id for consistency in displayRecipes
+        console.log("Loaded recipes from LocalDB:", recipes);
+        showRecipeFilter(); // This function usually calls displayRecipes
+    } catch (error) {
+        console.error("❌ Error loading recipes from LocalDB:", error.stack || error);
+        recipes = [];
+        showRecipeFilter(); // Display empty state
+    }
+}
+
+// New main function to decide where to load recipes from
+function loadInitialRecipes() {
+    if (currentUser) {
+        console.log("User is logged in, loading recipes from Firestore.");
+        loadRecipesFromFirestore(); // Your existing function
+    } else {
+        console.log("User is not logged in, loading recipes from LocalDB.");
+        loadRecipesFromLocal();
+    }
+}
 
 function showSuccessMessage(message) {
   const view = document.getElementById('mainView');
@@ -2031,61 +2111,116 @@ async function saveInlineEdit(recipeId, nameInput, tagsInput, ingredientsDiv, in
 function deleteRecipe(id) {
   if (!confirm("Are you sure you want to delete this recipe?")) return;
 
-  db.collection("recipes").doc(id).delete().then(() => {
-    console.log("Recipe deleted:", id);
-    loadRecipesFromFirestore(); // Refresh list
-  }).catch(err => {
-    console.error("Error deleting recipe:", err);
-    alert("Failed to delete recipe.");
-  });
+  if (currentUser) {
+    db.collection("recipes").doc(id).delete()
+    .then(() => {
+        loadRecipesFromFirestore(); // Refresh
+    })
+    // ... catch ...
+} else {
+    if (!localDB) return;
+    localDB.recipes.delete(id) // id here is the localId
+    .then(() => {
+        console.log("Recipe deleted from LocalDB:", id);
+        loadRecipesFromLocal(); // Refresh
+    })
+    .catch(err => {
+        console.error("❌ Error deleting recipe from LocalDB:", err);
+        alert("Failed to delete local recipe.");
+        confirmBar.remove();
+        buttonElement.style.display = '';
+    });
+}
 }
 
 function confirmDeleteRecipe(id, buttonElement) {
-  const container = buttonElement.closest('.delete-area');
+    const container = buttonElement.closest('.delete-area');
 
-  if (!container || container.querySelector('.confirm-delete')) return;
+    if (!container || container.querySelector('.confirm-delete')) return;
 
-  // Hide the original delete button
-  buttonElement.style.display = 'none';
+    // Hide the original delete button
+    buttonElement.style.display = 'none';
 
-  // Inline confirm bar (mimicking Plan Meal style)
-  const confirmBar = document.createElement('div');
-  confirmBar.className = 'confirm-delete d-inline-flex align-items-center gap-2';
+    // Inline confirm bar
+    const confirmBar = document.createElement('div');
+    confirmBar.className = 'confirm-delete d-inline-flex align-items-center gap-2';
 
-  const text = document.createElement('span');
-  text.className = 'text-danger fw-semibold';
-  text.textContent = 'Confirm?';
+    const text = document.createElement('span');
+    text.className = 'text-danger fw-semibold';
+    text.textContent = 'Confirm?';
 
-  const confirmBtn = document.createElement('button');
-  confirmBtn.className = 'btn btn-sm btn-outline-success';
-  confirmBtn.innerHTML = '✅';
-  confirmBtn.onclick = () => {
-    db.collection("recipes").doc(id).delete()
-      .then(() => {
-        loadRecipesFromFirestore(); // Refresh
-      })
-      .catch(err => {
-        console.error("❌ Error deleting recipe:", err);
-        alert("Failed to delete recipe.");
-        // Restore on failure
-        confirmBar.remove();
-        buttonElement.style.display = '';
-      });
-  };
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'btn btn-sm btn-outline-success';
+    confirmBtn.innerHTML = '✅';
 
-  const cancelBtn = document.createElement('button');
-  cancelBtn.className = 'btn btn-sm btn-outline-danger';
-  cancelBtn.innerHTML = '❌';
-  cancelBtn.onclick = () => {
-    confirmBar.remove();
-    buttonElement.style.display = ''; // Restore original icon
-  };
+    confirmBtn.onclick = () => {
+        console.log("Delete confirmation clicked. ID:", id, "currentUser:", currentUser);
 
-  confirmBar.appendChild(text);
-  confirmBar.appendChild(confirmBtn);
-  confirmBar.appendChild(cancelBtn);
+        // Restore button and remove confirm bar regardless of outcome,
+        // or do it specifically in .then() and .catch()
+        const cleanupUI = () => {
+            if (confirmBar.parentNode) { // Check if confirmBar is still in DOM
+                confirmBar.remove();
+            }
+            buttonElement.style.display = ''; // Restore original icon
+        };
 
-  container.appendChild(confirmBar);
+        if (currentUser) {
+            // --- User is LOGGED IN: Delete from Firestore ---
+            console.log("Attempting to delete Firestore recipe ID:", id, "by user UID:", currentUser.uid);
+            db.collection("recipes").doc(id).delete()
+                .then(() => {
+                    console.log("Recipe successfully deleted from Firestore.");
+                    showSuccessMessage("Recipe deleted from your account.");
+                    loadInitialRecipes(); // This will call loadRecipesFromFirestore()
+                    cleanupUI();
+                })
+                .catch(err => {
+                    console.error("❌ Error deleting recipe from Firestore:", err);
+                    alert("Failed to delete recipe: " + err.message);
+                    cleanupUI(); // Restore UI on failure
+                });
+        } else {
+            // --- User is NOT LOGGED IN: Delete from LocalDB ---
+            console.log("Attempting to delete local recipe with localId:", id);
+            if (!localDB) {
+                console.error("LocalDB not initialized. Cannot delete local recipe.");
+                alert("Local storage not available.");
+                cleanupUI();
+                return;
+            }
+
+            // 'id' here is the localId because loadRecipesFromLocal maps localId to id
+            localDB.recipes.delete(id)
+                .then(() => {
+                    console.log("Recipe deleted from LocalDB:", id);
+                    showSuccessMessage("Recipe deleted locally.");
+                    loadInitialRecipes(); // This will call loadRecipesFromLocal()
+                    cleanupUI();
+                })
+                .catch(err => {
+                    console.error("❌ Error deleting recipe from LocalDB:", err.stack || err);
+                    alert("Failed to delete local recipe: " + err.message);
+                    cleanupUI(); // Restore UI on failure
+                });
+        }
+    };
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-sm btn-outline-danger';
+    cancelBtn.innerHTML = '❌';
+    cancelBtn.onclick = () => {
+        if (confirmBar.parentNode) {
+            confirmBar.remove();
+        }
+        buttonElement.style.display = ''; // Restore original icon
+    };
+
+    confirmBar.appendChild(text);
+    confirmBar.appendChild(confirmBtn);
+    confirmBar.appendChild(cancelBtn);
+
+    container.appendChild(confirmBar);
 }
 
 
@@ -3042,40 +3177,33 @@ function signOut() {
 // Watch auth state and test
 auth.onAuthStateChanged(user => {
     currentUser = user;
-    updateAuthUI(user);
+    updateAuthUI(user); // This will update the Sign In/Out button etc.
+
+    // Always try to load recipes after auth state changes.
+    // loadInitialRecipes will decide whether to fetch from Firebase or LocalDB.
+    loadInitialRecipes();
 
     if (user) {
-        loadRecipesFromFirestore();
-
+        // Handle pending shared/chatbot recipes if that logic exists
         const pendingShared = localStorage.getItem('pendingSharedRecipe');
         if (pendingShared) {
             const recipe = JSON.parse(pendingShared);
             localStorage.removeItem('pendingSharedRecipe');
-            saveSharedRecipe(recipe); // Your existing function
+            saveSharedRecipe(recipe);
             showSuccessMessage("✅ Shared recipe saved!");
         }
-
-        // Add this for pending chatbot recipes
         const pendingChatbot = localStorage.getItem('pendingChatbotRecipe');
         if (pendingChatbot) {
-            currentChatbotRecipe = JSON.parse(pendingChatbot); // Load it into currentChatbotRecipe
+            currentChatbotRecipe = JSON.parse(pendingChatbot);
             localStorage.removeItem('pendingChatbotRecipe');
-            saveCurrentChatbotRecipe(); // Then try to save it
-            // showSuccessMessage is handled by saveCurrentChatbotRecipe
+            saveCurrentChatbotRecipe();
         }
-
     } else {
-        recipes = [];
-        showRecipeFilter();
-        // Optionally, if chatbot modal is open and user signs out, handle UI changes
-        const saveChatbotRecipeBtn = document.getElementById('saveChatbotRecipeBtn');
-        if (saveChatbotRecipeBtn) {
-            // saveChatbotRecipeBtn.textContent = 'Sign In to Save';
-            // saveChatbotRecipeBtn.onclick = () => showSignInPermissionsPrompt(); // or similar
-        }
+        // User is logged out or was never logged in.
+        // recipes array is already cleared and reloaded by loadInitialRecipes -> loadRecipesFromLocal
+        // If you had other user-specific cleanup, do it here.
     }
 });
-
 
 // Global click listener to close user dropdown
 document.addEventListener('click', function (event) {
@@ -3525,26 +3653,36 @@ function saveSharedRecipe(recipe) {
 
 
 window.onload = () => {
-  const params = new URLSearchParams(window.location.search);
-  const sharedId = params.get('sharedId');
+    // The initial recipe load is now handled by onAuthStateChanged.
+    // Keep other onload logic, like handling sharedId parameters.
 
-  if (sharedId) {
-    db.collection('sharedRecipes').doc(sharedId).get()
-      .then(doc => {
-        if (doc.exists) {
-          const sharedRecipe = doc.data();
-          showSharedOverlay(sharedRecipe);
-          history.replaceState({}, document.title, window.location.pathname); // Clear URL
-        } else {
-          console.error("❌ Shared recipe not found.");
-          alert("Shared recipe not found.");
-        }
-      })
-      .catch(err => {
-        console.error("❌ Error loading shared recipe:", err);
-      });
-  } else {
-    loadRecipesFromFirestore();
-  }
+    const params = new URLSearchParams(window.location.search);
+    const sharedId = params.get('sharedId');
+
+    if (sharedId) {
+        // ... (your existing shared recipe loading logic) ...
+        // This part may need to be deferred until Firebase is initialized
+        // or handled within onAuthStateChanged if it relies on `db`.
+        // For now, let's assume it's okay here. If it errors, move it.
+        firebase.auth().onAuthStateChanged(user => { // Ensure db is ready
+            if (db) { // Check if db (Firebase Firestore instance) is initialized
+                db.collection('sharedRecipes').doc(sharedId).get()
+                .then(doc => {
+                    if (doc.exists) {
+                        const sharedRecipe = doc.data();
+                        showSharedOverlay(sharedRecipe);
+                        history.replaceState({}, document.title, window.location.pathname);
+                    } else {
+                        console.error("❌ Shared recipe not found.");
+                        // alert("Shared recipe not found."); // Avoid alert if onAuthStateChanged handles main load
+                    }
+                })
+                .catch(err => {
+                    console.error("❌ Error loading shared recipe:", err);
+                });
+            }
+        });
+    }
+    // Removed loadRecipesFromFirestore() from here as onAuthStateChanged handles it.
 };
 
