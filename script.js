@@ -6,13 +6,77 @@ let currentChatbotRecipe = null;
 let chatbotModalElement = null; // To keep a reference to the modal DOM element
 let loginModalInstance = null; // To store the Bootstrap modal instance
 let localDB = null; // Initialize localDB as null
+let infoConfirmModalInstance = null; // To store the Bootstrap modal instance
 
 document.addEventListener('DOMContentLoaded', () => {
     const loginModalElement = document.getElementById('loginModal');
     if (loginModalElement) {
         loginModalInstance = new bootstrap.Modal(loginModalElement);
     }
+    const infoModalElement = document.getElementById('infoConfirmModal');
+    if (infoModalElement) {
+        infoConfirmModalInstance = new bootstrap.Modal(infoModalElement);
+    }
 });
+
+/**
+ * Shows a generic modal for information or confirmation.
+ * @param {string} title - The title of the modal.
+ * @param {string} bodyContent - HTML or text content for the modal body.
+ * @param {Array<Object>} buttons - Array of button objects, e.g., [{text: 'OK', class: 'btn-primary', onClick: () => {...}}]
+ * If null or empty, a default "Close" button is shown.
+ */
+function showInfoConfirmModal(title, bodyContent, buttons = []) {
+    if (!infoConfirmModalInstance) {
+        console.error("Info/Confirm Modal instance not initialized!");
+        alert(bodyContent); // Fallback to alert if modal isn't ready
+        return;
+    }
+
+    const modalTitle = document.getElementById('infoConfirmModalLabel');
+    const modalBody = document.getElementById('infoConfirmModalBody');
+    const modalFooter = document.getElementById('infoConfirmModalFooter');
+
+    if (modalTitle) modalTitle.textContent = title;
+    if (modalBody) modalBody.innerHTML = bodyContent; // Use innerHTML to allow basic HTML in the message
+    if (modalFooter) {
+        modalFooter.innerHTML = ''; // Clear previous buttons
+
+        if (buttons && buttons.length > 0) {
+            buttons.forEach(btnConfig => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = `btn ${btnConfig.class || 'btn-secondary'}`;
+                button.textContent = btnConfig.text;
+                if (btnConfig.dismiss) { // If true, button will dismiss the modal
+                    button.setAttribute('data-bs-dismiss', 'modal');
+                }
+                button.onclick = () => {
+                    if (btnConfig.onClick) {
+                        btnConfig.onClick();
+                    }
+                    // Only auto-dismiss if not explicitly handled by onClick or if dismiss flag not set to false
+                    if (btnConfig.autoClose !== false && !btnConfig.onClick && !btnConfig.dismiss) {
+                         infoConfirmModalInstance.hide();
+                    } else if (btnConfig.autoClose !== false && btnConfig.onClick && btnConfig.dismissOnClick !== false) {
+                        // If there's an onClick, and dismissOnClick is not explicitly false, then hide.
+                        infoConfirmModalInstance.hide();
+                    }
+                };
+                modalFooter.appendChild(button);
+            });
+        } else {
+            // Default close button if no buttons are provided
+            const closeButton = document.createElement('button');
+            closeButton.type = 'button';
+            closeButton.className = 'btn btn-secondary';
+            closeButton.setAttribute('data-bs-dismiss', 'modal');
+            closeButton.textContent = 'Close';
+            modalFooter.appendChild(closeButton);
+        }
+    }
+    infoConfirmModalInstance.show();
+}
 
 function initializeLocalDB() {
     if (!window.indexedDB) {
@@ -3868,38 +3932,338 @@ function signOut() {
 // ... (your existing Firebase initialization, currentUser, localDB, etc.)
 
 auth.onAuthStateChanged(user => {
+    const previousUser = currentUser; // Capture previous state
     currentUser = user;
-    updateAuthUI(user); // This will update the Sign In/Out button etc.
-
-    // Always try to load recipes after auth state changes.
-    // loadInitialRecipes will decide whether to fetch from Firebase or LocalDB.
-    loadInitialRecipes();
+    updateAuthUI(user);
+    loadInitialRecipes(); // This will load from Firestore if 'user' is truthy, or local if 'user' is null
 
     if (user) {
-        // User is now authenticated (either just logged in, signed up, or was already logged in)
-        console.log("User authenticated:", user.uid, user.email);
-        console.log("App is now in 'Cloud Mode'. Features requiring an account are enabled.");
+        console.log("User authenticated:", user.uid);
 
-        // REMOVED: Logic for pendingSharedRecipe and pendingChatbotRecipe from localStorage.
-        // This was the old flow where we'd force sign-in before saving.
-        // Now, anonymous saves go to localDB first.
-
-        // TODO LATER: Implement "Migrate local data to cloud" logic here.
-        // This is where you would check if there's any local data (from an anonymous session)
-        // and if this is the user's "first real login" or if they've explicitly requested a merge.
-        // For example:
-        // if (isFirstLoginAfterAnonymousSessionWithData()) { // You'd need a flag or logic for this
-        //     promptToMigrateLocalData();
-        // }
+        // Check if this is a login/signup event AFTER an anonymous session with data
+        // We can set a flag when local data is saved, or simply check if local stores have data.
+        if (!previousUser && user) { // User just logged in (was previously null)
+            checkAndPromptForLocalDataMigration(user);
+        }
 
     } else {
-        // User is logged out or was never logged in (anonymous).
         console.log("User is not authenticated. Operating in 'Local Mode'.");
-        // The loadInitialRecipes() call above will have already triggered loading from LocalDB.
-        // Any other UI cleanup specific to a user logging OUT can go here.
-        // For example, if you had user-specific settings displayed that need to be cleared.
+        // loadInitialRecipes() already handles loading local data
     }
 });
+
+async function checkAndPromptForLocalDataMigration(loggedInUser) {
+    if (!localDB) {
+        console.warn("LocalDB not available, skipping migration check.");
+        return;
+    }
+
+    try {
+        const localRecipeCount = await localDB.recipes.count();
+        const localHistoryCount = await localDB.history.count();
+        const localPlanningCount = await localDB.planning.count();
+        const totalLocalItems = localRecipeCount + localHistoryCount + localPlanningCount;
+
+        if (totalLocalItems > 0) {
+            console.log(`Found ${localRecipeCount} local recipes, ${localHistoryCount} history items, ${localPlanningCount} planned meals to potentially migrate.`);
+            
+            const welcomeName = loggedInUser.displayName || loggedInUser.email;
+            const title = `Welcome, ${welcomeName}!`;
+            const body = `
+                <p>You have <strong>${totalLocalItems} item(s)</strong> (recipes, history, plans) saved locally on this device from a previous session.</p>
+                <p>Would you like to save them to your account? This will allow you to access them on other devices.</p>
+            `;
+            const buttons = [
+                {
+                    text: 'Yes, Save to My Account',
+                    class: 'btn-success',
+                    onClick: async () => {
+                        infoConfirmModalInstance.hide(); // Hide prompt modal first
+                        console.log("User agreed to migrate local data.");
+                        await migrateLocalDataToFirestore(currentUser);
+                    },
+                    dismissOnClick: false // Don't auto-close; migrateLocalDataToFirestore will handle further UI
+                },
+                {
+                    text: 'Not Now',
+                    class: 'btn-secondary',
+                    onClick: () => {
+                        console.log("User declined to migrate local data at this time.");
+                        // Use the modal again for this secondary message or a toast
+                        infoConfirmModalInstance.hide(); // Hide the current modal first
+                        setTimeout(() => { // Slight delay to ensure first modal is gone
+                            showInfoConfirmModal(
+                                "Local Data Notice",
+                                "<p>Your local data will remain on this device only for now. You can manage or migrate it later from app settings (if this feature is added).</p>",
+                                [{ text: 'OK', class: 'btn-primary', dismiss: true }]
+                            );
+                        }, 300);
+                    },
+                    dismissOnClick: false
+                }
+            ];
+            showInfoConfirmModal(title, body, buttons);
+
+        } else {
+            console.log("No significant local data found to migrate.");
+        }
+    } catch (error) {
+        console.error("Error checking for local data to migrate:", error.stack || err);
+        showInfoConfirmModal("Migration Check Error", `<p class="text-danger">An error occurred while checking for local data to migrate: ${error.message}</p>`);
+    }
+}
+
+async function migrateLocalDataToFirestore(user) {
+    if (!user || !user.uid || !localDB) {
+        console.error("Migration cannot proceed: User not logged in or localDB not available.");
+        // Use the modal for user-facing errors
+        showInfoConfirmModal(
+            "Migration Error",
+            "<p class='text-danger'>Could not start data migration. Please ensure you are properly logged in and local storage is accessible.</p>",
+            [{ text: 'OK', class: 'btn-primary', dismiss: true }]
+        );
+        return;
+    }
+
+    // Show a persistent "Migrating..." message using the modal
+    showInfoConfirmModal(
+        "Migrating Data",
+        "<p>Migrating your locally saved data to your account... Please wait.</p><div class='progress'><div class='progress-bar progress-bar-striped progress-bar-animated' role='progressbar' style='width: 100%' aria-valuenow='100' aria-valuemin='0' aria-valuemax='100'></div></div>",
+        [] // No buttons initially, it will be updated by the summary
+    );
+
+    const migrationStatus = {
+        recipes: { migrated: 0, skipped: 0, failed: 0, existing: 0 },
+        history: { migrated: 0, skipped: 0, failed: 0 },
+        planning: { migrated: 0, skipped: 0, failed: 0, recipeNotFound: 0 },
+        shoppingList: { migrated: 0, failed: 0, itemsMigrated: 0 } // Track if the list itself was migrated and how many items
+    };
+
+    const localToCloudRecipeIdMap = new Map();
+
+    // --- 1. Migrate Recipes and build ID Map ---
+    try {
+        const localRecipes = await localDB.recipes.toArray();
+        if (localRecipes.length > 0) {
+            console.log(`Starting migration of ${localRecipes.length} local recipes.`);
+            let existingCloudRecipes = new Map();
+            const cloudSnapshot = await db.collection('recipes').where('uid', '==', user.uid).get();
+            cloudSnapshot.forEach(doc => {
+                const data = doc.data();
+                if (data.name) {
+                    existingCloudRecipes.set(data.name.toLowerCase().trim(), doc.id);
+                }
+            });
+
+            for (const localRecipe of localRecipes) {
+                const localRecipeNameLower = (localRecipe.name || "").toLowerCase().trim();
+                if (existingCloudRecipes.has(localRecipeNameLower)) {
+                    const existingFirestoreId = existingCloudRecipes.get(localRecipeNameLower);
+                    localToCloudRecipeIdMap.set(localRecipe.localId, existingFirestoreId);
+                    migrationStatus.recipes.existing++;
+                    continue;
+                }
+
+                const recipeForFirestore = {
+                    name: localRecipe.name,
+                    ingredients: localRecipe.ingredients || [],
+                    instructions: localRecipe.instructions || "",
+                    tags: localRecipe.tags || [],
+                    rating: localRecipe.rating || 0,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    uid: user.uid
+                };
+                try {
+                    const docRef = await db.collection('recipes').add(recipeForFirestore);
+                    localToCloudRecipeIdMap.set(localRecipe.localId, docRef.id);
+                    migrationStatus.recipes.migrated++;
+                } catch (err) {
+                    console.error(`Failed to migrate recipe "${localRecipe.name}":`, err);
+                    migrationStatus.recipes.failed++;
+                }
+            }
+        }
+    } catch (err) {
+        console.error("Error during local recipes migration phase:", err);
+        const uncounted = await localDB.recipes.count(); // approx
+        migrationStatus.recipes.failed = uncounted - (migrationStatus.recipes.migrated + migrationStatus.recipes.existing + migrationStatus.recipes.skipped);
+
+    }
+
+    // --- 2. Migrate History ---
+    try {
+        const localHistoryItems = await localDB.history.toArray();
+        if (localHistoryItems.length > 0) {
+            console.log(`Starting migration of ${localHistoryItems.length} local history items.`);
+            for (const localItem of localHistoryItems) {
+                const historyForFirestore = {
+                    recipeName: localItem.recipeName,
+                    notes: localItem.notes || "",
+                    tags: localItem.tags || [],
+                    timestamp: localItem.timestamp,
+                    uid: user.uid
+                };
+                try {
+                    await db.collection('history').add(historyForFirestore);
+                    migrationStatus.history.migrated++;
+                } catch (err) {
+                    console.error(`Failed to migrate history for "${localItem.recipeName}":`, err);
+                    migrationStatus.history.failed++;
+                }
+            }
+        }
+    } catch (err) {
+        console.error("Error during local history migration phase:", err);
+        migrationStatus.history.failed = (await localDB.history.count()) - migrationStatus.history.migrated;
+    }
+
+    // --- 3. Migrate Planning (using the localToCloudRecipeIdMap) ---
+    try {
+        const localPlanningItems = await localDB.planning.toArray();
+        if (localPlanningItems.length > 0) {
+            console.log(`Starting migration of ${localPlanningItems.length} local planning items.`);
+            for (const localItem of localPlanningItems) {
+                const firestoreRecipeId = localToCloudRecipeIdMap.get(localItem.recipeLocalId);
+                if (!firestoreRecipeId) {
+                    migrationStatus.planning.recipeNotFound++;
+                }
+                const planningForFirestore = {
+                    date: localItem.date,
+                    recipeName: localItem.recipeName,
+                    recipeId: firestoreRecipeId || null,
+                    uid: user.uid
+                };
+                try {
+                    await db.collection('planning').add(planningForFirestore);
+                    migrationStatus.planning.migrated++;
+                } catch (err) {
+                    console.error(`Failed to migrate plan for "${localItem.recipeName}" on ${localItem.date}:`, err);
+                    migrationStatus.planning.failed++;
+                }
+            }
+        }
+    } catch (err) {
+        console.error("Error during local planning migration phase:", err);
+         migrationStatus.planning.failed = (await localDB.planning.count()) - (migrationStatus.planning.migrated + migrationStatus.planning.recipeNotFound);
+    }
+
+    // --- 4. Migrate Shopping List ---
+    try {
+        const localShoppingListData = await localDB.shoppingList.get("localUserShoppingList");
+        if (localShoppingListData && localShoppingListData.ingredients && localShoppingListData.ingredients.length > 0) {
+            console.log(`Starting migration of local shopping list with ${localShoppingListData.ingredients.length} items.`);
+            const shoppingListForFirestore = {
+                ingredients: localShoppingListData.ingredients,
+                uid: user.uid,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            try {
+                // This will overwrite any existing cloud shopping list for the user
+                await db.collection("shopping").doc(user.uid).set(shoppingListForFirestore);
+                migrationStatus.shoppingList.migrated = 1; // Indicate the list itself was migrated
+                migrationStatus.shoppingList.itemsMigrated = localShoppingListData.ingredients.length;
+                console.log("Migrated local shopping list to Firestore.");
+            } catch (err) {
+                console.error("Failed to migrate shopping list:", err);
+                migrationStatus.shoppingList.failed = 1;
+            }
+        } else {
+            console.log("No active local shopping list found to migrate.");
+        }
+    } catch (err) {
+        console.error("Error during local shopping list migration phase:", err);
+    }
+
+    // --- Migration Summary & Cleanup ---
+    let summaryTitle = "Migration Complete";
+    let summaryBody = "<p>Your local data migration to your account is complete:</p><ul>";
+    let hadItemsToReport = false;
+    let hadFailures = false;
+
+    if (migrationStatus.recipes.migrated > 0 || migrationStatus.recipes.existing > 0 || migrationStatus.recipes.failed > 0 || migrationStatus.recipes.skipped > 0) {
+        summaryBody += `<li>Recipes: ${migrationStatus.recipes.migrated} saved, ${migrationStatus.recipes.existing} found in cloud, ${migrationStatus.recipes.skipped} skipped, ${migrationStatus.recipes.failed} failed.</li>`;
+        hadItemsToReport = true;
+        if (migrationStatus.recipes.failed > 0) hadFailures = true;
+    }
+    if (migrationStatus.history.migrated > 0 || migrationStatus.history.failed > 0 || migrationStatus.history.skipped > 0) {
+        summaryBody += `<li>History: ${migrationStatus.history.migrated} saved, ${migrationStatus.history.skipped} skipped, ${migrationStatus.history.failed} failed.</li>`;
+        hadItemsToReport = true;
+        if (migrationStatus.history.failed > 0) hadFailures = true;
+    }
+    if (migrationStatus.planning.migrated > 0 || migrationStatus.planning.recipeNotFound > 0 || migrationStatus.planning.failed > 0 || migrationStatus.planning.skipped > 0) {
+        summaryBody += `<li>Planned Meals: ${migrationStatus.planning.migrated} saved, ${migrationStatus.planning.recipeNotFound} recipe links missing, ${migrationStatus.planning.skipped} skipped, ${migrationStatus.planning.failed} failed.</li>`;
+        hadItemsToReport = true;
+        if (migrationStatus.planning.failed > 0 || migrationStatus.planning.recipeNotFound > 0) hadFailures = true;
+    }
+    if (migrationStatus.shoppingList.migrated > 0 || migrationStatus.shoppingList.failed > 0) {
+        summaryBody += `<li>Shopping List: ${migrationStatus.shoppingList.itemsMigrated} items saved to your account ${migrationStatus.shoppingList.failed > 0 ? '(failed to save list)' : ''}.</li>`;
+        hadItemsToReport = true;
+        if (migrationStatus.shoppingList.failed > 0) hadFailures = true;
+    }
+    summaryBody += "</ul>";
+
+    if (!hadItemsToReport) {
+        summaryBody = "<p>No new local data was found to migrate to your account.</p>";
+    }
+    if (hadFailures) {
+        summaryBody += `<p class="text-danger mt-2">Some items could not be saved to your account. They will remain on this device for now.</p>`;
+    }
+
+    // Show summary modal, replacing the "Migrating..." content
+    const summaryButtons = [{
+        text: 'OK',
+        class: 'btn-primary',
+        onClick: () => {
+            infoConfirmModalInstance.hide();
+            const totalMigratedOrExisting = migrationStatus.recipes.migrated + migrationStatus.recipes.existing +
+                                       migrationStatus.history.migrated +
+                                       migrationStatus.planning.migrated +
+                                       migrationStatus.shoppingList.migrated; // Count list as 1 if items > 0
+
+            if (totalMigratedOrExisting > 0 && !hadFailures) { // Only offer to clear if migration was largely successful for processed items
+                setTimeout(() => {
+                    const cleanupTitle = "Clear Local Data?";
+                    const cleanupBody = "<p>Relevant local data has been saved to your account.</p><p>Would you like to remove these local copies from this device now?</p>";
+                    const cleanupButtons = [
+                        {
+                            text: 'Yes, Clear Local Data', class: 'btn-danger',
+                            onClick: async () => {
+                                infoConfirmModalInstance.hide();
+                                try {
+                                    if (migrationStatus.recipes.migrated > 0 || migrationStatus.recipes.existing > 0) await localDB.recipes.clear();
+                                    if (migrationStatus.history.migrated > 0) await localDB.history.clear();
+                                    if (migrationStatus.planning.migrated > 0) await localDB.planning.clear();
+                                    if (migrationStatus.shoppingList.migrated > 0) await localDB.shoppingList.delete("localUserShoppingList");
+                                    console.log("Relevant local data stores cleared after migration.");
+                                    showSuccessMessage("Local data cleared from this device.");
+                                } catch (err) {
+                                    console.error("Error clearing local data after migration:", err);
+                                    showInfoConfirmModal("Cleanup Error", `<p class="text-danger">Could not fully clear local data. You can clear browser storage manually if needed.</p>`);
+                                }
+                                loadInitialRecipes(); // Reload from Firestore
+                            },
+                            dismissOnClick: false
+                        },
+                        {
+                            text: 'No, Keep Local Data', class: 'btn-secondary',
+                            onClick: () => {
+                                infoConfirmModalInstance.hide();
+                                showInfoConfirmModal("Local Data Kept", "<p>Your local data has been kept on this device. You can clear it from browser settings if desired.</p>");
+                                loadInitialRecipes();
+                            },
+                            dismissOnClick: false
+                        }
+                    ];
+                    showInfoConfirmModal(cleanupTitle, cleanupBody, cleanupButtons);
+                }, 300);
+            } else {
+                loadInitialRecipes(); // Still reload from Firestore
+            }
+        },
+        dismissOnClick: false // Important: Let the onClick logic handle hiding
+    }];
+    showInfoConfirmModal(summaryTitle, summaryBody, summaryButtons);
+}
 
 // Global click listener to close user dropdown
 document.addEventListener('click', function (event) {
