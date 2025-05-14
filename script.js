@@ -3748,6 +3748,10 @@ function signOut() {
 }
 
 // Watch auth state and test
+// script.js
+
+// ... (your existing Firebase initialization, currentUser, localDB, etc.)
+
 auth.onAuthStateChanged(user => {
     currentUser = user;
     updateAuthUI(user); // This will update the Sign In/Out button etc.
@@ -3757,24 +3761,28 @@ auth.onAuthStateChanged(user => {
     loadInitialRecipes();
 
     if (user) {
-        // Handle pending shared/chatbot recipes if that logic exists
-        const pendingShared = localStorage.getItem('pendingSharedRecipe');
-        if (pendingShared) {
-            const recipe = JSON.parse(pendingShared);
-            localStorage.removeItem('pendingSharedRecipe');
-            saveSharedRecipe(recipe);
-            showSuccessMessage("✅ Shared recipe saved!");
-        }
-        const pendingChatbot = localStorage.getItem('pendingChatbotRecipe');
-        if (pendingChatbot) {
-            currentChatbotRecipe = JSON.parse(pendingChatbot);
-            localStorage.removeItem('pendingChatbotRecipe');
-            saveCurrentChatbotRecipe();
-        }
+        // User is now authenticated (either just logged in, signed up, or was already logged in)
+        console.log("User authenticated:", user.uid, user.email);
+        console.log("App is now in 'Cloud Mode'. Features requiring an account are enabled.");
+
+        // REMOVED: Logic for pendingSharedRecipe and pendingChatbotRecipe from localStorage.
+        // This was the old flow where we'd force sign-in before saving.
+        // Now, anonymous saves go to localDB first.
+
+        // TODO LATER: Implement "Migrate local data to cloud" logic here.
+        // This is where you would check if there's any local data (from an anonymous session)
+        // and if this is the user's "first real login" or if they've explicitly requested a merge.
+        // For example:
+        // if (isFirstLoginAfterAnonymousSessionWithData()) { // You'd need a flag or logic for this
+        //     promptToMigrateLocalData();
+        // }
+
     } else {
-        // User is logged out or was never logged in.
-        // recipes array is already cleared and reloaded by loadInitialRecipes -> loadRecipesFromLocal
-        // If you had other user-specific cleanup, do it here.
+        // User is logged out or was never logged in (anonymous).
+        console.log("User is not authenticated. Operating in 'Local Mode'.");
+        // The loadInitialRecipes() call above will have already triggered loading from LocalDB.
+        // Any other UI cleanup specific to a user logging OUT can go here.
+        // For example, if you had user-specific settings displayed that need to be cleared.
     }
 });
 
@@ -3787,80 +3795,195 @@ document.addEventListener('click', function (event) {
 });
 
 function showSharedOverlay(recipe) {
-  const overlay = document.createElement('div');
-  overlay.className = 'position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-75 d-flex justify-content-center align-items-start overflow-auto';
-  overlay.style.zIndex = 2000;
-  overlay.style.padding = '2rem';
+    // Remove existing overlay if any
+    const existingOverlay = document.querySelector('.shared-recipe-overlay-container');
+    if (existingOverlay) existingOverlay.remove();
 
-  const card = document.createElement('div');
-  card.className = 'card shadow-lg p-4 position-relative';
-  card.style.maxWidth = '600px';
-  card.style.width = '95%';
-  card.style.margin = 'auto';
+    const overlay = document.createElement('div');
+    overlay.className = 'position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-75 d-flex justify-content-center align-items-start overflow-auto shared-recipe-overlay-container';
+    overlay.style.zIndex = 2000;
+    overlay.style.padding = '2rem';
 
-  card.innerHTML = `
-    <!-- Close button in top-right -->
-    <button type="button" class="btn-close position-absolute top-0 end-0 m-2" aria-label="Close"></button>
+    const card = document.createElement('div');
+    card.className = 'card shadow-lg p-4 position-relative';
+    card.style.maxWidth = '600px';
+    card.style.width = '95%';
+    card.style.margin = 'auto';
 
-    <h4 class="mb-3">${recipe.name}</h4>
+    // Using generateRecipeDisplayHTML for consistency
+    card.innerHTML = `
+        <button type="button" class="btn-close position-absolute top-0 end-0 m-3" aria-label="Close"></button>
+        <div id="sharedRecipeContent">
+            ${generateRecipeDisplayHTML(recipe)} 
+        </div>
+        <div class="d-flex justify-content-end gap-2 mt-3">
+            <button id="saveSharedRecipeBtnInModal" class="btn btn-success">Save to My Recipes</button>
+            <button id="closeSharedOverlayBtn" class="btn btn-outline-dark">Close</button>
+        </div>
+    `;
 
-    <div class="mb-2">
-      ${(recipe.tags || []).map(tag => `<span class="badge bg-primary me-1">${tag}</span>`).join('')}
-    </div>
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
 
-    <table class="table table-sm table-bordered">
-      <thead><tr><th>Ingredient</th><th>Qty</th><th>Unit</th></tr></thead>
-      <tbody>
-        ${(recipe.ingredients || []).map(i => `
-          <tr><td>${i.name}</td><td>${i.quantity}</td><td>${i.unit}</td></tr>
-        `).join('')}
-      </tbody>
-    </table>
+    const closeOverlay = () => {
+        if (overlay && overlay.parentNode) {
+            overlay.remove();
+        }
+    };
 
-    <p><strong>Instructions:</strong> ${recipe.instructions}</p>
+    overlay.addEventListener('click', (e) => {
+        if (!card.contains(e.target)) closeOverlay();
+    });
 
-    <div class="d-flex justify-content-end gap-2 mt-3">
-      <button id="saveSharedBtn" class="btn btn-outline-success">Save to My Recipes</button>
-      <button class="btn btn-outline-dark">Close</button>
-    </div>
-  `;
+    card.querySelector('.btn-close').onclick = closeOverlay;
+    card.querySelector('#closeSharedOverlayBtn').onclick = closeOverlay;
 
-  overlay.appendChild(card);
-  document.body.appendChild(overlay);
+    const saveBtn = card.querySelector('#saveSharedRecipeBtnInModal');
+    if (saveBtn) {
+        saveBtn.onclick = () => {
+            if (currentUser) {
+                console.log("User logged in, saving shared recipe to Firestore.");
+                saveSharedRecipeToFirestore(recipe); // Use the refactored Firestore specific function
+                closeOverlay();
+            } else {
+                console.log("User not logged in, saving shared recipe to LocalDB.");
+                if (!localDB) {
+                    alert("Local storage is not available at the moment. Please sign in to save.");
+                    return;
+                }
+                const recipeToSaveLocally = {
+                    ...recipe,
+                    localId: generateLocalUUID(),
+                    timestamp: new Date().toISOString(),
+                    // Clean up fields specific to the 'sharedRecipes' collection structure from Firestore
+                    // or fields that are irrelevant for a user's personal recipe book
+                };
+                delete recipeToSaveLocally.id; // Remove original Firestore ID from sharedRecipes if it was named 'id'
+                delete recipeToSaveLocally.firestoreId; // if you used this
+                delete recipeToSaveLocally.uid; // Original sharer's UID
+                delete recipeToSaveLocally.hash;
+                delete recipeToSaveLocally.createdAt;
 
-  // Handle close via outside click
-  overlay.addEventListener('click', (e) => {
-    if (!card.contains(e.target)) overlay.remove();
-  });
-
-  // Close via top-right "X" button
-  const closeBtn = card.querySelector('.btn-close');
-  if (closeBtn) closeBtn.onclick = () => overlay.remove();
-
-  // Close via footer button
-  const footerCloseBtn = card.querySelector('.btn-outline-dark');
-  if (footerCloseBtn) footerCloseBtn.onclick = () => overlay.remove();
-
-  // Save button logic
-  const saveBtn = document.getElementById('saveSharedBtn');
-
-  // Update button text based on login state
-  if (!currentUser) {
-    saveBtn.textContent = 'Sign up and Save to My Recipes';
-  }
-
-  saveBtn.onclick = () => {
-    if (!currentUser) {
-      localStorage.setItem('pendingSharedRecipe', JSON.stringify(recipe));
-      showSignInPermissionsPrompt();
-      return;
+                localDB.recipes.add(recipeToSaveLocally)
+                    .then(() => {
+                        showSuccessMessage("✅ Recipe saved locally!");
+                        closeOverlay();
+                        loadInitialRecipes(); // Refresh recipe list
+                        showDelayedCloudSavePrompt("Recipe saved to this device. Sign up or log in to save it to the cloud and access anywhere!");
+                    })
+                    .catch(err => {
+                        console.error("❌ Error saving shared recipe locally:", err.stack || err);
+                        alert("Failed to save recipe locally: " + err.message);
+                    });
+            }
+        };
     }
-
-    saveSharedRecipe(recipe);
-    overlay.remove();
-  };
 }
 
+function saveSharedRecipeToFirestore(recipeDataFromSharedSource) {
+    if (!currentUser) {
+        console.error("Attempted to save shared recipe to Firestore without a current user.");
+        alert("You must be signed in to save this recipe to your account.");
+        return;
+    }
+    const newRecipe = {
+        name: recipeDataFromSharedSource.name || "Unnamed Shared Recipe",
+        ingredients: recipeDataFromSharedSource.ingredients || [],
+        instructions: recipeDataFromSharedSource.instructions || "",
+        tags: recipeDataFromSharedSource.tags || [],
+        sourceUrl: recipeDataFromSharedSource.sourceUrl || null, // If shared recipes have a source URL
+        uid: currentUser.uid,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp(), // Use server timestamp
+        rating: 0 // Default rating
+    };
+
+    db.collection("recipes").add(newRecipe).then((docRef) => {
+        showSuccessMessage(`✅ Recipe "${newRecipe.name}" saved to your account!`);
+        console.log("Shared recipe added to user's Firestore with ID:", docRef.id);
+        loadInitialRecipes(); // Refresh recipes
+        if (window.history.replaceState) { // Clean URL query params from shared link
+            history.replaceState({}, document.title, window.location.pathname);
+        }
+    }).catch(err => {
+        console.error("❌ Error saving shared recipe to Firestore:", err);
+        alert("Failed to save shared recipe to your account: " + err.message);
+    });
+}
+
+function saveCurrentChatbotRecipeToFirestore() {
+    if (!currentUser || !currentChatbotRecipe) {
+        alert("Cannot save recipe. Ensure you are signed in and a recipe is generated.");
+        return;
+    }
+
+    const recipeToSave = {
+        name: currentChatbotRecipe.name || "AI Generated Recipe",
+        ingredients: currentChatbotRecipe.ingredients || [],
+        instructions: currentChatbotRecipe.instructions || "",
+        tags: currentChatbotRecipe.tags || [],
+        uid: currentUser.uid,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        rating: currentChatbotRecipe.rating || 0,
+    };
+    delete recipeToSave.localId;
+
+    db.collection("recipes").add(recipeToSave)
+        .then(docRef => {
+            console.log("✅ Chatbot recipe saved to Firestore with ID:", docRef.id);
+            showSuccessMessage("✅ Recipe from Chef Bot saved to your account!");
+            if (chatbotModalElement && typeof chatbotModalElement.remove === 'function') {
+                chatbotModalElement.remove();
+            }
+            chatbotModalElement = null;
+            currentChatbotRecipe = null;
+            loadInitialRecipes();
+        })
+        .catch(error => {
+            console.error("❌ Error saving chatbot recipe to Firestore:", error);
+            alert("Failed to save the recipe from Chef Bot to your account: " + error.message);
+        });
+}
+
+function showDelayedCloudSavePrompt(message) {
+    // Remove any existing prompt first
+    const existingPrompt = document.getElementById('cloudSavePrompt');
+    if (existingPrompt) {
+        bootstrap.Alert.getOrCreateInstance(existingPrompt).close();
+    }
+
+    const promptDiv = document.createElement('div');
+    promptDiv.id = 'cloudSavePrompt'; // Added ID for easy removal
+    promptDiv.className = 'alert alert-info alert-dismissible fade show fixed-bottom m-3 shadow-sm';
+    promptDiv.role = 'alert';
+    promptDiv.style.zIndex = "1055"; // Ensure it's above most things, but potentially below active modals
+    promptDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn btn-primary btn-sm ms-3" onclick="showLoginModalAndClosePrompt(this.closest('.alert'))">Sign Up / Log In</button>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    document.body.appendChild(promptDiv);
+
+    // Auto-dismiss after some time if not interacted with
+    setTimeout(() => {
+        const currentPrompt = document.getElementById('cloudSavePrompt');
+        if (currentPrompt && currentPrompt.parentNode) { // Check if it still exists
+            bootstrap.Alert.getOrCreateInstance(currentPrompt).close();
+        }
+    }, 15000); // 15 seconds
+}
+
+function showLoginModalAndClosePrompt(promptElement) {
+    if (promptElement && typeof promptElement.remove === 'function') {
+        // If using Bootstrap's Alert for dismiss, this ensures proper removal
+        const alertInstance = bootstrap.Alert.getOrCreateInstance(promptElement);
+        if (alertInstance) {
+            alertInstance.close();
+        } else {
+            promptElement.remove(); // Fallback if not a BS alert
+        }
+    }
+    showLoginModal(); // Your existing function to show the main login modal
+}
 
 function showSignInPrompt() {
   const overlay = document.createElement('div');
