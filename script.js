@@ -389,111 +389,134 @@ function filterRecipesByTag() {
 
 
 
-function handleRecipePhoto(event) {
-  const file = event.target.files[0];
-  if (!file) return;
+async function handleRecipePhoto(event) {
+    const file = event.target.files[0];
+    if (!file) return;
 
-  const preview = document.getElementById('photoPreviewContainer');
-  const reader = new FileReader();
+    const photoPreviewContainer = document.getElementById('photoPreviewContainer');
+    if (!photoPreviewContainer) {
+        console.error("photoPreviewContainer element not found!");
+        return;
+    }
+    photoPreviewContainer.innerHTML = `
+        <div class="text-center">
+            <p>Preparing image... <span class="spinner-border spinner-border-sm"></span></p>
+        </div>`;
 
-  reader.onload = function (e) {
-    const img = document.createElement('img');
-    img.src = e.target.result;
-    img.className = 'img-fluid rounded border';
-    img.alt = 'Recipe Photo Preview';
-    preview.innerHTML = '';
-    preview.appendChild(img);
-  
-    img.onload = async () => {
-      const container = document.getElementById('photoPreviewContainer');
-      container.innerHTML = ''; // Clear previous content
-    
-      // ➤ Original Image
-      const originalLabel = document.createElement('p');
-      originalLabel.textContent = "📷 Original Photo";
-      const originalImg = document.createElement('img');
-      originalImg.src = img.src;
-      originalImg.style.maxWidth = "45%";
-      originalImg.style.marginRight = "5%";
-    
-      // ➤ Preprocessed Image
-      const processedLabel = document.createElement('p');
-      processedLabel.textContent = "🧼 Preprocessed Image";
-      const processedDataUrl = preprocessImage(img); // canvas.toDataURL()
-      const processedImg = document.createElement('img');
-      processedImg.src = processedDataUrl;
-      processedImg.style.maxWidth = "45%";
-    
-      // Add both images and labels side-by-side
-      const labelRow = document.createElement('div');
-      labelRow.style.display = 'flex';
-      labelRow.style.justifyContent = 'space-between';
-      labelRow.appendChild(originalLabel);
-      labelRow.appendChild(processedLabel);
-    
-      const imgRow = document.createElement('div');
-      imgRow.style.display = 'flex';
-      imgRow.style.justifyContent = 'space-between';
-      imgRow.appendChild(originalImg);
-      imgRow.appendChild(processedImg);
-    
-      container.appendChild(labelRow);
-      container.appendChild(imgRow);
-    
-      // ➤ Run OCR on preprocessed image
-      Tesseract.recognize(
-        processedDataUrl,
-        'eng',
-        {
-          logger: m => console.log(m),
-          config: {
-            tessedit_pageseg_mode: '6'
-          }
+    const reader = new FileReader();
+
+    reader.onload = function (e) {
+        const originalImgSrc = e.target.result;
+        const imgForPreprocessing = document.createElement('img');
+        imgForPreprocessing.src = originalImgSrc;
+
+        imgForPreprocessing.onload = async () => { // Ensure image is loaded for its dimensions
+            photoPreviewContainer.innerHTML = ''; // Clear "Preparing..."
+
+            // Display original and preprocessed image (optional but good for UX)
+            const originalLabel = document.createElement('p');
+            originalLabel.className = 'text-center fw-semibold';
+            originalLabel.textContent = "📷 Original Photo";
+            const originalImgDisplay = document.createElement('img');
+            originalImgDisplay.src = originalImgSrc;
+            originalImgDisplay.className = 'img-fluid rounded border d-block mx-auto mb-2';
+            originalImgDisplay.style.maxHeight = "200px";
+
+
+            const processedLabel = document.createElement('p');
+            processedLabel.className = 'text-center fw-semibold';
+            processedLabel.textContent = "🧼 Preprocessed (Sent to AI)";
+            const processedDataUrl = preprocessImage(imgForPreprocessing); // Your existing function
+            const processedImgDisplay = document.createElement('img');
+            processedImgDisplay.src = processedDataUrl;
+            processedImgDisplay.className = 'img-fluid rounded border d-block mx-auto mb-3';
+            processedImgDisplay.style.maxHeight = "200px";
+
+            const imageRow = document.createElement('div');
+            imageRow.className = 'row';
+            const col1 = document.createElement('div');
+            col1.className = 'col-md-6 text-center';
+            col1.appendChild(originalLabel);
+            col1.appendChild(originalImgDisplay);
+            const col2 = document.createElement('div');
+            col2.className = 'col-md-6 text-center';
+            col2.appendChild(processedLabel);
+            col2.appendChild(processedImgDisplay);
+            imageRow.appendChild(col1);
+            imageRow.appendChild(col2);
+            photoPreviewContainer.appendChild(imageRow);
+
+
+            const statusMessage = document.createElement('p');
+            statusMessage.className = 'text-center mt-3 alert alert-info';
+            statusMessage.innerHTML = '🤖 Sending to AI for recipe extraction... <span class="spinner-border spinner-border-sm"></span>';
+            photoPreviewContainer.appendChild(statusMessage);
+
+            try {
+                const base64ImageData = processedDataUrl.split(',')[1]; // Get only the base64 part
+
+                const response = await fetch("/.netlify/functions/process-recipe-image", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        image: base64ImageData,
+                        mimeType: file.type // e.g., "image/jpeg", "image/png"
+                    })
+                });
+
+                statusMessage.remove(); // Remove "Sending to AI..."
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: `Server error ${response.status}. Please check Netlify function logs.` }));
+                    throw new Error(errorData.error || `Failed to process image: ${response.statusText}`);
+                }
+
+                const recipeData = await response.json();
+
+                if (recipeData.error) { // Handle errors returned in the JSON body from the function
+                    throw new Error(recipeData.error);
+                }
+
+                // Display success and fill form
+                const successMsg = document.createElement('p');
+                successMsg.className = 'alert alert-success mt-2 text-center';
+                successMsg.textContent = '✅ AI successfully extracted recipe data!';
+                photoPreviewContainer.appendChild(successMsg);
+
+                const fillFormBtn = document.createElement('button');
+                fillFormBtn.className = 'btn btn-primary mt-2 mb-3 d-block mx-auto';
+                fillFormBtn.innerHTML = '✨ Fill Recipe Form with this Data';
+                fillFormBtn.onclick = () => {
+                    // Ensure the main recipe form is visible
+                    const recipeFormDiv = document.getElementById('recipeForm');
+                    if (recipeFormDiv && !recipeFormDiv.classList.contains('open')) {
+                        toggleRecipeForm(); // Open the form if it's not already
+                    }
+                    fillRecipeForm(recipeData); // Your existing function to fill the form fields
+                    document.getElementById('recipeNameInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    successMsg.textContent = '✅ Form filled! Please review and save.';
+                    fillFormBtn.remove(); // Remove button after clicking
+                };
+                photoPreviewContainer.appendChild(fillFormBtn);
+
+                console.log("AI Extracted Recipe Data:", recipeData);
+
+            } catch (err) {
+                console.error("Error processing recipe photo with AI:", err);
+                if(statusMessage && statusMessage.parentNode) statusMessage.remove(); // remove if still there
+                const errorDisplay = document.createElement('p');
+                errorDisplay.className = 'alert alert-danger mt-2 text-center';
+                errorDisplay.textContent = `❌ AI Processing Error: ${err.message}`;
+                photoPreviewContainer.appendChild(errorDisplay);
+            }
+        };
+
+        // Handle cases where the image might already be loaded (e.g., from cache or very small image)
+        if (imgForPreprocessing.complete && imgForPreprocessing.naturalWidth !== 0) {
+            imgForPreprocessing.onload();
         }
-      ).then(({ data: { text } }) => {
-        const editorLabel = document.createElement('p');
-      editorLabel.textContent = "📝 Editable OCR Text";
-
-      const structuredText = generateStructuredOcrTemplate(text);
-      const result = document.createElement('textarea');
-      result.value = structuredText;
-      result.rows = 12;
-      result.className = 'form-control mt-2 font-monospace';
-      result.style.whiteSpace = 'pre-wrap';
-
-
-      // ✅ Add ID so we can reference it
-      result.id = 'ocrTextArea';
-
-      // ✅ Add parse button
-      const parseBtn = document.createElement('button');
-      parseBtn.className = 'btn btn-info btn-sm btn-outline-dark mt-2';
-      parseBtn.textContent = '✨ Parse OCR Text to Fill Form';
-
-      parseBtn.onclick = () => {
-        const updatedText = document.getElementById('ocrTextArea').value;
-        const parsed = parseOcrToRecipeFields(updatedText);
-        fillRecipeForm(parsed);
-      };
-
-      container.appendChild(editorLabel);
-      container.appendChild(result);
-      container.appendChild(parseBtn);
-
-
-      }).catch(err => {
-        const errorMsg = document.createElement('p');
-        errorMsg.textContent = '❌ OCR failed.';
-        container.appendChild(errorMsg);
-        console.error("OCR error:", err);
-      });
     };
-    
-    
-    
-  };  
-
-  reader.readAsDataURL(file);
+    reader.readAsDataURL(file);
 }
 
 function generateStructuredOcrTemplate(rawText) {
