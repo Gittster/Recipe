@@ -1949,50 +1949,52 @@ function updateRecipeRating(id, rating) {
 }
 
 
-async function openInlineEditor(recipeId, cardElement) { // Renamed parameters for clarity
+async function openInlineEditor(recipeId, cardElement) {
     if (!cardElement) {
-        console.error("Card element not provided to openInlineEditor");
+        console.error("Card element not provided to openInlineEditor for recipeId:", recipeId);
         return;
     }
-    // Prevent re-opening editor if already open in this card (check if card already has editor content)
     if (cardElement.querySelector('.inline-editor-content')) {
-        console.log("Editor already open for this card.");
+        console.log("Editor already open for this card:", recipeId);
         return;
     }
 
     let recipeData;
     let isLocalRecipe = false;
 
+    // --- Step 1: Fetch Recipe Data (Cloud or Local) ---
     if (currentUser) {
-        // --- LOGGED IN: Fetch from Firestore ---
         try {
             console.log("Opening editor for Firestore recipe, ID:", recipeId);
             const doc = await db.collection('recipes').doc(recipeId).get();
             if (!doc.exists) {
-                alert("Recipe not found in cloud.");
+                alert("Recipe not found in your account.");
+                loadInitialRecipes(); // Refresh list to remove potentially stale card
                 return;
             }
-            recipeData = { firestoreId: doc.id, ...doc.data() }; // Keep original Firestore ID
+            // For cloud recipes, 'id' will be the Firestore document ID.
+            // Store original firestoreId separately for updates.
+            recipeData = { ...doc.data(), id: doc.id, firestoreId: doc.id };
         } catch (err) {
             console.error("Error fetching recipe from Firestore for editing:", err);
             alert("Failed to load recipe data for editing.");
             return;
         }
     } else {
-        // --- NOT LOGGED IN: Fetch from LocalDB ---
         if (!localDB) {
-            alert("Local storage is not available.");
+            alert("Local storage is not available. Please sign in or enable it.");
             return;
         }
         try {
             console.log("Opening editor for local recipe, localId (passed as recipeId):", recipeId);
-            // 'recipeId' here is the localId (primary key for localDB.recipes)
-            const localRecipe = await localDB.recipes.get(recipeId);
+            const localRecipe = await localDB.recipes.get(recipeId); // recipeId here is the localId
             if (!localRecipe) {
                 alert("Recipe not found locally.");
+                loadInitialRecipes(); // Refresh list
                 return;
             }
-            recipeData = { ...localRecipe, id: localRecipe.localId }; // Ensure 'id' is the localId
+            // For local recipes, 'id' will be the localId.
+            recipeData = { ...localRecipe, id: localRecipe.localId };
             isLocalRecipe = true;
         } catch (err) {
             console.error("Error fetching recipe from LocalDB for editing:", err.stack || err);
@@ -2001,102 +2003,108 @@ async function openInlineEditor(recipeId, cardElement) { // Renamed parameters f
         }
     }
 
-    // --- Now that we have recipeData, build the editor UI ---
-    // (This part of your existing openInlineEditor largely remains, but uses `recipeData`)
-
+    // --- Step 2: Build the Editor UI ---
     cardElement.innerHTML = ''; // Clear the card's existing content
     const editorContentDiv = document.createElement('div');
-    editorContentDiv.className = 'card-body inline-editor-content'; // Add a class to identify editor content
+    editorContentDiv.className = 'card-body inline-editor-content p-3'; // Added p-3 for padding
 
     // Recipe Name
-    const nameLabel = document.createElement('label'); /* ... as before ... */
+    const nameLabel = document.createElement('label');
     nameLabel.className = 'form-label fw-semibold'; nameLabel.textContent = '📛 Recipe Name';
     editorContentDiv.appendChild(nameLabel);
-    const nameInput = document.createElement('input'); /* ... as before ... */
-    nameInput.className = 'form-control mb-3'; nameInput.value = recipeData.name || '';
+    const nameInput = document.createElement('input');
+    nameInput.className = 'form-control form-control-sm mb-3'; nameInput.value = recipeData.name || '';
     editorContentDiv.appendChild(nameInput);
 
     // Ingredients
-    const ingLabel = document.createElement('label'); /* ... as before ... */
+    const ingLabel = document.createElement('label');
     ingLabel.className = 'form-label fw-semibold'; ingLabel.textContent = '🧂 Ingredients';
     editorContentDiv.appendChild(ingLabel);
     const ingredientsTableContainer = document.createElement('div');
-    ingredientsTableContainer.className = 'mb-2 table-responsive'; // Added table-responsive
+    ingredientsTableContainer.className = 'mb-2 table-responsive';
+    const ingredientsTableBodyId = `editIngredientsTable-${recipeData.id.replace(/[^a-zA-Z0-9]/g, "")}`; // Sanitize ID
     ingredientsTableContainer.innerHTML = `
-        <table class="table table-sm table-bordered mb-2">
+        <table class="table table-sm table-bordered table-hover mb-2">
             <thead><tr><th>Ingredient</th><th>Qty</th><th>Unit</th><th></th></tr></thead>
-            <tbody id="editIngredientsTable-${recipeData.id}"></tbody> {/* Use unique ID */}
+            <tbody id="${ingredientsTableBodyId}"></tbody>
         </table>
     `;
     editorContentDiv.appendChild(ingredientsTableContainer);
-    const addIngBtn = document.createElement('button'); /* ... as before ... */
-    addIngBtn.className = 'btn btn-outline-secondary btn-sm mb-3'; addIngBtn.textContent = '+ Add Ingredient';
-    addIngBtn.onclick = () => addIngredientRowToEditor(`editIngredientsTable-${recipeData.id}`);
+    const addIngBtn = document.createElement('button');
+    addIngBtn.className = 'btn btn-outline-secondary btn-sm mb-3';
+    addIngBtn.innerHTML = '<i class="bi bi-plus-circle"></i> Add Ingredient';
+    addIngBtn.onclick = () => addIngredientRowToEditor(ingredientsTableBodyId);
     editorContentDiv.appendChild(addIngBtn);
 
     // Instructions
-    const instrLabel = document.createElement('label'); /* ... as before ... */
+    const instrLabelWrapper = document.createElement('div');
+    instrLabelWrapper.className = 'w-100';
+    const instrLabel = document.createElement('label');
     instrLabel.className = 'form-label fw-semibold mt-2'; instrLabel.textContent = '📝 Instructions';
-    editorContentDiv.appendChild(instrLabel);
-    const instructionsInput = document.createElement('textarea'); /* ... as before ... */
-    instructionsInput.className = 'form-control mb-3'; instructionsInput.rows = 4;
+    instrLabelWrapper.appendChild(instrLabel);
+    editorContentDiv.appendChild(instrLabelWrapper);
+    const instructionsInput = document.createElement('textarea');
+    instructionsInput.className = 'form-control form-control-sm mb-3';
+    instructionsInput.rows = 5; // Increased rows slightly
     instructionsInput.value = recipeData.instructions || '';
     editorContentDiv.appendChild(instructionsInput);
 
     // Tags
-    // We need a local state for tags being edited for this specific editor instance
-    let currentEditingTags = [...(recipeData.tags || [])];
-    const tagsLabel = document.createElement('label'); /* ... as before ... */
+    let currentEditingTags = [...(recipeData.tags || [])]; // Local array for tags during this edit session
+    const tagsLabel = document.createElement('label');
     tagsLabel.className = 'form-label fw-semibold'; tagsLabel.textContent = '🏷️ Tags';
     editorContentDiv.appendChild(tagsLabel);
-    const tagsContainerId = `inlineTagsContainer-${recipeData.id}`;
-    const tagsPlaceholderId = `inlineTagsPlaceholder-${recipeData.id}`;
-    const tagInputId = `inlineTagInput-${recipeData.id}`;
-    const addTagBtnId = `inlineAddTagBtn-${recipeData.id}`;
+
+    const editorInstanceId = recipeData.id.replace(/[^a-zA-Z0-9]/g, ""); // Sanitize ID
+    const tagsContainerId = `inlineTagsContainer-${editorInstanceId}`;
+    const tagsPlaceholderId = `inlineTagsPlaceholder-${editorInstanceId}`;
+    const tagInputId = `inlineTagInput-${editorInstanceId}`;
+    const addTagBtnId = `inlineAddTagBtn-${editorInstanceId}`;
 
     const tagsWrapper = document.createElement('div');
     tagsWrapper.className = 'mb-3';
     tagsWrapper.innerHTML = `
-        <div id="${tagsContainerId}" class="form-control d-flex flex-wrap align-items-center gap-2 p-2 position-relative" style="min-height: 45px; background-color: #f8f9fa; border: 1px dashed #ced4da;">
-            <span id="${tagsPlaceholderId}" class="text-muted position-absolute" style="left: 10px; top: 8px; pointer-events: none;">Add tags...</span>
+        <div id="${tagsContainerId}" class="form-control form-control-sm d-flex flex-wrap align-items-center gap-1 p-2 position-relative" style="min-height: 38px; background-color: #f8f9fa; border: 1px dashed #ced4da;">
+            <span id="${tagsPlaceholderId}" class="text-muted position-absolute small" style="left: 10px; top: 50%; transform: translateY(-50%); pointer-events: none;">Add tags...</span>
         </div>
         <div class="d-flex flex-nowrap mt-2 gap-2">
-            <input type="text" id="${tagInputId}" class="form-control form-control-sm" placeholder="Type a tag" />
+            <input type="text" id="${tagInputId}" class="form-control form-control-sm" placeholder="Type a tag & press Enter" />
             <button type="button" id="${addTagBtnId}" class="btn btn-outline-dark btn-sm" style="min-width: 80px;">Add Tag</button>
         </div>
     `;
     editorContentDiv.appendChild(tagsWrapper);
 
+    // Get tag elements *after* they are added to the DOM via innerHTML
+    const tagsContainerElement = document.getElementById(tagsContainerId);
+    const tagsPlaceholderElement = document.getElementById(tagsPlaceholderId);
+    const tagInputField = document.getElementById(tagInputId);
+    const addTagButtonElement = document.getElementById(addTagBtnId);
+
     const renderCurrentEditingTags = () => {
-        const container = document.getElementById(tagsContainerId);
-        const placeholder = document.getElementById(tagsPlaceholderId);
-        if (!container || !placeholder) return;
-        container.innerHTML = ''; // Clear existing tags
+        if (!tagsContainerElement || !tagsPlaceholderElement) return;
+        tagsContainerElement.innerHTML = ''; // Clear existing tag badges
         if (currentEditingTags.length === 0) {
-            placeholder.style.display = 'block';
+            tagsPlaceholderElement.style.display = 'block';
         } else {
-            placeholder.style.display = 'none';
+            tagsPlaceholderElement.style.display = 'none';
             currentEditingTags.forEach(tag => {
                 const tagBadge = document.createElement('span');
-                tagBadge.className = 'badge bg-primary text-white me-1';
+                tagBadge.className = 'badge bg-primary text-white me-1 mb-1 py-1 px-2'; // Slightly more padding
                 tagBadge.textContent = tag;
                 tagBadge.style.cursor = 'pointer';
-                tagBadge.onclick = () => {
+                tagBadge.title = 'Click to remove tag';
+                tagBadge.onclick = (e) => {
+                    e.stopPropagation(); // Prevent any parent click handlers
                     currentEditingTags = currentEditingTags.filter(t => t !== tag);
-                    renderCurrentEditingTags();
+                    renderCurrentEditingTags(); // Re-render the tags
                 };
-                container.appendChild(tagBadge);
+                tagsContainerElement.appendChild(tagBadge);
             });
         }
     };
 
-    // Initial render of tags for the editor
-    setTimeout(renderCurrentEditingTags, 0); // setTimeout to ensure elements are in DOM
-
-    const tagInputField = tagsWrapper.querySelector(`#${tagInputId}`);
-    const addTagButton = tagsWrapper.querySelector(`#${addTagBtnId}`);
-
     const addTagAction = () => {
+        if (!tagInputField) return;
         const value = tagInputField.value.trim().toLowerCase();
         if (value && !currentEditingTags.includes(value)) {
             currentEditingTags.push(value);
@@ -2105,18 +2113,23 @@ async function openInlineEditor(recipeId, cardElement) { // Renamed parameters f
         tagInputField.value = '';
         tagInputField.focus();
     };
-    if (addTagButton) addTagButton.onclick = addTagAction;
-    if (tagInputField) tagInputField.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            addTagAction();
-        }
-    });
+
+    if (addTagButtonElement) addTagButtonElement.onclick = addTagAction;
+    if (tagInputField) {
+        tagInputField.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addTagAction();
+            }
+        });
+    }
+    // Initial render of tags
+    renderCurrentEditingTags();
 
 
     // Save / Cancel buttons
     const btnRow = document.createElement('div');
-    btnRow.className = 'd-flex gap-2 mt-3 pt-3 border-top'; // Added border-top for separation
+    btnRow.className = 'd-flex justify-content-end gap-2 mt-3 pt-3 border-top';
     const saveEditBtn = document.createElement('button');
     saveEditBtn.className = 'btn btn-success btn-sm';
     saveEditBtn.innerHTML = '<i class="bi bi-check-lg"></i> Save Changes';
@@ -2128,81 +2141,72 @@ async function openInlineEditor(recipeId, cardElement) { // Renamed parameters f
     btnRow.appendChild(cancelEditBtn);
     editorContentDiv.appendChild(btnRow);
 
-    cardElement.appendChild(editorContentDiv);
+    cardElement.appendChild(editorContentDiv); // Append the fully constructed editor
 
     // Populate ingredient table for editing
-    const ingredientsTbody = document.getElementById(`editIngredientsTable-${recipeData.id}`);
-    if (recipeData.ingredients && recipeData.ingredients.length > 0) {
-        recipeData.ingredients.forEach(ing => addIngredientRowToEditor(`editIngredientsTable-${recipeData.id}`, ing.name, ing.quantity, ing.unit));
+    const ingredientsTbody = document.getElementById(ingredientsTableBodyId);
+    if (recipeData.ingredients && ingredientsTbody) { // Check tbody exists
+        recipeData.ingredients.forEach(ing => addIngredientRowToEditor(ingredientsTableBodyId, ing.name, ing.quantity, ing.unit));
     }
-    addIngredientRowToEditor(`editIngredientsTable-${recipeData.id}`); // Add a blank row at the end
+    if (ingredientsTbody) addIngredientRowToEditor(ingredientsTableBodyId); // Add a blank row
 
-    // Save button action
+
+    // --- Step 3: Save Logic ---
     saveEditBtn.onclick = async () => {
-        const updatedRecipe = {
-            name: nameInput.value.trim(),
-            instructions: instructionsInput.value.trim(),
-            ingredients: [],
-            tags: [...currentEditingTags], // Use the locally managed tags for this edit session
-            // Keep original IDs and timestamp for updates
-            id: recipeData.id, // This is localId for local recipes, firestoreId for cloud
-            timestamp: isLocalRecipe ? new Date().toISOString() : firebase.firestore.FieldValue.serverTimestamp(), // Update timestamp
-        };
-        if (!isLocalRecipe && recipeData.firestoreId) { // Keep original firestoreId if it's a cloud recipe
-            updatedRecipe.firestoreId = recipeData.firestoreId;
-        }
-        if (currentUser && !isLocalRecipe) { // Only add uid for cloud recipes being updated
-            updatedRecipe.uid = recipeData.uid || currentUser.uid; // Use existing uid or current user's
-        }
-        if (isLocalRecipe && recipeData.localId) { // Keep original localId for local recipes
-             updatedRecipe.localId = recipeData.localId;
-        }
-
-
-        const ingRows = ingredientsTbody.querySelectorAll('tr');
-        ingRows.forEach(row => {
-            const cells = row.querySelectorAll('input');
-            const name = cells[0].value.trim();
-            const quantity = cells[1].value.trim();
-            const unit = cells[2].value.trim();
-            if (name) { // Only add if ingredient name is present
-                updatedRecipe.ingredients.push({ name, quantity, unit });
-            }
-        });
-
-        if (!updatedRecipe.name) {
+        const updatedName = nameInput.value.trim();
+        if (!updatedName) {
             alert("Recipe name cannot be empty.");
+            nameInput.focus();
             return;
         }
 
-        // --- Perform Save Operation ---
+        const updatedIngredients = [];
+        if (ingredientsTbody) {
+            ingredientsTbody.querySelectorAll('tr').forEach(row => {
+                const inputs = row.querySelectorAll('input');
+                const ingName = inputs[0]?.value.trim();
+                const ingQty = inputs[1]?.value.trim();
+                const ingUnit = inputs[2]?.value.trim();
+                if (ingName) { // Only add if ingredient name is present
+                    updatedIngredients.push({ name: ingName, quantity: ingQty, unit: ingUnit });
+                }
+            });
+        }
+
+        const recipePayload = {
+            name: updatedName,
+            ingredients: updatedIngredients,
+            instructions: instructionsInput.value.trim(),
+            tags: [...currentEditingTags], // Use the current state of edited tags
+            // Rating is not typically edited here, preserve original if it exists
+            rating: recipeData.rating || 0,
+        };
+
         try {
             if (currentUser && !isLocalRecipe) { // Editing a Firestore recipe
                 console.log("Saving updated recipe to Firestore, ID:", recipeData.firestoreId);
-                // Ensure we're updating using the original Firestore document ID
-                await db.collection('recipes').doc(recipeData.firestoreId).set(updatedRecipe, { merge: true }); // Use set with merge to update or overwrite
+                recipePayload.uid = recipeData.uid || currentUser.uid; // Ensure UID is present
+                recipePayload.timestamp = firebase.firestore.FieldValue.serverTimestamp();
+                await db.collection('recipes').doc(recipeData.firestoreId).set(recipePayload, { merge: true });
                 showSuccessMessage("Recipe updated in your account!");
-            } else { // Editing a LocalDB recipe (or a new local recipe if id was somehow lost)
-                 if (!localDB) {
-                    alert("Local storage not available to save changes."); return;
-                 }
-                console.log("Saving updated recipe to LocalDB, localId:", recipeData.id);
-                // For Dexie, 'put' updates if key exists, or adds if new.
-                // We use recipeData.id which should be the localId.
-                await localDB.recipes.put(updatedRecipe); // Dexie's put will update based on primary key (localId)
+            } else { // Editing a LocalDB recipe
+                if (!localDB) { alert("Local storage not available to save changes."); return; }
+                // For local, `recipeData.id` is the localId (primary key)
+                recipePayload.localId = recipeData.id;
+                recipePayload.timestamp = new Date().toISOString(); // Update timestamp for local
+                console.log("Saving updated recipe to LocalDB, localId:", recipePayload.localId, recipePayload);
+                await localDB.recipes.put(recipePayload); // Dexie's put will update based on primary key (localId)
                 showSuccessMessage("Local recipe updated!");
             }
-            loadInitialRecipes(); // This will refresh the list (which closes the editor)
+            loadInitialRecipes(); // This will refresh the list and close the editor
         } catch (err) {
             console.error("Error saving recipe changes:", err.stack || err);
             alert("Failed to save changes: " + err.message);
         }
     };
 
-    // Cancel button action
     cancelEditBtn.onclick = () => {
-        // Simply reload the recipes; this will cause displayRecipes to re-render the card in its original state
-        loadInitialRecipes();
+        loadInitialRecipes(); // Reloads all recipes, effectively closing the editor
     };
 }
 
@@ -2211,11 +2215,14 @@ async function openInlineEditor(recipeId, cardElement) { // Renamed parameters f
 
 function addIngredientRowToEditor(tbodyId, name = '', quantity = '', unit = '') {
     const tbody = document.getElementById(tbodyId);
-    if (!tbody) return;
+    if (!tbody) {
+        console.error("Ingredient table body not found:", tbodyId);
+        return;
+    }
 
     const newRow = document.createElement('tr');
     newRow.innerHTML = `
-        <td><input class="form-control form-control-sm" value="${name}" placeholder="Ingredient Name"></td>
+        <td><input class="form-control form-control-sm" value="${name}" placeholder="Ingredient"></td>
         <td><input class="form-control form-control-sm" value="${quantity}" placeholder="Qty"></td>
         <td><input class="form-control form-control-sm" value="${unit}" placeholder="Unit"></td>
         <td class="text-center align-middle">
@@ -2225,9 +2232,9 @@ function addIngredientRowToEditor(tbodyId, name = '', quantity = '', unit = '') 
         </td>
     `;
     tbody.appendChild(newRow);
-    // Focus the first input of the new row if it's blank (helps with UX)
-    if (name === '' && quantity === '' && unit === '') {
-        newRow.querySelector('input').focus();
+    if (name === '' && quantity === '' && unit === '') { // If it's a new blank row
+        const firstInput = newRow.querySelector('input');
+        if (firstInput) firstInput.focus();
     }
 }
 
