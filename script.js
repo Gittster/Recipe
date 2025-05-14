@@ -4,6 +4,110 @@ let currentTags = [];
 let currentUser = null; // Global user tracker
 let currentChatbotRecipe = null;
 let chatbotModalElement = null; // To keep a reference to the modal DOM element
+let loginModalInstance = null; // To store the Bootstrap modal instance
+
+document.addEventListener('DOMContentLoaded', () => {
+    const loginModalElement = document.getElementById('loginModal');
+    if (loginModalElement) {
+        loginModalInstance = new bootstrap.Modal(loginModalElement);
+    }
+});
+
+// --- Login Modal View Management Functions ---
+function showLoginModal() {
+    if (loginModalInstance) {
+        switchToInitialOptionsView(); // This now sets the title appropriately
+        clearLoginErrorMessages();
+        // Clear email input field when modal is freshly opened
+        const loginEmailInput = document.getElementById('loginEmailInput');
+        if (loginEmailInput) loginEmailInput.value = ''; 
+        loginModalInstance.show();
+    } else {
+        console.error("Login modal instance not found!");
+    }
+}
+
+
+function hideLoginModal() {
+    if (loginModalInstance) {
+        loginModalInstance.hide();
+    }
+}
+
+function clearLoginErrorMessages() {
+    const loginErrorDiv = document.getElementById('loginErrorMessage');
+    const signUpErrorDiv = document.getElementById('signUpErrorMessage');
+    if (loginErrorDiv) loginErrorDiv.style.display = 'none';
+    if (signUpErrorDiv) signUpErrorDiv.style.display = 'none';
+}
+
+function displayLoginError(view, message) {
+    let errorDivId = '';
+    if (view === 'login') errorDivId = 'loginErrorMessage';
+    else if (view === 'signup') errorDivId = 'signUpErrorMessage';
+    
+    const errorDiv = document.getElementById(errorDivId);
+    if (errorDiv) {
+        errorDiv.textContent = message;
+        errorDiv.style.display = 'block';
+    }
+}
+
+function switchToInitialOptionsView() {
+    document.getElementById('initialLoginOptionsView').style.display = 'block';
+    document.getElementById('passwordLoginView').style.display = 'none';
+    document.getElementById('signUpView').style.display = 'none';
+    document.getElementById('loginModalLabel').textContent = 'Sign in or create account'; // CHANGED
+    clearLoginErrorMessages();
+}
+
+
+function switchToPasswordLoginView(email = '') {
+    document.getElementById('initialLoginOptionsView').style.display = 'none';
+    document.getElementById('passwordLoginView').style.display = 'block';
+    document.getElementById('signUpView').style.display = 'none';
+    
+    const emailInput = document.getElementById('emailForPasswordLogin');
+    const passwordLoginTitle = document.getElementById('passwordLoginTitle');
+
+    if (email) {
+        emailInput.value = email;
+        emailInput.readOnly = true; // Make it readonly if prefilled from a trusted step
+        if(passwordLoginTitle) passwordLoginTitle.textContent = `Enter password for ${email}`;
+    } else {
+        emailInput.value = ''; // Clear if no email passed
+        emailInput.readOnly = false;
+        if(passwordLoginTitle) passwordLoginTitle.textContent = 'Log In with Email & Password';
+    }
+    document.getElementById('passwordForLogin').value = ''; // Clear password field
+    document.getElementById('passwordForLogin').focus(); // Focus password field
+    clearLoginErrorMessages();
+}
+
+function switchToSignUpView() {
+    document.getElementById('initialLoginOptionsView').style.display = 'none';
+    document.getElementById('passwordLoginView').style.display = 'none';
+    document.getElementById('signUpView').style.display = 'block';
+    document.getElementById('loginModalLabel').textContent = 'Create Account';
+    
+    const initialEmail = document.getElementById('loginEmailInput').value;
+    const signUpEmailInput = document.getElementById('emailForSignUp');
+    if (initialEmail) {
+        signUpEmailInput.value = initialEmail;
+        signUpEmailInput.readOnly = true; // Make it readonly if prefilled
+    } else {
+        signUpEmailInput.value = '';
+        signUpEmailInput.readOnly = false;
+    }
+    document.getElementById('passwordForSignUp').value = '';
+    document.getElementById('confirmPasswordForSignUp').value = '';
+    clearLoginErrorMessages();
+    if (!initialEmail) {
+        signUpEmailInput.focus();
+    } else {
+        document.getElementById('passwordForSignUp').focus();
+    }
+}
 
 function renderTags() {
   const tagsContainer = document.getElementById('tagsContainer');
@@ -390,6 +494,7 @@ function filterRecipesByTag() {
 
 
 async function handleRecipePhoto(event) {
+    console.log("--- handleRecipePhoto called at: ", new Date().toISOString(), "Event type:", event.type); // LOG A
     const file = event.target.files[0];
     if (!file) return;
 
@@ -411,6 +516,7 @@ async function handleRecipePhoto(event) {
         imgForPreprocessing.src = originalImgSrc;
 
         imgForPreprocessing.onload = async () => { // Ensure image is loaded for its dimensions
+            console.log("--- imgForPreprocessing.onload triggered at: ", new Date().toISOString()); // LOG B
             photoPreviewContainer.innerHTML = ''; // Clear "Preparing..."
 
             // Display original and preprocessed image (optional but good for UX)
@@ -2646,80 +2752,279 @@ function getInitials(name) {
 
 // Update auth UI
 function updateAuthUI(user) {
-  const authArea = document.getElementById('userAuthArea');
-  authArea.innerHTML = '';
+    const authArea = document.getElementById('userAuthArea');
+    authArea.innerHTML = '';
 
-  if (user) {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'position-relative';
-  
-    const avatarBtn = document.createElement('button');
-    avatarBtn.className = 'btn btn-outline-dark rounded-circle fw-bold';
-    avatarBtn.style.width = '45px';
-    avatarBtn.style.height = '45px';
-    avatarBtn.style.fontSize = '1rem';
-    avatarBtn.style.padding = '0';
-    avatarBtn.style.display = 'flex';
-    avatarBtn.style.alignItems = 'center';
-    avatarBtn.style.justifyContent = 'center';
-    avatarBtn.title = user.displayName || 'Account';
-    avatarBtn.textContent = getInitials(user.displayName || user.email);
-  
-    const dropdown = document.createElement('div');
-    dropdown.className = 'dropdown-menu p-2 shadow-sm user-dropdown';
-    dropdown.style.position = 'absolute';
-    dropdown.style.top = '50px';
-    dropdown.style.right = '0';
-    dropdown.style.minWidth = '120px';
-    dropdown.style.display = 'none'; // hidden by default
-  
-    const signOutBtn = document.createElement('button');
-    signOutBtn.className = 'dropdown-item text-danger';
-    signOutBtn.textContent = 'Sign Out';
-    signOutBtn.onclick = () => {
-      signOut();
-      dropdown.style.display = 'none';
-    };
-  
-    dropdown.appendChild(signOutBtn);
-  
-    avatarBtn.onclick = (e) => {
-      e.stopPropagation();
-      dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
-    };
-  
-    wrapper.appendChild(avatarBtn);
-    wrapper.appendChild(dropdown);
-  
-    authArea.appendChild(wrapper);
-  }
-  
-  else {
-    // Not logged in - show Sign In button
-    const signInBtn = document.createElement('button');
-    signInBtn.className = 'btn btn-outline-dark d-flex align-items-center gap-2';
-    signInBtn.innerHTML = `
-      <i class="bi bi-person"></i> Sign in
-    `;
-    signInBtn.onclick = () => {
-      signInWithGoogle();
-    };
+    if (user) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'position-relative';
 
-    authArea.appendChild(signInBtn);
-  }
+        const avatarBtn = document.createElement('button');
+        // ... (avatarBtn setup remains the same as before) ...
+        avatarBtn.className = 'btn btn-outline-dark rounded-circle fw-bold d-flex align-items-center justify-content-center';
+        avatarBtn.style.width = '45px';
+        avatarBtn.style.height = '45px';
+        avatarBtn.style.fontSize = '1rem';
+        avatarBtn.style.padding = '0';
+        avatarBtn.title = user.displayName || user.email || 'Account';
+        avatarBtn.textContent = getInitials(user.displayName || user.email);
+        avatarBtn.setAttribute('aria-expanded', 'false');
+
+
+        const dropdownMenu = document.createElement('div');
+        dropdownMenu.className = 'user-info-dropdown shadow rounded'; // Using Bootstrap's `rounded` and `shadow`
+        dropdownMenu.style.display = 'none';
+        dropdownMenu.style.position = 'absolute';
+        dropdownMenu.style.top = '55px'; 
+        dropdownMenu.style.right = '0';
+        dropdownMenu.style.width = '280px'; // Slightly narrower or adjust as you like
+        dropdownMenu.style.backgroundColor = 'white';
+        // Removed border: '1px solid #ddd'; as shadow and padding will define edges
+        dropdownMenu.style.zIndex = '1050';
+        dropdownMenu.style.padding = '0.5rem 0'; // Add padding top/bottom for the whole menu
+
+        // -- Dropdown Header: "Signed in as" (Optional, can be removed for more sleekness if email is prominent) --
+        const dropdownHeader = document.createElement('div');
+        dropdownHeader.className = 'px-3 pt-2 pb-1 text-muted small'; // Adjusted padding
+        dropdownHeader.textContent = 'Signed in as:';
+        dropdownMenu.appendChild(dropdownHeader);
+
+        // -- User Info Area (Icon + Email) --
+        const userInfoDiv = document.createElement('div');
+        userInfoDiv.className = 'px-3 pb-2 pt-1 d-flex align-items-center'; // Adjusted padding
+
+        let providerIconHtml = '<i class="bi bi-person-circle me-2 fs-4 text-secondary"></i>'; // Default, larger icon
+        if (user.providerData && user.providerData.length > 0) {
+            const mainProviderId = user.providerData[0].providerId;
+            if (mainProviderId === 'google.com') {
+                providerIconHtml = '<i class="bi bi-google me-2 fs-4" style="color: #DB4437;"></i>';
+            } else if (mainProviderId === 'password') {
+                providerIconHtml = '<i class="bi bi-envelope-fill me-2 fs-4" style="color: #0d6efd;"></i>'; // Bootstrap primary
+            } else if (mainProviderId === 'apple.com') {
+                providerIconHtml = '<i class="bi bi-apple me-2 fs-4" style="color: #000;"></i>';
+            } else if (mainProviderId === 'microsoft.com') {
+                providerIconHtml = '<i class="bi bi-microsoft me-2 fs-4" style="color: #0078D4;"></i>';
+            }
+        }
+        const iconWrapper = document.createElement('span'); // Wrapper for icon styling if needed
+        iconWrapper.innerHTML = providerIconHtml;
+        userInfoDiv.appendChild(iconWrapper);
+
+        const userEmailSpan = document.createElement('span');
+        userEmailSpan.className = 'text-truncate fw-medium'; // Changed to fw-medium for slightly less boldness
+        userEmailSpan.style.fontSize = '0.95rem';
+        userEmailSpan.textContent = user.email || 'No email provided';
+        userInfoDiv.appendChild(userEmailSpan);
+        dropdownMenu.appendChild(userInfoDiv);
+
+        // -- Subtle Divider (Optional - can use margin/padding instead) --
+        // If you want a very subtle divider that doesn't go all the way across:
+        const dividerDiv = document.createElement('div');
+        dividerDiv.style.height = '1px';
+        dividerDiv.style.backgroundColor = '#e9ecef'; // Bootstrap's $gray-200
+        dividerDiv.style.margin = '0.5rem 1rem'; // Margin on left/right to not span full width
+        dropdownMenu.appendChild(dividerDiv);
+        // OR, for no visible line, just rely on padding of the logout item.
+        // If you remove the dividerDiv, adjust padding on logoutMenuItem below.
+
+        // -- Log Out Button Area (as a menu item) --
+        const logoutMenuItem = document.createElement('a'); // Changed to <a> for semantic menu item
+        logoutMenuItem.href = '#'; // Prevent page jump
+        logoutMenuItem.className = 'dropdown-item d-flex align-items-center px-3 py-2'; // Bootstrap's dropdown-item class for styling
+        logoutMenuItem.style.color = '#dc3545'; // Bootstrap's text-danger color
+
+        logoutMenuItem.innerHTML = '<i class="bi bi-box-arrow-right me-2 fs-5"></i> Log out';
+        
+        logoutMenuItem.onclick = (e) => {
+            e.preventDefault(); // Prevent default anchor action
+            signOut(); 
+            dropdownMenu.style.display = 'none';
+        };
+        dropdownMenu.appendChild(logoutMenuItem);
+
+        // Toggle dropdown display
+        avatarBtn.onclick = (e) => {
+            e.stopPropagation();
+            const isShown = dropdownMenu.style.display === 'block';
+            dropdownMenu.style.display = isShown ? 'none' : 'block';
+            avatarBtn.setAttribute('aria-expanded', String(!isShown));
+        };
+
+        wrapper.appendChild(avatarBtn);
+        wrapper.appendChild(dropdownMenu);
+        authArea.appendChild(wrapper);
+
+        // Global click listener (same as before, ensure it's managed if this function is called often)
+        document.addEventListener('click', function closeDropdownOnClickOutside(event) {
+            if (dropdownMenu && !wrapper.contains(event.target) && dropdownMenu.style.display === 'block') {
+                dropdownMenu.style.display = 'none';
+                if(avatarBtn) avatarBtn.setAttribute('aria-expanded', 'false');
+            }
+        }, { capture: true }); // Use capture phase for this type of global listener to avoid issues with e.stopPropagation()
+
+    } else {
+        // ... (Sign In button code remains the same) ...
+        const signInBtn = document.createElement('button');
+        signInBtn.className = 'btn btn-outline-dark d-flex align-items-center gap-2';
+        signInBtn.innerHTML = `<i class="bi bi-person"></i> Sign in`;
+        signInBtn.onclick = showLoginModal; 
+        authArea.appendChild(signInBtn);
+    }
+}
+
+function handleEmailContinue() {
+    const email = document.getElementById('loginEmailInput').value.trim();
+    clearLoginErrorMessages(); // Clear any previous errors in initial view
+
+    if (!email) {
+        // You might want a dedicated error display spot in the initialLoginOptionsView
+        alert('Please enter your email address.'); // Simple alert for now
+        document.getElementById('loginEmailInput').focus();
+        return;
+    }
+
+    // Check if user exists with this email
+    firebase.auth().fetchSignInMethodsForEmail(email)
+      .then((signInMethods) => {
+        if (signInMethods.length === 0) {
+          // Email does not exist, so it's a new user -> go to Sign Up view
+          console.log("Email not found, switching to Sign Up view.");
+          switchToSignUpView(); // Email will be prefilled by switchToSignUpView
+        } else {
+          // Email exists
+          if (signInMethods.includes('password')) {
+            // User has an email/password account
+            console.log("Email found with password provider, switching to Password Login view.");
+            switchToPasswordLoginView(email);
+          } else {
+            // User exists but signed up with a social provider (e.g., Google)
+            // And does NOT have a password set for this email with Firebase.
+            console.log("Email found with social provider(s):", signInMethods.join(', '));
+            // Option 1: Guide to social login
+            // displayLoginError('initial', `This email is registered with ${signInMethods.join(', ')}. Please use that method to sign in, or sign up to create a new password for this email.`);
+            
+            // Option 2: Allow them to create a password for this existing social account (more complex, involves linking or effectively "taking over" if they prove email ownership via reset)
+            // For now, let's guide them to sign up if they want to use email/password, or they can use their social login.
+            // Or directly take them to the password login screen, and if they don't know the password, they can use "Forgot Password"
+            // which (as we saw) effectively adds/sets a password for the email provider on that account.
+            switchToPasswordLoginView(email);
+            // Optionally, add a message in the passwordLoginView:
+            const loginErrorDiv = document.getElementById('loginErrorMessage');
+            if (loginErrorDiv) {
+                loginErrorDiv.textContent = `This email is associated with another sign-in method (e.g., Google). Enter password if you've set one, or use "Forgot Password" to set/reset.`;
+                loginErrorDiv.style.display = 'block';
+                loginErrorDiv.classList.remove('alert-danger'); // Make it informational
+                loginErrorDiv.classList.add('alert-info');
+            }
+          }
+        }
+      })
+      .catch((error) => {
+        console.error("Error fetching sign-in methods for email:", error);
+        // Display a generic error for fetchSignInMethodsForEmail
+        alert(`Error checking email: ${error.message}`);
+      });
+}
+
+function performEmailPasswordLogin() {
+    const email = document.getElementById('emailForPasswordLogin').value;
+    const password = document.getElementById('passwordForLogin').value;
+    clearLoginErrorMessages();
+
+    if (!email || !password) {
+        displayLoginError('login', "Please enter both email and password.");
+        return;
+    }
+
+    firebase.auth().signInWithEmailAndPassword(email, password)
+        .then((userCredential) => {
+            console.log("Logged in successfully with email/password:", userCredential.user);
+            hideLoginModal(); // Firebase onAuthStateChanged will handle UI update
+        })
+        .catch((error) => {
+            console.error("Email/Password Login Error:", error.code, error.message);
+            displayLoginError('login', error.message);
+            // Clear password field on error for security/UX
+            document.getElementById('passwordForLogin').value = '';
+            document.getElementById('passwordForLogin').focus();
+        });
+}
+
+
+function performEmailPasswordSignUp() {
+    const email = document.getElementById('emailForSignUp').value;
+    const password = document.getElementById('passwordForSignUp').value;
+    const confirmPassword = document.getElementById('confirmPasswordForSignUp').value;
+    clearLoginErrorMessages();
+
+    if (!email || !password || !confirmPassword) {
+        displayLoginError('signup', "Please fill in all fields.");
+        return;
+    }
+    if (password.length < 6) { // Firebase default minimum
+        displayLoginError('signup', "Password should be at least 6 characters.");
+        return;
+    }
+    if (password !== confirmPassword) {
+        displayLoginError('signup', "Passwords do not match.");
+        return;
+    }
+
+    firebase.auth().createUserWithEmailAndPassword(email, password)
+        .then((userCredential) => {
+            console.log("Signed up successfully with email/password:", userCredential.user);
+            hideLoginModal(); // Firebase onAuthStateChanged will handle UI update
+        })
+        .catch((error) => {
+            console.error("Email/Password SignUp Error:", error.code, error.message);
+            if (error.code === 'auth/email-already-in-use') {
+                 displayLoginError('signup', 'This email is already in use. Please try logging in instead.');
+            } else {
+                 displayLoginError('signup', error.message);
+            }
+        });
+}
+
+function handleForgotPassword(emailToReset) {
+    const email = emailToReset || document.getElementById('emailForPasswordLogin').value || document.getElementById('loginEmailInput').value;
+    
+    if (!email) {
+        displayLoginError('login', "Please enter your email address in the email field to reset password.");
+        return;
+    }
+    clearLoginErrorMessages();
+
+    firebase.auth().sendPasswordResetEmail(email)
+        .then(() => {
+            alert("Password reset email sent to " + email + "! Check your inbox (and spam folder).");
+            // Hide the password form, show a success message, or take them back to initial options
+            switchToInitialOptionsView();
+            // Or provide a message within the passwordLoginView
+            // displayLoginError('login', "Password reset email sent! Check your inbox."); 
+            // document.getElementById('loginErrorMessage').classList.replace('alert-danger', 'alert-success');
+        })
+        .catch((error) => {
+            console.error("Forgot Password Error:", error.code, error.message);
+            displayLoginError('login', error.message);
+        });
 }
 
 // Google Sign In
 function signInWithGoogle() {
-  const provider = new firebase.auth.GoogleAuthProvider();
-  auth.signInWithPopup(provider)
-    .then((result) => {
-      console.log("✅ Signed in:", result.user.displayName);
-      updateAuthUI(result.user);
-    })
-    .catch((error) => {
-      console.error("❌ Sign-in error:", error);
-    });
+    const provider = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(provider)
+        .then((result) => {
+            console.log("✅ Signed in with Google:", result.user.displayName);
+            // updateAuthUI is typically called by onAuthStateChanged
+            hideLoginModal(); // Add this
+        })
+        .catch((error) => {
+            console.error("❌ Google Sign-in error:", error);
+            // Display error in the modal if it's open
+            if (document.getElementById('loginModal').classList.contains('show')) {
+                displayLoginError('initial', error.message); // Or a general error area in the modal
+            }
+        });
 }
 
 // Sign Out
@@ -3054,6 +3359,7 @@ function showChatbotModal() {
         currentChatbotRecipe = null; // Clear previous recipe
 
         try {
+            console.log("--- About to FETCH /process-recipe-image at: ", new Date().toISOString()); // LOG C
             const response = await fetch("/.netlify/functions/generate-recipe-chat", { // This is your Netlify function endpoint
                 method: "POST",
                 headers: { "Content-Type": "application/json" },

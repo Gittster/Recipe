@@ -40,9 +40,79 @@
       <div id="addRecipeContainer" style="display: none;" class="p-3">
         <!-- Add Recipe Form and OCR results will go here -->
       </div>
+  </div>
 </div>
 
-  </div>
+<div class="modal fade" id="loginModal" tabindex="-1" aria-labelledby="loginModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width: 380px;">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0"> <h5 class="modal-title w-100 text-center" id="loginModalLabel" style="font-size: 1.5rem; font-weight: 600;">
+                    Sign in or create account </h5>
+                <button type="button" class="btn-close position-absolute top-0 end-0 mt-2 me-2" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body pt-2"> <div id="initialLoginOptionsView">
+                    <div class="mb-3 mt-3"> <label for="loginEmailInput" class="form-label visually-hidden">Email address</label>
+                        <input type="email" class="form-control form-control-lg" id="loginEmailInput" placeholder="Email address">
+                    </div>
+                    <button type="button" class="btn btn-success btn-lg w-100 mb-3" onclick="handleEmailContinue()">Continue</button>
+                    
+                    <div class="or-divider my-4"> <hr>
+                        <span class="mx-2 text-muted small">OR</span>
+                        <hr>
+                    </div>
+
+                    <button type="button" class="btn btn-outline-secondary w-100 mb-2 d-flex align-items-center justify-content-center" onclick="signInWithGoogle()">
+                        <i class="bi bi-google me-2"></i> Continue with Google
+                    </button>
+                    <p class="text-center small mt-4 mb-3"> Don't have an account? <a href="#" onclick="switchToSignUpView()">Sign up</a>
+                    </p>
+                    </div>
+
+                <div id="passwordLoginView" style="display: none;">
+                    <h5 class="text-center mb-3 mt-3" id="passwordLoginTitle">Log In</h5> <div class="mb-3">
+                        <label for="emailForPasswordLogin" class="form-label">Email address</label>
+                        <input type="email" class="form-control" id="emailForPasswordLogin" placeholder="you@example.com" readonly> </div>
+                    <div class="mb-3">
+                        <label for="passwordForLogin" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="passwordForLogin" placeholder="Your password">
+                        <div class="text-end mt-1"><a href="#" onclick="handleForgotPassword(document.getElementById('emailForPasswordLogin').value)" class="small">Forgot password?</a></div>
+                    </div>
+                    <div id="loginErrorMessage" class="alert alert-danger my-3" style="display: none;"></div> <button type="button" class="btn btn-primary w-100 mb-3" onclick="performEmailPasswordLogin()">Log In</button>
+                    <p class="text-center small">
+                        <a href="#" onclick="switchToInitialOptionsView()">See other sign-in options</a>
+                    </p>
+                </div>
+
+                <div id="signUpView" style="display: none;">
+                     <div class="mb-3 mt-4">
+                        <label for="emailForSignUp" class="form-label">Email address</label>
+                        <input type="email" class="form-control" id="emailForSignUp" placeholder="you@example.com">
+                    </div>
+                    <div class="mb-3">
+                        <label for="passwordForSignUp" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="passwordForSignUp" placeholder="Create a password (min. 6 characters)">
+                    </div>
+                    <div class="mb-3">
+                        <label for="confirmPasswordForSignUp" class="form-label">Confirm Password</label>
+                        <input type="password" class="form-control" id="confirmPasswordForSignUp" placeholder="Confirm your password">
+                    </div>
+                    <div id="signUpErrorMessage" class="alert alert-danger my-3" style="display: none;"></div> <button type="button" class="btn btn-primary w-100 mb-3" onclick="performEmailPasswordSignUp()">Sign Up</button>
+                    <p class="text-center small">
+                        Already have an account? <a href="#" onclick="switchToPasswordLoginView(document.getElementById('emailForSignUp').value)">Log In</a>
+                    </p>
+                </div>
+
+            </div>
+            <div class="modal-footer justify-content-center border-0 pt-0"> <a href="#" class="small text-muted">Terms of Use</a>
+                <span class="text-muted mx-1">|</span>
+                <a href="#" class="small text-muted">Privacy Policy</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>
 
   <canvas id="preprocessCanvas" style="display:none;"></canvas>
 

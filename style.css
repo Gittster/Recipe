@@ -128,3 +128,146 @@
     font-style: italic;
   }
   
+  /* style.css */
+
+/* Login Modal Specifics */
+#loginModal .modal-dialog {
+    max-width: 380px; /* As in your example image */
+}
+
+#loginModal .modal-header {
+    border-bottom: none; /* Remove default border */
+    padding-top: 1.5rem;
+    padding-bottom: 0;
+}
+
+#loginModal .modal-title {
+    font-size: 1.75rem; /* Larger title */
+    font-weight: 600;   /* Bolder title */
+}
+
+#loginModal .modal-body {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+}
+
+#loginModal .form-control-lg { /* For the initial email input */
+    padding: .75rem 1rem;
+    font-size: 1rem;
+}
+
+#loginModal .btn-lg { /* For the initial "Continue" button */
+    padding: .75rem 1rem;
+    font-size: 1rem;
+}
+
+#loginModal .btn-outline-secondary.d-flex img,
+#loginModal .btn-outline-primary.d-flex img {
+    height: 20px; /* For social icons */
+    width: 20px;
+    margin-right: 0.75rem;
+}
+
+#loginModal .or-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    color: #6c757d; /* muted text color */
+    margin: 1.5rem 0;
+}
+
+#loginModal .or-divider hr {
+    flex-grow: 1;
+    background-color: #dee2e6; /* light border color */
+    height: 1px;
+    border: none;
+}
+
+#loginModal .or-divider span {
+    padding: 0 0.75rem;
+    font-size: 0.9rem;
+}
+
+#loginModal .modal-footer {
+    border-top: none;
+    justify-content: center;
+    padding-bottom: 1.5rem;
+}
+
+#loginModal .modal-footer a {
+    font-size: 0.8rem;
+}
+
+/* Ensure error messages are visible */
+#loginErrorMessage, #signUpErrorMessage {
+    font-size: 0.875rem;
+}
+
+/* style.css */
+.user-info-dropdown {
+    /* You can add more specific styles here if needed */
+    box-shadow: 0 .5rem 1rem rgba(0,0,0,.15) !important; /* Bootstrap's shadow-sm */
+    /* Consider transitions for smoother show/hide if you prefer */
+}
+
+.user-info-dropdown .btn-link.text-danger:hover,
+.user-info-dropdown .btn-link.text-danger:focus {
+    color: #a71d2a !important; /* Darker red on hover/focus */
+    text-decoration: underline !important;
+}
+
+/* style.css */
+
+/* User Info Dropdown Styling */
+.user-info-dropdown {
+    min-width: 260px; /* Adjust as needed */
+    max-width: 320px;
+    border-radius: 0.5rem; /* Slightly more rounded corners */
+    /* box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.1); */ /* Custom shadow if Bootstrap's is not enough */
+    padding-top: 0.25rem;  /* Overall top padding */
+    padding-bottom: 0.25rem; /* Overall bottom padding */
+}
+
+.user-info-dropdown .px-3 { /* Standardize horizontal padding for items */
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+}
+
+.user-info-dropdown .text-muted.small {
+    font-size: 0.8em; /* Make "Signed in as:" a bit smaller */
+}
+
+.user-info-dropdown .fw-medium { /* For the email */
+    font-weight: 500 !important; 
+}
+
+/* Styling for the Log Out "menu item" */
+.user-info-dropdown .dropdown-item {
+    font-weight: 500;
+    transition: background-color 0.15s ease-in-out;
+}
+
+.user-info-dropdown .dropdown-item:hover,
+.user-info-dropdown .dropdown-item:focus {
+    background-color: #f8f9fa; /* Light grey hover, Bootstrap's $gray-100 */
+    color: #b02a37 !important; /* Darker red on hover for logout */
+}
+
+/* Subtle Divider - if you keep it */
+.user-info-dropdown hr.my-1,
+.user-info-dropdown div[style*="margin: 0.5rem 1rem"] /* Targeting the JS-styled divider */
+{ 
+    margin-top: 0.4rem !important;
+    margin-bottom: 0.4rem !important;
+    border: 0; /* Remove default hr border if using background-color for the line */
+    height: 1px;
+    background-color: #e9ecef; /* Bootstrap's $gray-200 */
+    margin-left: 1rem;  /* Indent the divider */
+    margin-right: 1rem; /* Indent the divider */
+}
+
+/* Avatar Button (if you want to tweak its hover/focus) */
+/* #userAuthArea .btn.rounded-circle:hover,
+#userAuthArea .btn.rounded-circle:focus {
+    background-color: #e9ecef;
+} */
