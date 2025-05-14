@@ -1565,180 +1565,200 @@ function filterRecipesByText() {
 
 
 function displayRecipes(list, containerId = 'recipeResults', options = {}) {
-  const container = document.getElementById(containerId);
-  container.innerHTML = '';
+    const container = document.getElementById(containerId);
+    if (!container) {
+        console.error("Recipe container not found:", containerId);
+        return;
+    }
+    container.innerHTML = ''; // Clear previous results
 
-  const highlightIngredients = options.highlightIngredients || [];
-  const highlightTags = options.highlightTags || [];
+    const highlightIngredients = options.highlightIngredients || [];
+    const highlightTags = options.highlightTags || [];
 
-  if (list.length === 0) {
-    container.innerHTML = '<p class="text-muted">No matching recipes found.</p>';
-    return;
-  }
-
-  list.forEach(r => {
-    const card = document.createElement('div');
-    card.className = 'card mb-3 shadow-sm';
-
-    const body = document.createElement('div');
-    body.className = 'card-body';
-
-    const titleRow = document.createElement('div');
-    titleRow.className = 'd-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2';
-
-
-    const title = document.createElement('span');
-    title.className = 'badge bg-warning text-dark fs-5 py-2 px-3 mb-0';
-    title.style.minWidth = '150px';
-    title.textContent = r.name;
-
-    const shareBtn = document.createElement('button');
-    shareBtn.className = 'btn btn-outline-secondary btn-sm btn-share';
-    shareBtn.innerHTML = '🔗';
-    shareBtn.title = 'Share recipe';
-    shareBtn.onclick = () => shareRecipe(r.id);
-    card.dataset.recipeId = r.id;
-
-    const editBtn = document.createElement('button');
-    editBtn.className = 'btn btn-outline-primary btn-sm';
-    editBtn.innerHTML = '✏️';
-    editBtn.onclick = () => openInlineEditor(r.id, card);
-
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'btn btn-outline-danger btn-sm';
-    deleteBtn.innerHTML = '🗑️';
-    deleteBtn.onclick = () => confirmDeleteRecipe(r.id, deleteBtn);
-
-    // ✅ Wrap delete button in .delete-area with relative positioning
-    const deleteArea = document.createElement('div');
-    deleteArea.className = 'delete-area position-relative d-inline-block';
-    deleteArea.appendChild(deleteBtn);
-
-    const buttonGroup = document.createElement('div');
-    buttonGroup.className = 'd-flex gap-2 align-items-center';
-    buttonGroup.prepend(shareBtn);
-    buttonGroup.appendChild(editBtn);
-    buttonGroup.appendChild(deleteArea);
-
-    titleRow.appendChild(title);
-    titleRow.appendChild(buttonGroup);
-
-    body.appendChild(titleRow);
-
-    // ➤ Tags and Ratings row
-    const tagsAndRatingRow = document.createElement('div');
-    tagsAndRatingRow.className = 'd-flex justify-content-between align-items-center mb-2';
-
-    const ratingContainer = document.createElement('div');
-    ratingContainer.className = 'rating-stars d-flex gap-1';
-
-    for (let i = 1; i <= 5; i++) {
-      const star = document.createElement('i');
-      star.className = i <= (r.rating || 0) ? 'bi bi-star-fill text-warning' : 'bi bi-star text-warning';
-      star.style.cursor = 'pointer';
-      star.dataset.value = i;
-      star.addEventListener('mouseenter', () => highlightStars(ratingContainer, i));
-      star.addEventListener('mouseleave', () => resetStars(ratingContainer, r.rating || 0));
-      star.addEventListener('click', () => updateRecipeRating(r.id, i));
-      ratingContainer.appendChild(star);
+    if (!list || list.length === 0) {
+        container.innerHTML = '<p class="text-muted text-center mt-3">No matching recipes found. Try adding some or adjusting your filters!</p>';
+        return;
     }
 
-    const tagsRow = document.createElement('div');
-    if (r.tags && r.tags.length > 0) {
-      r.tags.forEach(tag => {
-        const tagBadge = document.createElement('span');
-        tagBadge.className = 'badge me-1';
-        if (highlightTags.some(term => tag.toLowerCase().includes(term))) {
-          tagBadge.classList.add('bg-warning', 'text-dark');
+    list.forEach(recipe => {
+        const card = document.createElement('div');
+        card.className = 'card mb-3 shadow-sm recipe-card';
+        card.dataset.recipeId = recipe.id;
+
+        const body = document.createElement('div');
+        body.className = 'card-body p-3';
+
+        // --- Title Row with Action Buttons ---
+        const titleRow = document.createElement('div');
+        titleRow.className = 'd-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2 mb-2';
+
+        const title = document.createElement('h5'); // Keeping new title formatting
+        title.className = 'recipe-title mb-0 text-primary';
+        title.textContent = recipe.name;
+
+        const buttonGroup = document.createElement('div');
+        buttonGroup.className = 'd-flex gap-2 align-items-center mt-2 mt-sm-0 recipe-card-actions flex-shrink-0';
+
+        const shareBtn = document.createElement('button');
+        shareBtn.className = 'btn btn-outline-secondary btn-sm btn-share';
+        if (!currentUser) {
+            shareBtn.disabled = true;
+            shareBtn.title = 'Sign in to share recipes via a link';
+            shareBtn.innerHTML = '<i class="bi bi-share"></i>';
+            shareBtn.onclick = (e) => {
+                e.preventDefault();
+                showLoginModal();
+            };
         } else {
-          tagBadge.classList.add('bg-primary', 'text-white');
+            shareBtn.innerHTML = '<i class="bi bi-share-fill"></i>'; // Keeping new share icon
+            shareBtn.title = 'Share recipe link';
+            shareBtn.onclick = () => shareRecipe(recipe.id);
         }
-        tagBadge.textContent = tag;
-        tagsRow.appendChild(tagBadge);
-      });
-    }
+        buttonGroup.appendChild(shareBtn);
 
-    tagsAndRatingRow.appendChild(tagsRow);
-    tagsAndRatingRow.appendChild(ratingContainer);
-    body.appendChild(tagsAndRatingRow);
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-outline-primary btn-sm';
+        editBtn.innerHTML = '<i class="bi bi-pencil-fill"></i>'; // Keeping new edit icon
+        editBtn.title = "Edit recipe";
+        editBtn.onclick = () => openInlineEditor(recipe.id, card);
+        buttonGroup.appendChild(editBtn);
 
-    // ➤ Ingredients table
-    const table = document.createElement('table');
-    table.className = 'table table-bordered table-sm mb-2';
+        const deleteArea = document.createElement('div');
+        deleteArea.className = 'delete-area position-relative d-inline-block';
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-outline-danger btn-sm';
+        deleteBtn.innerHTML = '<i class="bi bi-trash-fill"></i>'; // Keeping new delete icon
+        deleteBtn.title = "Delete recipe";
+        deleteBtn.onclick = () => confirmDeleteRecipe(recipe.id, deleteArea);
+        deleteArea.appendChild(deleteBtn);
+        buttonGroup.appendChild(deleteArea);
 
-    const thead = document.createElement('thead');
-    thead.innerHTML = `
-      <tr>
-        <th>Ingredient</th>
-        <th>Qty</th>
-        <th>Unit</th>
-      </tr>
-    `;
-    table.appendChild(thead);
+        titleRow.appendChild(title);
+        titleRow.appendChild(buttonGroup);
+        body.appendChild(titleRow);
 
-    const tbody = document.createElement('tbody');
+        // --- Tags and Ratings Row (Keeping this as you liked tag display) ---
+        const tagsAndRatingRow = document.createElement('div');
+        tagsAndRatingRow.className = 'd-flex flex-wrap justify-content-between align-items-center mb-2 gap-2';
 
-    if (Array.isArray(r.ingredients)) {
-      r.ingredients.forEach(i => {
-        const tr = document.createElement('tr');
-        const nameTd = document.createElement('td');
+        const tagsDiv = document.createElement('div');
+        tagsDiv.className = 'recipe-tags';
+        if (recipe.tags && recipe.tags.length > 0) {
+            recipe.tags.forEach(tag => {
+                const tagBadge = document.createElement('span');
+                tagBadge.className = 'badge me-1 mb-1 ';
+                if (highlightTags.some(term => tag.toLowerCase().includes(term.toLowerCase()))) {
+                    tagBadge.classList.add('bg-warning', 'text-dark');
+                } else {
+                    tagBadge.classList.add('bg-secondary');
+                }
+                tagBadge.textContent = tag;
+                tagsDiv.appendChild(tagBadge);
+            });
+        }
+        tagsAndRatingRow.appendChild(tagsDiv);
 
-        const ingName = typeof i === 'object' ? i.name : i;
+        const ratingContainer = document.createElement('div');
+        ratingContainer.className = 'rating-stars d-flex gap-1 align-items-center';
+        if (currentUser) {
+            for (let i = 1; i <= 5; i++) {
+                const star = document.createElement('i');
+                star.className = `bi text-warning ${i <= (recipe.rating || 0) ? 'bi-star-fill' : 'bi-star'}`;
+                star.style.cursor = 'pointer';
+                star.dataset.value = i;
+                star.addEventListener('mouseenter', () => highlightStars(ratingContainer, i));
+                star.addEventListener('mouseleave', () => resetStars(ratingContainer, recipe.rating || 0));
+                star.addEventListener('click', () => updateRecipeRating(recipe.id, i, !currentUser));
+                ratingContainer.appendChild(star);
+            }
+        } else if (recipe.rating && recipe.rating > 0) {
+            for (let i = 1; i <= 5; i++) {
+                const star = document.createElement('i');
+                star.className = `bi text-warning ${i <= recipe.rating ? 'bi-star-fill' : 'bi-star'}`;
+                ratingContainer.appendChild(star);
+            }
+        }
+        tagsAndRatingRow.appendChild(ratingContainer);
+        body.appendChild(tagsAndRatingRow);
 
-        if (highlightIngredients.some(term => ingName.toLowerCase().includes(term))) {
-          nameTd.innerHTML = `<span class="bg-warning">${ingName}</span>`;
+        const table = document.createElement('table');
+        // Using your previous classes for table structure if they worked well for the grid
+        table.className = 'table table-bordered table-sm mt-3 mb-2';
+
+        const thead = document.createElement('thead'); // ADDED THEAD BACK
+        thead.innerHTML = `
+            <tr>
+                <th>Ingredient</th>
+                <th>Qty</th>
+                <th>Unit</th>
+            </tr>
+        `;
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        if (Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0) {
+            recipe.ingredients.forEach(ing => {
+                const tr = document.createElement('tr');
+                const nameTd = document.createElement('td');
+                const ingName = typeof ing === 'object' ? (ing.name || '') : (ing || '');
+                if (highlightIngredients.some(term => ingName.toLowerCase().includes(term.toLowerCase()))) {
+                    nameTd.innerHTML = `<mark>${ingName}</mark>`;
+                } else {
+                    nameTd.textContent = ingName;
+                }
+
+                const qtyTd = document.createElement('td');
+                qtyTd.textContent = typeof ing === 'object' ? (ing.quantity || '') : '';
+
+                const unitTd = document.createElement('td');
+                unitTd.textContent = typeof ing === 'object' ? (ing.unit || '') : '';
+
+                tr.appendChild(nameTd);
+                tr.appendChild(qtyTd);
+                tr.appendChild(unitTd);
+                tbody.appendChild(tr);
+            });
         } else {
-          nameTd.textContent = ingName;
+            tbody.innerHTML = '<tr><td colspan="3" class="text-muted">No ingredients listed.</td></tr>';
         }
+        table.appendChild(tbody);
+        body.appendChild(table);
 
-        const qtyTd = document.createElement('td');
-        qtyTd.textContent = i.quantity || '';
+        // --- Instructions (Keeping your preferred text formatting) ---
+        const instructionsTitle = document.createElement('h6');
+        instructionsTitle.className = 'mt-3 mb-1 fw-semibold';
+        instructionsTitle.textContent = 'Instructions'; // REMOVED ICON
+        body.appendChild(instructionsTitle);
+        const instructionsP = document.createElement('p');
+        instructionsP.className = 'card-text recipe-instructions'; // Removed 'small' class for now, you can add back if preferred
+        instructionsP.style.whiteSpace = 'pre-wrap'; 
+        instructionsP.textContent = recipe.instructions || 'No instructions provided.';
+        body.appendChild(instructionsP);
 
-        const unitTd = document.createElement('td');
-        unitTd.textContent = i.unit || '';
+        // --- Bottom Button Row: Mark as Made + Plan Meal (Keeping structure) ---
+        const bottomButtonRow = document.createElement('div');
+        bottomButtonRow.className = 'd-flex align-items-center justify-content-start gap-2 mt-3 pt-2 border-top';
 
-        tr.appendChild(nameTd);
-        tr.appendChild(qtyTd);
-        tr.appendChild(unitTd);
-        tbody.appendChild(tr);
-      });
-    }
+        const madeBtn = document.createElement('button');
+        madeBtn.className = 'btn btn-outline-info btn-sm';
+        madeBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Mark as Made';
+        madeBtn.onclick = (e) => markAsMade(recipe.name, e.target);
+        bottomButtonRow.appendChild(madeBtn);
 
-    table.appendChild(tbody);
-    body.appendChild(table);
+        const planArea = document.createElement('div');
+        planArea.className = 'plan-area';
+        const planBtn = document.createElement('button');
+        planBtn.className = 'btn btn-outline-success btn-sm';
+        planBtn.innerHTML = '<i class="bi bi-calendar-plus"></i> Plan Meal';
+        planBtn.onclick = () => openPlanMealForm(recipe, planArea);
+        planArea.appendChild(planBtn);
+        bottomButtonRow.appendChild(planArea);
 
-    // ➤ Instructions
-    const instructions = document.createElement('p');
-    instructions.innerHTML = `<strong>Instructions:</strong> ${r.instructions}`;
-    body.appendChild(instructions);
+        body.appendChild(bottomButtonRow);
 
-    // ➤ Buttons row: Mark as Made + Plan Meal
-    const buttonRow = document.createElement('div');
-    buttonRow.className = 'd-flex align-items-center gap-2 mt-3';
-
-    const madeBtn = document.createElement('button');
-    madeBtn.className = 'btn btn-outline-info btn-sm';
-    madeBtn.textContent = 'Mark as Made';
-    madeBtn.onclick = (e) => markAsMade(r.name, e.target);
-
-    const planArea = document.createElement('div');
-    planArea.className = 'plan-area';
-
-    const planBtn = document.createElement('button');
-    planBtn.className = 'btn btn-outline-success btn-sm';
-    planBtn.textContent = 'Plan Meal';
-    planBtn.onclick = () => openPlanMealForm(r, planArea);
-
-    planArea.appendChild(planBtn);
-
-    buttonRow.appendChild(madeBtn);
-    buttonRow.appendChild(planArea);
-
-    body.appendChild(buttonRow);
-
-    card.appendChild(body);
-    container.appendChild(card);
-  });
+        card.appendChild(body);
+        container.appendChild(card);
+    });
 }
 
 function hashRecipe(recipe) {
@@ -1948,7 +1968,6 @@ function updateRecipeRating(id, rating) {
     });
 }
 
-
 async function openInlineEditor(recipeId, cardElement) {
     if (!cardElement) {
         console.error("Card element not provided to openInlineEditor for recipeId:", recipeId);
@@ -1969,11 +1988,9 @@ async function openInlineEditor(recipeId, cardElement) {
             const doc = await db.collection('recipes').doc(recipeId).get();
             if (!doc.exists) {
                 alert("Recipe not found in your account.");
-                loadInitialRecipes(); // Refresh list to remove potentially stale card
+                loadInitialRecipes();
                 return;
             }
-            // For cloud recipes, 'id' will be the Firestore document ID.
-            // Store original firestoreId separately for updates.
             recipeData = { ...doc.data(), id: doc.id, firestoreId: doc.id };
         } catch (err) {
             console.error("Error fetching recipe from Firestore for editing:", err);
@@ -1982,18 +1999,17 @@ async function openInlineEditor(recipeId, cardElement) {
         }
     } else {
         if (!localDB) {
-            alert("Local storage is not available. Please sign in or enable it.");
+            alert("Local storage is not available.");
             return;
         }
         try {
             console.log("Opening editor for local recipe, localId (passed as recipeId):", recipeId);
-            const localRecipe = await localDB.recipes.get(recipeId); // recipeId here is the localId
+            const localRecipe = await localDB.recipes.get(recipeId);
             if (!localRecipe) {
                 alert("Recipe not found locally.");
-                loadInitialRecipes(); // Refresh list
+                loadInitialRecipes();
                 return;
             }
-            // For local recipes, 'id' will be the localId.
             recipeData = { ...localRecipe, id: localRecipe.localId };
             isLocalRecipe = true;
         } catch (err) {
@@ -2006,153 +2022,197 @@ async function openInlineEditor(recipeId, cardElement) {
     // --- Step 2: Build the Editor UI ---
     cardElement.innerHTML = ''; // Clear the card's existing content
     const editorContentDiv = document.createElement('div');
-    editorContentDiv.className = 'card-body inline-editor-content p-3'; // Added p-3 for padding
+    editorContentDiv.className = 'card-body inline-editor-content p-3'; // Keep consistent padding
+
+    // Form Group Styling: Helper function or consistent class
+    const createFormGroup = (elements) => {
+        const group = document.createElement('div');
+        group.className = 'mb-3'; // Standard bottom margin for form groups
+        elements.forEach(el => group.appendChild(el));
+        return group;
+    };
 
     // Recipe Name
     const nameLabel = document.createElement('label');
-    nameLabel.className = 'form-label fw-semibold'; nameLabel.textContent = '📛 Recipe Name';
-    editorContentDiv.appendChild(nameLabel);
+    nameLabel.className = 'form-label fw-semibold small'; nameLabel.textContent = 'Recipe Name';
+    nameLabel.htmlFor = `editRecipeName-${recipeData.id}`;
     const nameInput = document.createElement('input');
-    nameInput.className = 'form-control form-control-sm mb-3'; nameInput.value = recipeData.name || '';
-    editorContentDiv.appendChild(nameInput);
+    nameInput.type = 'text';
+    nameInput.className = 'form-control form-control-sm'; nameInput.value = recipeData.name || '';
+    nameInput.id = `editRecipeName-${recipeData.id}`;
+    editorContentDiv.appendChild(createFormGroup([nameLabel, nameInput]));
 
     // Ingredients
     const ingLabel = document.createElement('label');
-    ingLabel.className = 'form-label fw-semibold'; ingLabel.textContent = '🧂 Ingredients';
+    ingLabel.className = 'form-label fw-semibold small d-block mb-1'; // d-block for full width
+    ingLabel.textContent = 'Ingredients';
     editorContentDiv.appendChild(ingLabel);
+
     const ingredientsTableContainer = document.createElement('div');
-    ingredientsTableContainer.className = 'mb-2 table-responsive';
-    const ingredientsTableBodyId = `editIngredientsTable-${recipeData.id.replace(/[^a-zA-Z0-9]/g, "")}`; // Sanitize ID
+    ingredientsTableContainer.className = 'table-responsive mb-2'; // mb-2 before add button
+    const ingredientsTableBodyId = `editIngredientsTable-${recipeData.id.replace(/[^a-zA-Z0-9]/g, "")}`;
     ingredientsTableContainer.innerHTML = `
-        <table class="table table-sm table-bordered table-hover mb-2">
-            <thead><tr><th>Ingredient</th><th>Qty</th><th>Unit</th><th></th></tr></thead>
+        <table class="table table-sm table-bordered table-ingredients-editor">
+            <thead class="table-light">
+                <tr>
+                    <th>Ingredient</th>
+                    <th style="width: 25%;">Qty</th>
+                    <th style="width: 25%;">Unit</th>
+                    <th style="width: 10%;" class="text-center">Del</th>
+                </tr>
+            </thead>
             <tbody id="${ingredientsTableBodyId}"></tbody>
         </table>
     `;
     editorContentDiv.appendChild(ingredientsTableContainer);
     const addIngBtn = document.createElement('button');
-    addIngBtn.className = 'btn btn-outline-secondary btn-sm mb-3';
+    addIngBtn.type = 'button';
+    addIngBtn.className = 'btn btn-outline-secondary btn-sm mb-3 d-block w-100'; // Full width button
     addIngBtn.innerHTML = '<i class="bi bi-plus-circle"></i> Add Ingredient';
     addIngBtn.onclick = () => addIngredientRowToEditor(ingredientsTableBodyId);
     editorContentDiv.appendChild(addIngBtn);
 
     // Instructions
-    const instrLabelWrapper = document.createElement('div');
-    instrLabelWrapper.className = 'w-100';
     const instrLabel = document.createElement('label');
-    instrLabel.className = 'form-label fw-semibold mt-2'; instrLabel.textContent = '📝 Instructions';
-    instrLabelWrapper.appendChild(instrLabel);
-    editorContentDiv.appendChild(instrLabelWrapper);
+    instrLabel.className = 'form-label fw-semibold small'; instrLabel.textContent = 'Instructions';
+    instrLabel.htmlFor = `editRecipeInstructions-${recipeData.id}`;
     const instructionsInput = document.createElement('textarea');
-    instructionsInput.className = 'form-control form-control-sm mb-3';
-    instructionsInput.rows = 5; // Increased rows slightly
+    instructionsInput.className = 'form-control form-control-sm';
+    instructionsInput.rows = 5;
+    instructionsInput.id = `editRecipeInstructions-${recipeData.id}`;
     instructionsInput.value = recipeData.instructions || '';
-    editorContentDiv.appendChild(instructionsInput);
+    editorContentDiv.appendChild(createFormGroup([instrLabel, instructionsInput]));
 
     // Tags
-    let currentEditingTags = [...(recipeData.tags || [])]; // Local array for tags during this edit session
+    let currentEditingTags = [...(recipeData.tags || [])];
     const tagsLabel = document.createElement('label');
-    tagsLabel.className = 'form-label fw-semibold'; tagsLabel.textContent = '🏷️ Tags';
-    editorContentDiv.appendChild(tagsLabel);
+    tagsLabel.className = 'form-label fw-semibold small'; tagsLabel.textContent = 'Tags';
+    tagsLabel.htmlFor = `inlineTagInput-${recipeData.id.replace(/[^a-zA-Z0-9]/g, "")}`;
+    editorContentDiv.appendChild(tagsLabel); // Append label first
 
-    const editorInstanceId = recipeData.id.replace(/[^a-zA-Z0-9]/g, ""); // Sanitize ID
+    const editorInstanceId = recipeData.id.replace(/[^a-zA-Z0-9]/g, "");
     const tagsContainerId = `inlineTagsContainer-${editorInstanceId}`;
     const tagsPlaceholderId = `inlineTagsPlaceholder-${editorInstanceId}`;
     const tagInputId = `inlineTagInput-${editorInstanceId}`;
     const addTagBtnId = `inlineAddTagBtn-${editorInstanceId}`;
 
     const tagsWrapper = document.createElement('div');
-    tagsWrapper.className = 'mb-3';
-    tagsWrapper.innerHTML = `
-        <div id="${tagsContainerId}" class="form-control form-control-sm d-flex flex-wrap align-items-center gap-1 p-2 position-relative" style="min-height: 38px; background-color: #f8f9fa; border: 1px dashed #ced4da;">
-            <span id="${tagsPlaceholderId}" class="text-muted position-absolute small" style="left: 10px; top: 50%; transform: translateY(-50%); pointer-events: none;">Add tags...</span>
-        </div>
-        <div class="d-flex flex-nowrap mt-2 gap-2">
-            <input type="text" id="${tagInputId}" class="form-control form-control-sm" placeholder="Type a tag & press Enter" />
-            <button type="button" id="${addTagBtnId}" class="btn btn-outline-dark btn-sm" style="min-width: 80px;">Add Tag</button>
-        </div>
-    `;
+    tagsWrapper.className = 'mb-3'; // Group for tags input and display
+    // Tags Display Area
+    const tagsDisplayArea = document.createElement('div');
+    tagsDisplayArea.id = tagsContainerId;
+    tagsDisplayArea.className = 'form-control form-control-sm d-flex flex-wrap align-items-center gap-1 p-2 position-relative mb-2'; // mb-2 for space before input
+    tagsDisplayArea.style.minHeight = '31px'; // Match form-control-sm height
+    tagsDisplayArea.style.backgroundColor = '#f8f9fa';
+    tagsDisplayArea.style.borderStyle = 'dashed';
+    const tagsPlaceholderSpan = document.createElement('span'); // Changed from innerHTML
+    tagsPlaceholderSpan.id = tagsPlaceholderId;
+    tagsPlaceholderSpan.className = 'text-muted position-absolute small';
+    tagsPlaceholderSpan.style.left = '10px';
+    tagsPlaceholderSpan.style.top = '50%';
+    tagsPlaceholderSpan.style.transform = 'translateY(-50%)';
+    tagsPlaceholderSpan.style.pointerEvents = 'none';
+    tagsPlaceholderSpan.textContent = 'No tags yet...';
+    tagsDisplayArea.appendChild(tagsPlaceholderSpan);
+    tagsWrapper.appendChild(tagsDisplayArea);
+
+    // Tags Input Group
+    const tagInputGroup = document.createElement('div');
+    tagInputGroup.className = 'input-group input-group-sm';
+    const tagInputField = document.createElement('input');
+    tagInputField.type = 'text';
+    tagInputField.id = tagInputId;
+    tagInputField.className = 'form-control form-control-sm';
+    tagInputField.placeholder = 'Type a tag & press Enter';
+    const addTagButtonElement = document.createElement('button');
+    addTagButtonElement.type = 'button';
+    addTagButtonElement.id = addTagBtnId;
+    addTagButtonElement.className = 'btn btn-outline-secondary'; // Consistent with other outline buttons
+    addTagButtonElement.innerHTML = '<i class="bi bi-plus"></i> Add';
+    tagInputGroup.appendChild(tagInputField);
+    tagInputGroup.appendChild(addTagButtonElement);
+    tagsWrapper.appendChild(tagInputGroup);
     editorContentDiv.appendChild(tagsWrapper);
 
-    // Get tag elements *after* they are added to the DOM via innerHTML
-    const tagsContainerElement = document.getElementById(tagsContainerId);
-    const tagsPlaceholderElement = document.getElementById(tagsPlaceholderId);
-    const tagInputField = document.getElementById(tagInputId);
-    const addTagButtonElement = document.getElementById(addTagBtnId);
+    // Append the main editor content to the card BEFORE attaching event listeners to tag elements
+    cardElement.appendChild(editorContentDiv);
+
+    // Get tag elements by ID now that they are in the DOM
+    const liveTagsContainer = document.getElementById(tagsContainerId);
+    const liveTagsPlaceholder = document.getElementById(tagsPlaceholderId);
+    const liveTagInput = document.getElementById(tagInputId);
+    const liveAddTagButton = document.getElementById(addTagBtnId);
 
     const renderCurrentEditingTags = () => {
-        if (!tagsContainerElement || !tagsPlaceholderElement) return;
-        tagsContainerElement.innerHTML = ''; // Clear existing tag badges
+        if (!liveTagsContainer || !liveTagsPlaceholder) return;
+        liveTagsContainer.innerHTML = ''; // Clear only badges, keep placeholder if needed
         if (currentEditingTags.length === 0) {
-            tagsPlaceholderElement.style.display = 'block';
+            liveTagsContainer.appendChild(liveTagsPlaceholder); // Re-add placeholder
+            liveTagsPlaceholder.style.display = 'block';
         } else {
-            tagsPlaceholderElement.style.display = 'none';
+            liveTagsPlaceholder.style.display = 'none';
             currentEditingTags.forEach(tag => {
                 const tagBadge = document.createElement('span');
-                tagBadge.className = 'badge bg-primary text-white me-1 mb-1 py-1 px-2'; // Slightly more padding
+                tagBadge.className = 'badge bg-primary text-white me-1 mb-1 py-1 px-2 small';
                 tagBadge.textContent = tag;
                 tagBadge.style.cursor = 'pointer';
                 tagBadge.title = 'Click to remove tag';
                 tagBadge.onclick = (e) => {
-                    e.stopPropagation(); // Prevent any parent click handlers
+                    e.stopPropagation();
                     currentEditingTags = currentEditingTags.filter(t => t !== tag);
-                    renderCurrentEditingTags(); // Re-render the tags
+                    renderCurrentEditingTags();
                 };
-                tagsContainerElement.appendChild(tagBadge);
+                liveTagsContainer.appendChild(tagBadge);
             });
         }
     };
 
     const addTagAction = () => {
-        if (!tagInputField) return;
-        const value = tagInputField.value.trim().toLowerCase();
+        if (!liveTagInput) return;
+        const value = liveTagInput.value.trim().toLowerCase();
         if (value && !currentEditingTags.includes(value)) {
             currentEditingTags.push(value);
             renderCurrentEditingTags();
         }
-        tagInputField.value = '';
-        tagInputField.focus();
+        liveTagInput.value = '';
+        liveTagInput.focus();
     };
 
-    if (addTagButtonElement) addTagButtonElement.onclick = addTagAction;
-    if (tagInputField) {
-        tagInputField.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                addTagAction();
-            }
+    if (liveAddTagButton) liveAddTagButton.onclick = addTagAction;
+    if (liveTagInput) {
+        liveTagInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); addTagAction(); }
         });
     }
-    // Initial render of tags
-    renderCurrentEditingTags();
-
+    renderCurrentEditingTags(); // Initial render
 
     // Save / Cancel buttons
     const btnRow = document.createElement('div');
-    btnRow.className = 'd-flex justify-content-end gap-2 mt-3 pt-3 border-top';
+    btnRow.className = 'd-flex justify-content-end gap-2 mt-4 pt-3 border-top'; // Added mt-4
     const saveEditBtn = document.createElement('button');
+    saveEditBtn.type = 'button';
     saveEditBtn.className = 'btn btn-success btn-sm';
     saveEditBtn.innerHTML = '<i class="bi bi-check-lg"></i> Save Changes';
     const cancelEditBtn = document.createElement('button');
+    cancelEditBtn.type = 'button';
     cancelEditBtn.className = 'btn btn-secondary btn-sm';
     cancelEditBtn.innerHTML = '<i class="bi bi-x-lg"></i> Cancel';
-
     btnRow.appendChild(saveEditBtn);
     btnRow.appendChild(cancelEditBtn);
-    editorContentDiv.appendChild(btnRow);
+    editorContentDiv.appendChild(btnRow); // Already part of cardElement
 
-    cardElement.appendChild(editorContentDiv); // Append the fully constructed editor
-
-    // Populate ingredient table for editing
+    // Populate ingredient table
     const ingredientsTbody = document.getElementById(ingredientsTableBodyId);
-    if (recipeData.ingredients && ingredientsTbody) { // Check tbody exists
+    if (recipeData.ingredients && ingredientsTbody) {
         recipeData.ingredients.forEach(ing => addIngredientRowToEditor(ingredientsTableBodyId, ing.name, ing.quantity, ing.unit));
     }
     if (ingredientsTbody) addIngredientRowToEditor(ingredientsTableBodyId); // Add a blank row
 
-
-    // --- Step 3: Save Logic ---
+    // --- Save Logic (remains largely the same, ensure using correct variables) ---
     saveEditBtn.onclick = async () => {
+        // ... (Construct recipePayload using nameInput, instructionsInput, ingredientsTbody, currentEditingTags)
+        // ... (Your existing save logic for Firestore or LocalDB)
+        // Ensure you are using the live input elements: nameInput, instructionsInput, ingredientsTbody
         const updatedName = nameInput.value.trim();
         if (!updatedName) {
             alert("Recipe name cannot be empty.");
@@ -2164,41 +2224,42 @@ async function openInlineEditor(recipeId, cardElement) {
         if (ingredientsTbody) {
             ingredientsTbody.querySelectorAll('tr').forEach(row => {
                 const inputs = row.querySelectorAll('input');
-                const ingName = inputs[0]?.value.trim();
-                const ingQty = inputs[1]?.value.trim();
-                const ingUnit = inputs[2]?.value.trim();
-                if (ingName) { // Only add if ingredient name is present
-                    updatedIngredients.push({ name: ingName, quantity: ingQty, unit: ingUnit });
+                if (inputs.length >= 3) { // Ensure all inputs are present
+                    const ingName = inputs[0].value.trim();
+                    const ingQty = inputs[1].value.trim();
+                    const ingUnit = inputs[2].value.trim();
+                    if (ingName) { 
+                        updatedIngredients.push({ name: ingName, quantity: ingQty, unit: ingUnit });
+                    }
                 }
             });
         }
-
+        
         const recipePayload = {
             name: updatedName,
             ingredients: updatedIngredients,
             instructions: instructionsInput.value.trim(),
-            tags: [...currentEditingTags], // Use the current state of edited tags
-            // Rating is not typically edited here, preserve original if it exists
-            rating: recipeData.rating || 0,
+            tags: [...currentEditingTags],
+            rating: recipeData.rating || 0, 
         };
 
         try {
-            if (currentUser && !isLocalRecipe) { // Editing a Firestore recipe
-                console.log("Saving updated recipe to Firestore, ID:", recipeData.firestoreId);
-                recipePayload.uid = recipeData.uid || currentUser.uid; // Ensure UID is present
+            if (currentUser && !isLocalRecipe) {
+                recipePayload.uid = recipeData.uid || currentUser.uid;
                 recipePayload.timestamp = firebase.firestore.FieldValue.serverTimestamp();
-                await db.collection('recipes').doc(recipeData.firestoreId).set(recipePayload, { merge: true });
+                const docIdToUpdate = recipeData.firestoreId || recipeData.id;
+                console.log("Saving updated recipe to Firestore, ID:", docIdToUpdate);
+                await db.collection('recipes').doc(docIdToUpdate).set(recipePayload, { merge: true });
                 showSuccessMessage("Recipe updated in your account!");
-            } else { // Editing a LocalDB recipe
-                if (!localDB) { alert("Local storage not available to save changes."); return; }
-                // For local, `recipeData.id` is the localId (primary key)
-                recipePayload.localId = recipeData.id;
-                recipePayload.timestamp = new Date().toISOString(); // Update timestamp for local
-                console.log("Saving updated recipe to LocalDB, localId:", recipePayload.localId, recipePayload);
-                await localDB.recipes.put(recipePayload); // Dexie's put will update based on primary key (localId)
+            } else { 
+                 if (!localDB) { alert("Local storage not available to save changes."); return; }
+                recipePayload.localId = recipeData.id; 
+                recipePayload.timestamp = new Date().toISOString();
+                console.log("Saving updated recipe to LocalDB, localId:", recipePayload.localId);
+                await localDB.recipes.put(recipePayload);
                 showSuccessMessage("Local recipe updated!");
             }
-            loadInitialRecipes(); // This will refresh the list and close the editor
+            loadInitialRecipes(); 
         } catch (err) {
             console.error("Error saving recipe changes:", err.stack || err);
             alert("Failed to save changes: " + err.message);
@@ -2206,7 +2267,7 @@ async function openInlineEditor(recipeId, cardElement) {
     };
 
     cancelEditBtn.onclick = () => {
-        loadInitialRecipes(); // Reloads all recipes, effectively closing the editor
+        loadInitialRecipes();
     };
 }
 
@@ -2216,7 +2277,7 @@ async function openInlineEditor(recipeId, cardElement) {
 function addIngredientRowToEditor(tbodyId, name = '', quantity = '', unit = '') {
     const tbody = document.getElementById(tbodyId);
     if (!tbody) {
-        console.error("Ingredient table body not found:", tbodyId);
+        console.error("Ingredient table body not found for ID:", tbodyId);
         return;
     }
 
