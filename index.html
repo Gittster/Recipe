@@ -110,6 +110,21 @@
         </div>
     </div>
 </div>
+<div class="modal fade" id="infoConfirmModal" tabindex="-1" aria-labelledby="infoConfirmModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="infoConfirmModalLabel">Notification</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="infoConfirmModalBody">
+                </div>
+            <div class="modal-footer" id="infoConfirmModalFooter">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 </body>
 </html>
@@ -139,6 +154,7 @@ const firebaseConfig = {
   const db = firebase.firestore();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
+<script src="js/libs/dexie.js"></script>
 <script src="script.js"></script>
 </body>
 </html>

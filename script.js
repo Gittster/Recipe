@@ -5,13 +5,119 @@ let currentUser = null; // Global user tracker
 let currentChatbotRecipe = null;
 let chatbotModalElement = null; // To keep a reference to the modal DOM element
 let loginModalInstance = null; // To store the Bootstrap modal instance
+let localDB = null; // Initialize localDB as null
+let infoConfirmModalInstance = null; // To store the Bootstrap modal instance
 
 document.addEventListener('DOMContentLoaded', () => {
     const loginModalElement = document.getElementById('loginModal');
     if (loginModalElement) {
         loginModalInstance = new bootstrap.Modal(loginModalElement);
     }
+    const infoModalElement = document.getElementById('infoConfirmModal');
+    if (infoModalElement) {
+        infoConfirmModalInstance = new bootstrap.Modal(infoModalElement);
+    }
 });
+
+/**
+ * Shows a generic modal for information or confirmation.
+ * @param {string} title - The title of the modal.
+ * @param {string} bodyContent - HTML or text content for the modal body.
+ * @param {Array<Object>} buttons - Array of button objects, e.g., [{text: 'OK', class: 'btn-primary', onClick: () => {...}}]
+ * If null or empty, a default "Close" button is shown.
+ */
+function showInfoConfirmModal(title, bodyContent, buttons = []) {
+    if (!infoConfirmModalInstance) {
+        console.error("Info/Confirm Modal instance not initialized!");
+        alert(bodyContent); // Fallback to alert if modal isn't ready
+        return;
+    }
+
+    const modalTitle = document.getElementById('infoConfirmModalLabel');
+    const modalBody = document.getElementById('infoConfirmModalBody');
+    const modalFooter = document.getElementById('infoConfirmModalFooter');
+
+    if (modalTitle) modalTitle.textContent = title;
+    if (modalBody) modalBody.innerHTML = bodyContent; // Use innerHTML to allow basic HTML in the message
+    if (modalFooter) {
+        modalFooter.innerHTML = ''; // Clear previous buttons
+
+        if (buttons && buttons.length > 0) {
+            buttons.forEach(btnConfig => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = `btn ${btnConfig.class || 'btn-secondary'}`;
+                button.textContent = btnConfig.text;
+                if (btnConfig.dismiss) { // If true, button will dismiss the modal
+                    button.setAttribute('data-bs-dismiss', 'modal');
+                }
+                button.onclick = () => {
+                    if (btnConfig.onClick) {
+                        btnConfig.onClick();
+                    }
+                    // Only auto-dismiss if not explicitly handled by onClick or if dismiss flag not set to false
+                    if (btnConfig.autoClose !== false && !btnConfig.onClick && !btnConfig.dismiss) {
+                         infoConfirmModalInstance.hide();
+                    } else if (btnConfig.autoClose !== false && btnConfig.onClick && btnConfig.dismissOnClick !== false) {
+                        // If there's an onClick, and dismissOnClick is not explicitly false, then hide.
+                        infoConfirmModalInstance.hide();
+                    }
+                };
+                modalFooter.appendChild(button);
+            });
+        } else {
+            // Default close button if no buttons are provided
+            const closeButton = document.createElement('button');
+            closeButton.type = 'button';
+            closeButton.className = 'btn btn-secondary';
+            closeButton.setAttribute('data-bs-dismiss', 'modal');
+            closeButton.textContent = 'Close';
+            modalFooter.appendChild(closeButton);
+        }
+    }
+    infoConfirmModalInstance.show();
+}
+
+function initializeLocalDB() {
+    if (!window.indexedDB) {
+        console.warn("IndexedDB not supported by this browser. Local storage features will be limited.");
+        return;
+    }
+
+    localDB = new Dexie("RecipeAppDB");
+    // Increment the version number if you're changing the schema after users might have version 1
+    // For development, you can clear your browser's IndexedDB for the site to start fresh with a new schema.
+    // Or, handle upgrades: https://dexie.org/docs/Tutorial/Design#database-versioning
+    localDB.version(3).stores({ // Increment version if 'shoppingList' store is new or changing structure
+        recipes: '++localId, name, timestamp, *tags',
+        history: '++localId, recipeName, timestamp, *tags',
+        planning: '++localId, date, recipeLocalId, recipeName',
+        shoppingList: '++id, name, ingredients' // NEW or UPDATED: for local shopping list
+                                                // '++id' simple auto-incrementing key
+                                                // 'name' could be a generic name like "localShoppingList"
+                                                // 'ingredients' will be an array of ingredient objects
+    }).upgrade(tx => {
+        console.log("Upgrading RecipeAppDB to version 3, ensuring 'shoppingList' store is present/updated.");
+        // If version 2 didn't have shoppingList or had a different structure,
+        // you might need to handle that here. For adding a new table, this is often enough.
+    });
+
+
+    localDB.open().then(() => {
+        console.log("RecipeAppDB (IndexedDB via Dexie) opened successfully with stores: recipes, history, planning.");
+    }).catch(err => {
+        console.error("Failed to open RecipeAppDB:", err.stack || err);
+        localDB = null;
+    });
+}
+
+// Call this when the script loads
+initializeLocalDB();
+
+// --- Helper function to generate simple local IDs ---
+function generateLocalUUID() {
+    return Date.now().toString(36) + Math.random().toString(36).substring(2);
+}
 
 // --- Login Modal View Management Functions ---
 function showLoginModal() {
@@ -694,88 +800,106 @@ function deleteHistoryEntry(entryId, cardElement) {
 
 
 function markAsMade(recipeName, buttonElement) {
-  console.log("✅ Mark as Made clicked for:", recipeName);
+    console.log("Mark as Made clicked for:", recipeName);
 
-  const card = buttonElement.closest('.card');
-  if (!card) return;
+    const card = buttonElement.closest('.card');
+    if (!card) return;
+    if (card.querySelector('.mark-made-form')) return; // Prevent multiple forms
 
-  // Prevent multiple open forms
-  if (card.querySelector('.mark-made-form')) return;
+    const form = document.createElement('div');
+    form.className = 'mark-made-form mt-3 p-3 border rounded bg-light-subtle'; // Used bg-light-subtle for BS5
 
-  const form = document.createElement('div');
-  form.className = 'mark-made-form mt-3 p-2 border rounded bg-light';
+    const textarea = document.createElement('textarea');
+    textarea.className = 'form-control mb-2';
+    textarea.rows = 2;
+    textarea.placeholder = 'Optional comment...';
 
-  const textarea = document.createElement('textarea');
-  textarea.className = 'form-control mb-2';
-  textarea.rows = 2;
-  textarea.placeholder = 'Optional comment...';
+    const dateLabel = document.createElement('label');
+    dateLabel.textContent = 'Made date:';
+    dateLabel.className = 'form-label mb-0 ms-md-3 fw-semibold'; // ms-md-3 for spacing on medium+ screens
+    dateLabel.style.whiteSpace = 'nowrap';
 
-  // 💾 Save button
-  const saveBtn = document.createElement('button');
-  saveBtn.className = 'btn btn-outline-dark btn-sm';
-  saveBtn.innerHTML = '💾 Save';
+    const dateInput = document.createElement('input');
+    dateInput.type = 'date';
+    dateInput.className = 'form-control form-control-sm d-inline-block'; // d-inline-block for layout
+    dateInput.style.maxWidth = '150px';
+    dateInput.value = new Date().toISOString().split('T')[0]; // Default to today
 
-  // ❌ Cancel button
-  const cancelBtn = document.createElement('button');
-  cancelBtn.className = 'btn btn-outline-danger btn-sm';
-  cancelBtn.innerHTML = '❌ Cancel';
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'btn btn-outline-success btn-sm'; // Changed to success
+    saveBtn.innerHTML = '<i class="bi bi-check-lg"></i> Save';
 
-  // 📅 Made Date label
-  const dateLabel = document.createElement('label');
-  dateLabel.textContent = 'Made date:';
-  dateLabel.className = 'form-label mb-0 ms-3 fw-semibold';
-  dateLabel.style.whiteSpace = 'nowrap';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-outline-secondary btn-sm'; // Changed to secondary
+    cancelBtn.innerHTML = '<i class="bi bi-x-lg"></i> Cancel';
 
-  // 🗓️ Date picker
-  const dateInput = document.createElement('input');
-  dateInput.type = 'date';
-  dateInput.className = 'form-control form-control-sm';
-  dateInput.style.maxWidth = '150px';
+    const controls = document.createElement('div');
+    controls.className = 'd-flex align-items-center gap-2 flex-wrap mt-2'; // Added mt-2 and flex-wrap
+    controls.appendChild(saveBtn);
+    controls.appendChild(cancelBtn);
+    controls.appendChild(dateLabel);
+    controls.appendChild(dateInput);
 
-  // Default to today
-  const today = new Date().toISOString().split('T')[0];
-  dateInput.value = today;
+    saveBtn.onclick = () => {
+        const notes = textarea.value.trim();
+        // Ensure date is treated as local, then get start of day in UTC for consistent ISO string
+        const localDate = new Date(dateInput.value + 'T00:00:00'); // Treat selected date as local
+        const timestamp = localDate.toISOString();
 
-  // ➕ Controls container
-  const controls = document.createElement('div');
-  controls.className = 'd-flex align-items-center gap-2 flex-wrap';
+        // Find the full recipe object to get tags if available
+        // This assumes `recipes` array is populated with current view (local or cloud)
+        const recipeObj = recipes.find(r => r.name === recipeName);
+        const recipeTags = recipeObj && recipeObj.tags ? recipeObj.tags : [];
 
-  controls.appendChild(saveBtn);
-  controls.appendChild(cancelBtn);
-  controls.appendChild(dateLabel);
-  controls.appendChild(dateInput);
+        const historyEntry = {
+            recipeName: recipeName, // Changed from 'recipe' to 'recipeName' for clarity with localDB schema
+            tags: recipeTags,
+            timestamp: timestamp,
+            notes: notes || '',
+        };
 
-  // 💾 Save logic
-  saveBtn.onclick = () => {
-    const notes = textarea.value.trim();
-    const timestamp = new Date(dateInput.value).toISOString();
-  
-    // 🔥 Find the full recipe object
-    const recipeObj = recipes.find(r => r.name === recipeName);
-  
-    db.collection("history").add({
-      recipe: recipeName,
-      tags: recipeObj?.tags || [], // ✅ Save tags too!
-      timestamp: timestamp,
-      notes: notes || '',
-      uid: currentUser.uid
-    }).then(() => {
-      console.log("✅ History entry added!");
-      form.innerHTML = '<div class="text-success fw-bold">✅ Marked as made!</div>';
-      setTimeout(() => form.remove(), 2000);
-    }).catch(err => {
-      console.error("❌ Failed to save history:", err);
-      alert('Failed to save history.');
-    });
-  };
-  
+        if (currentUser) {
+            // --- LOGGED IN: Save to Firebase ---
+            historyEntry.uid = currentUser.uid;
+            db.collection("history").add(historyEntry)
+                .then(() => {
+                    console.log("✅ History entry added to Firestore!");
+                    form.innerHTML = '<div class="text-success fw-bold p-2">✅ Marked as made!</div>';
+                    setTimeout(() => form.remove(), 2000);
+                })
+                .catch(err => {
+                    console.error("❌ Failed to save history to Firestore:", err);
+                    alert('Failed to save history: ' + err.message);
+                });
+        } else {
+            // --- NOT LOGGED IN: Save to LocalDB ---
+            if (!localDB) {
+                alert("Local storage not available. Please sign in.");
+                console.error("Attempted to save local history, but localDB is not initialized.");
+                return;
+            }
+            historyEntry.localId = generateLocalUUID(); // Add localId for IndexedDB
+            // No UID needed for local anonymous history
 
-  // ❌ Cancel logic
-  cancelBtn.onclick = () => form.remove();
+            localDB.history.add(historyEntry)
+                .then(() => {
+                    console.log("✅ History entry added to LocalDB!");
+                    form.innerHTML = '<div class="text-success fw-bold p-2">✅ Marked as made (saved locally)!</div>';
+                    setTimeout(() => form.remove(), 2000);
+                })
+                .catch(err => {
+                    console.error("❌ Failed to save history to LocalDB:", err.stack || err);
+                    alert('Failed to save history locally: ' + err.message);
+                });
+        }
+    };
 
-  form.appendChild(textarea);
-  form.appendChild(controls);
-  card.appendChild(form);
+    cancelBtn.onclick = () => form.remove();
+
+    form.appendChild(textarea);
+    form.appendChild(controls);
+    card.appendChild(form);
+    textarea.focus(); // Focus on the textarea
 }
 
 
@@ -1003,69 +1127,113 @@ function parseOcrToRecipeFields(ocrText) {
 
 
 
-function saveRecipe() {
-  const name = document.getElementById('recipeNameInput').value.trim();
-  const instructions = document.getElementById('recipeInstructionsInput').value.trim();
+async function saveRecipe() { // Changed to async to handle potential async local save
+    const name = document.getElementById('recipeNameInput').value.trim();
+    const instructions = document.getElementById('recipeInstructionsInput').value.trim();
+    // ... (get ingredients and tags as before) ...
+    const rows = document.querySelectorAll('#ingredientsTable > .row');
+    const ingredients = [];
+    currentTags = currentTags || []; // Ensure currentTags is initialized
 
-  const rows = document.querySelectorAll('#ingredientsTable > .row');
-  const ingredients = [];
-
-  const tags = currentTags || [];
-
-  rows.forEach(row => {
-    const inputs = row.querySelectorAll('input');
-    const name = inputs[0]?.value.trim();
-    const qty = inputs[1]?.value.trim();
-    const unit = inputs[2]?.value.trim();
-
-    if (name) { // ✅ Only require name
-      ingredients.push({
-        name,
-        quantity: qty || '',
-        unit: unit || ''
-      });
-    }
-    
-  });
-
-  if (!name || ingredients.length === 0) {
-    const error = document.createElement('div');
-    error.id = 'recipeErrorMessage';
-    error.className = 'alert alert-danger mt-2';
-    error.textContent = "Please provide a recipe name and at least one ingredient.";
-    const form = document.getElementById('recipeForm');
-    form.querySelector('.card-body').appendChild(error);
-    return;
-  }
-
-  if (!currentUser) {
-    alert('⚠️ You must be signed in to save a recipe.');
-    return;
-  }
-
-  const recipe = {
-    name,
-    instructions,
-    ingredients,
-    tags,
-    timestamp: new Date(),
-    uid: currentUser.uid // 🔥 THIS MUST BE INCLUDED
-  };
-
-  console.log(recipe); 
-  db.collection('recipes').add(recipe)
-    .then(docRef => {
-      console.log("✅ Recipe added with ID:", docRef.id);
-      toggleRecipeForm(); // Hide form
-      showSuccessMessage("✅ Recipe saved successfully!");
-      loadRecipesFromFirestore(); // Reload recipes
-      currentTags = []; // Clear tags
-    })
-    .catch(error => {
-      console.error("❌ Error adding recipe:", error.message || error);
+    rows.forEach(row => {
+        const inputs = row.querySelectorAll('input');
+        const ingName = inputs[0]?.value.trim();
+        const qty = inputs[1]?.value.trim();
+        const unit = inputs[2]?.value.trim();
+        if (ingName) {
+            ingredients.push({ name: ingName, quantity: qty || '', unit: unit || '' });
+        }
     });
+
+    if (!name || ingredients.length === 0) {
+        // ... (your existing error display for missing name/ingredients) ...
+        const error = document.getElementById('recipeErrorMessage') || document.createElement('div');
+        // ...
+        return;
+    }
+
+    const recipeData = {
+        // id: will be generated by Firebase or locally
+        name,
+        instructions,
+        ingredients,
+        tags: currentTags, // Use the globally managed currentTags
+        timestamp: new Date(), // Will be Firestore Timestamp or ISO string locally
+        // rating: 0, // Default rating if you have this field
+    };
+
+    if (currentUser) { // User is LOGGED IN - Save to Firebase
+        console.log("User logged in, saving recipe to Firestore:", recipeData);
+        recipeData.uid = currentUser.uid;
+        // Ensure timestamp is a Firestore server timestamp for consistency if desired
+        // recipeData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
+
+        db.collection('recipes').add(recipeData)
+            .then(docRef => {
+                console.log("✅ Recipe added to Firestore with ID:", docRef.id);
+                toggleRecipeForm();
+                showSuccessMessage("✅ Recipe saved successfully to your account!");
+                loadRecipesFromFirestore(); // Reload recipes from Firestore
+                currentTags = []; // Clear tags for the form
+            })
+            .catch(error => {
+                console.error("❌ Error adding recipe to Firestore:", error.message || error);
+                alert("Error saving recipe: " + error.message);
+            });
+    } else { // User is NOT LOGGED IN - Save to Local IndexedDB
+        if (!localDB) {
+            alert("Local storage is not available. Please sign in to save recipes.");
+            console.error("Attempted to save locally, but localDB is not initialized.");
+            return;
+        }
+        console.log("User not logged in, saving recipe to LocalDB:", recipeData);
+        recipeData.localId = generateLocalUUID(); // Generate a unique local ID
+        recipeData.timestamp = recipeData.timestamp.toISOString(); // Store date as ISO string
+
+        localDB.recipes.add(recipeData)
+            .then(() => {
+                console.log("✅ Recipe added to LocalDB with localId:", recipeData.localId);
+                toggleRecipeForm();
+                showSuccessMessage("✅ Recipe saved locally! Sign in to save to the cloud.");
+                loadRecipesFromLocal(); // Reload recipes from LocalDB
+                currentTags = []; // Clear tags for the form
+            })
+            .catch(error => {
+                console.error("❌ Error adding recipe to LocalDB:", error.stack || error);
+                alert("Error saving recipe locally: " + error.message);
+            });
+    }
 }
 
+async function loadRecipesFromLocal() {
+    if (!localDB) {
+        console.warn("LocalDB not initialized, cannot load local recipes.");
+        recipes = []; // Clear recipes array
+        displayRecipes(recipes, 'recipeResults'); // Update UI
+        return;
+    }
+    try {
+        const localRecipes = await localDB.recipes.orderBy('timestamp').reverse().toArray();
+        recipes = localRecipes.map(r => ({ ...r, id: r.localId })); // Use localId as id for consistency in displayRecipes
+        console.log("Loaded recipes from LocalDB:", recipes);
+        showRecipeFilter(); // This function usually calls displayRecipes
+    } catch (error) {
+        console.error("❌ Error loading recipes from LocalDB:", error.stack || error);
+        recipes = [];
+        showRecipeFilter(); // Display empty state
+    }
+}
+
+// New main function to decide where to load recipes from
+function loadInitialRecipes() {
+    if (currentUser) {
+        console.log("User is logged in, loading recipes from Firestore.");
+        loadRecipesFromFirestore(); // Your existing function
+    } else {
+        console.log("User is not logged in, loading recipes from LocalDB.");
+        loadRecipesFromLocal();
+    }
+}
 
 function showSuccessMessage(message) {
   const view = document.getElementById('mainView');
@@ -1156,174 +1324,267 @@ function showRandomRecipe() {
 
 
 function viewHistory() {
-  const view = document.getElementById('mainView');
-  view.className = 'section-history';
-  view.innerHTML = `
-    <h5 class="mb-3">🕘 Recipe History</h5>
+    const view = document.getElementById('mainView');
+    view.className = 'section-history'; // For potential specific styling
+    view.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recipe History</h5>
+            </div>
+        <input type="text" class="form-control mb-2" id="historySearch" placeholder="Search notes or recipe name..." oninput="filterHistory()" />
+        <input type="text" class="form-control mb-3" id="historyTagSearch" placeholder="Filter by tag (e.g., dinner,easy)..." oninput="filterHistory()" />
+        <div id="historyListContainer">
+            <div id="historyList" class="mt-2">Loading...</div>
+        </div>
+    `;
 
-    <input type="text" class="form-control mb-2" id="historySearch" placeholder="Search notes or recipe name..." oninput="filterHistory()" />
-    <input type="text" class="form-control mb-3" id="historyTagSearch" placeholder="Filter by tag..." oninput="filterHistory()" />
-
-    <div id="historyList">Loading...</div>
-  `;
-
-
-  db.collection("history")
-  .where('uid', '==', currentUser.uid)
-  .orderBy('timestamp', 'desc')
-  .get().then(snapshot => {
-    const history = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    renderHistoryList(history);
-  }).catch(err => {
-    console.error("Error loading history:", err);
-    document.getElementById('historyList').innerHTML = '<p>Error loading history</p>';
-  });
+    if (currentUser) {
+        // --- LOGGED IN: Load from Firebase ---
+        console.log("Loading history from Firestore for user:", currentUser.uid);
+        db.collection("history")
+            .where('uid', '==', currentUser.uid)
+            .orderBy('timestamp', 'desc')
+            .get()
+            .then(snapshot => {
+                const historyEntries = snapshot.docs.map(doc => ({ firestoreId: doc.id, ...doc.data() }));
+                // Pass firestoreId as 'id' for renderHistoryList if it expects 'id' for deletion
+                renderHistoryList(historyEntries.map(e => ({ ...e, id: e.firestoreId })));
+            })
+            .catch(err => {
+                console.error("Error loading history from Firestore:", err);
+                document.getElementById('historyList').innerHTML = '<p class="text-danger">Error loading history.</p>';
+            });
+    } else {
+        // --- NOT LOGGED IN: Load from LocalDB ---
+        console.log("Loading history from LocalDB.");
+        if (!localDB) {
+            document.getElementById('historyList').innerHTML = '<p class="text-warning">Local storage not available.</p>';
+            return;
+        }
+        localDB.history.orderBy('timestamp').reverse().toArray()
+            .then(historyEntries => {
+                // Pass localId as 'id' for renderHistoryList
+                renderHistoryList(historyEntries.map(e => ({ ...e, id: e.localId })));
+            })
+            .catch(err => {
+                console.error("Error loading history from LocalDB:", err.stack || err);
+                document.getElementById('historyList').innerHTML = '<p class="text-danger">Error loading local history.</p>';
+            });
+    }
 }
 
 
 function renderHistoryList(entries, highlightTags = []) {
-  const container = document.getElementById('historyList');
-  container.innerHTML = '';
+    const container = document.getElementById('historyList');
+    if (!container) {
+        console.error("History list container not found");
+        return;
+    }
+    container.innerHTML = '';
 
-  if (entries.length === 0) {
-    container.innerHTML = '<p>No history found.</p>';
-    return;
-  }
+    if (!entries || entries.length === 0) {
+        container.innerHTML = '<div class="alert alert-light text-center" role="alert">No history found. Try marking some recipes as made!</div>';
+        return;
+    }
 
-  entries.forEach(entry => {
-    const card = document.createElement('div');
-    card.className = 'card mb-3 shadow-sm';
+    entries.forEach(entry => { // 'entry.id' will be firestoreId or localId
+        const card = document.createElement('div');
+        card.className = 'card mb-3 shadow-sm';
 
-    const body = document.createElement('div');
-    body.className = 'card-body d-flex justify-content-between align-items-start';
+        const body = document.createElement('div');
+        body.className = 'card-body'; // Removed d-flex for simpler layout, can be re-added
 
-    const textArea = document.createElement('div');
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'flex-grow-1';
 
-    const tagHtml = (entry.tags && entry.tags.length > 0)
-      ? `
-        <div class="mb-2">
-          <strong>Tags:</strong><br />
-          ${entry.tags.map(tag => {
-            const lowerTag = tag.toLowerCase();
-            const isHighlighted = highlightTags.includes(lowerTag);
-            const badgeClass = isHighlighted
-              ? 'badge bg-warning text-dark me-1 mt-1'
-              : 'badge bg-primary text-white me-1 mt-1';
-            return `<span class="${badgeClass}">${tag}</span>`;
-          }).join('')}
-        </div>
-      `
-      : '';
+        const title = document.createElement('h6'); // Changed to h6 for better semantics
+        title.className = 'card-title mb-1';
+        title.textContent = entry.recipeName || entry.recipe; // Use recipeName
 
-    textArea.innerHTML = `
-      <h5 class="card-title">${entry.recipe}</h5>
-      <p><strong>Date:</strong> ${new Date(entry.timestamp).toLocaleDateString()}</p>
-      ${tagHtml}
-      <p><strong>Notes:</strong> ${entry.notes || '(No notes)'}</p>
-    `;
+        const dateText = document.createElement('p');
+        dateText.className = 'card-text text-muted small mb-1';
+        dateText.innerHTML = `<i class="bi bi-calendar-check"></i> Made on: ${new Date(entry.timestamp).toLocaleDateString()}`;
+        
+        contentDiv.appendChild(title);
+        contentDiv.appendChild(dateText);
 
-    const deleteArea = document.createElement('div');
-    deleteArea.className = 'delete-area';
+        if (entry.tags && entry.tags.length > 0) {
+            const tagsDiv = document.createElement('div');
+            tagsDiv.className = 'mb-2 history-tags';
+            entry.tags.forEach(tag => {
+                const lowerTag = tag.toLowerCase();
+                const isHighlighted = highlightTags.some(ht => lowerTag.includes(ht.toLowerCase()));
+                const badgeClass = isHighlighted ? 'badge bg-warning text-dark me-1 mt-1' : 'badge bg-secondary me-1 mt-1'; // Using bg-secondary
+                const tagBadge = document.createElement('span');
+                tagBadge.className = badgeClass;
+                tagBadge.textContent = tag;
+                tagsDiv.appendChild(tagBadge);
+            });
+            contentDiv.appendChild(tagsDiv);
+        }
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'btn btn-outline-danger btn-sm flex-shrink-0';
-    deleteBtn.innerHTML = '🗑️';
-    deleteBtn.title = 'Delete entry';
-    deleteBtn.onclick = () => confirmDeleteHistory(entry.id, deleteArea, card);
+        if (entry.notes) {
+            const notesText = document.createElement('p');
+            notesText.className = 'card-text small';
+            notesText.innerHTML = `<strong>Notes:</strong> ${entry.notes}`;
+            contentDiv.appendChild(notesText);
+        }
 
-    deleteArea.appendChild(deleteBtn);
+        const deleteButtonDiv = document.createElement('div');
+        deleteButtonDiv.className = 'mt-2 text-end delete-area-history'; // For styling the button container if needed
 
-    body.appendChild(textArea);
-    body.appendChild(deleteArea);
-    card.appendChild(body);
-    container.appendChild(card);
-  });
-}
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-outline-danger btn-sm flex-shrink-0';
+        deleteBtn.innerHTML = '<i class="bi bi-trash"></i> Delete';
+        deleteBtn.title = 'Delete this history entry';
+        // `entry.id` is already correctly set to firestoreId or localId by viewHistory()
+        deleteBtn.onclick = () => confirmDeleteHistory(entry.id, deleteButtonDiv, card); 
 
-
-
-
-function filterHistory() {
-  const query = document.getElementById('historySearch').value.toLowerCase();
-  const tagSearch = document.getElementById('historyTagSearch').value.toLowerCase();
-  const tagTerms = tagSearch.split(',').map(t => t.trim()).filter(Boolean);
-
-  db.collection("history")
-    .where("uid", "==", currentUser.uid)
-    .orderBy("timestamp", "desc")
-    .get()
-    .then(snapshot => {
-      const allEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-      const filtered = allEntries.filter(entry => {
-        const matchesText = !query || (
-          entry.recipe.toLowerCase().includes(query) ||
-          (entry.notes && entry.notes.toLowerCase().includes(query))
-        );
-
-        const entryTags = (entry.tags || []).map(t => t.toLowerCase());
-        const matchesTags = tagTerms.length === 0 || tagTerms.every(term =>
-          entryTags.some(tag => tag.startsWith(term))
-        );
-
-        return matchesText && matchesTags;
-      });
-
-      renderHistoryList(filtered, tagTerms);
+        deleteButtonDiv.appendChild(deleteBtn);
+        
+        body.appendChild(contentDiv);
+        body.appendChild(deleteButtonDiv); // Add delete button div to the card body
+        card.appendChild(body);
+        container.appendChild(card);
     });
 }
 
 
-function confirmDeleteHistory(entryId, deleteArea, cardElement) {
-  if (deleteArea.querySelector('.confirm-delete')) return;
 
-  deleteArea.innerHTML = '';
 
-  const confirmArea = document.createElement('div');
-  confirmArea.className = 'confirm-delete d-flex align-items-center gap-2';
+async function filterHistory() { // Made async for potential localDB operations
+    const query = document.getElementById('historySearch').value.toLowerCase().trim();
+    const tagSearch = document.getElementById('historyTagSearch').value.toLowerCase().trim();
+    const tagTerms = tagSearch.split(',').map(t => t.trim()).filter(Boolean);
 
-  // Styled confirm text
-  const confirmText = document.createElement('span');
-  confirmText.className = 'fw-semibold text-danger';
-  confirmText.textContent = 'Confirm?';
+    if (currentUser) {
+        // --- LOGGED IN: Filter Firestore data ---
+        db.collection("history")
+            .where("uid", "==", currentUser.uid)
+            .orderBy("timestamp", "desc")
+            .get()
+            .then(snapshot => {
+                const allEntries = snapshot.docs.map(doc => ({ firestoreId: doc.id, ...doc.data() }));
+                const filtered = allEntries.filter(entry => {
+                    const recipeName = entry.recipeName || entry.recipe || "";
+                    const notes = entry.notes || "";
+                    const matchesText = !query || (
+                        recipeName.toLowerCase().includes(query) ||
+                        notes.toLowerCase().includes(query)
+                    );
+                    const entryTags = (entry.tags || []).map(t => t.toLowerCase());
+                    const matchesTags = tagTerms.length === 0 || tagTerms.every(term =>
+                        entryTags.some(tag => tag.startsWith(term))
+                    );
+                    return matchesText && matchesTags;
+                });
+                renderHistoryList(filtered.map(e => ({...e, id: e.firestoreId })), tagTerms);
+            })
+            .catch(err => {
+                console.error("Error filtering Firestore history:", err);
+                document.getElementById('historyList').innerHTML = '<p class="text-danger">Error filtering history.</p>';
+            });
+    } else {
+        // --- NOT LOGGED IN: Filter LocalDB data ---
+        if (!localDB) {
+            document.getElementById('historyList').innerHTML = '<p class="text-warning">Local storage not available to filter.</p>';
+            return;
+        }
+        try {
+            const allEntries = await localDB.history.orderBy('timestamp').reverse().toArray();
+            const filtered = allEntries.filter(entry => {
+                const recipeName = entry.recipeName || ""; // Ensure recipeName exists
+                const notes = entry.notes || "";
+                const matchesText = !query || (
+                    recipeName.toLowerCase().includes(query) ||
+                    notes.toLowerCase().includes(query)
+                );
+                const entryTags = (entry.tags || []).map(t => t.toLowerCase());
+                const matchesTags = tagTerms.length === 0 || tagTerms.every(term =>
+                    entryTags.some(tag => tag.startsWith(term))
+                );
+                return matchesText && matchesTags;
+            });
+            renderHistoryList(filtered.map(e => ({...e, id: e.localId })), tagTerms);
+        } catch (err) {
+            console.error("Error filtering LocalDB history:", err.stack || err);
+            document.getElementById('historyList').innerHTML = '<p class="text-danger">Error filtering local history.</p>';
+        }
+    }
+}
 
-  // ✅ Confirm button
-  const yesBtn = document.createElement('button');
-  yesBtn.className = 'btn btn-sm btn-outline-success';
-  yesBtn.innerHTML = '✅';
-  yesBtn.title = 'Confirm delete';
-  yesBtn.onclick = () => {
-    db.collection('history').doc(entryId).delete()
-      .then(() => {
-        console.log('✅ History entry deleted:', entryId);
-        cardElement.remove();
-      })
-      .catch((err) => {
-        console.error('❌ Failed to delete history entry:', err);
-        alert('Failed to delete entry.');
-        deleteArea.innerHTML = '';
-      });
-  };
 
-  // ❌ Cancel button
-  const noBtn = document.createElement('button');
-  noBtn.className = 'btn btn-sm btn-outline-danger';
-  noBtn.innerHTML = '❌';
-  noBtn.title = 'Cancel';
-  noBtn.onclick = () => {
-    deleteArea.innerHTML = '';
-    const restoreBtn = document.createElement('button');
-    restoreBtn.className = 'btn btn-outline-danger btn-sm flex-shrink-0';
-    restoreBtn.innerHTML = '🗑️';
-    restoreBtn.title = 'Delete entry';
-    restoreBtn.onclick = () => confirmDeleteHistory(entryId, deleteArea, cardElement);
-    deleteArea.appendChild(restoreBtn);
-  };
+function confirmDeleteHistory(entryId, deleteAreaContainer, cardElement) {
+    // Ensure deleteAreaContainer is valid and not already showing confirmation
+    if (!deleteAreaContainer || deleteAreaContainer.querySelector('.confirm-delete-history-controls')) return;
 
-  confirmArea.appendChild(confirmText);
-  confirmArea.appendChild(yesBtn);
-  confirmArea.appendChild(noBtn);
-  deleteArea.appendChild(confirmArea);
+    // Temporarily hide or clear previous content of deleteAreaContainer (like the original delete button if it was inside)
+    const originalButton = deleteAreaContainer.querySelector('button'); // Assuming the button is inside
+    if (originalButton) originalButton.style.display = 'none';
+
+
+    const confirmControls = document.createElement('div');
+    confirmControls.className = 'confirm-delete-history-controls d-flex align-items-center gap-2 justify-content-end'; // For inline display
+
+    const confirmText = document.createElement('span');
+    confirmText.className = 'text-danger small me-2';
+    confirmText.textContent = 'Really delete?';
+
+    const yesBtn = document.createElement('button');
+    yesBtn.className = 'btn btn-danger btn-sm'; // Changed to danger for yes
+    yesBtn.innerHTML = '<i class="bi bi-check-lg"></i> Yes';
+    yesBtn.title = 'Confirm delete';
+
+    const noBtn = document.createElement('button');
+    noBtn.className = 'btn btn-secondary btn-sm'; // Changed to secondary for no
+    noBtn.innerHTML = '<i class="bi bi-x-lg"></i> No';
+    noBtn.title = 'Cancel delete';
+
+    const cleanupConfirmationUI = () => {
+        confirmControls.remove();
+        if (originalButton) originalButton.style.display = ''; // Restore original button
+    };
+
+    yesBtn.onclick = () => {
+        if (currentUser) {
+            // --- LOGGED IN: Delete from Firebase ---
+            db.collection('history').doc(entryId).delete()
+                .then(() => {
+                    console.log('✅ History entry deleted from Firestore:', entryId);
+                    cardElement.remove(); // Remove from view
+                    showSuccessMessage("History entry deleted.");
+                })
+                .catch((err) => {
+                    console.error('❌ Failed to delete history entry from Firestore:', err);
+                    alert('Failed to delete history entry: ' + err.message);
+                    cleanupConfirmationUI(); // Restore UI on failure
+                });
+        } else {
+            // --- NOT LOGGED IN: Delete from LocalDB ---
+            if (!localDB) {
+                alert("Local storage not available.");
+                cleanupConfirmationUI();
+                return;
+            }
+            localDB.history.delete(entryId) // entryId here is the localId
+                .then(() => {
+                    console.log('✅ History entry deleted from LocalDB:', entryId);
+                    cardElement.remove(); // Remove from view
+                    showSuccessMessage("Local history entry deleted.");
+                })
+                .catch(err => {
+                    console.error('❌ Failed to delete history entry from LocalDB:', err.stack || err);
+                    alert('Failed to delete local history entry: ' + err.message);
+                    cleanupConfirmationUI(); // Restore UI on failure
+                });
+        }
+    };
+
+    noBtn.onclick = cleanupConfirmationUI;
+
+    confirmControls.appendChild(confirmText);
+    confirmControls.appendChild(yesBtn);
+    confirmControls.appendChild(noBtn);
+    deleteAreaContainer.appendChild(confirmControls); // Add controls to the provided container
 }
 
 
@@ -1368,180 +1629,200 @@ function filterRecipesByText() {
 
 
 function displayRecipes(list, containerId = 'recipeResults', options = {}) {
-  const container = document.getElementById(containerId);
-  container.innerHTML = '';
+    const container = document.getElementById(containerId);
+    if (!container) {
+        console.error("Recipe container not found:", containerId);
+        return;
+    }
+    container.innerHTML = ''; // Clear previous results
 
-  const highlightIngredients = options.highlightIngredients || [];
-  const highlightTags = options.highlightTags || [];
+    const highlightIngredients = options.highlightIngredients || [];
+    const highlightTags = options.highlightTags || [];
 
-  if (list.length === 0) {
-    container.innerHTML = '<p class="text-muted">No matching recipes found.</p>';
-    return;
-  }
-
-  list.forEach(r => {
-    const card = document.createElement('div');
-    card.className = 'card mb-3 shadow-sm';
-
-    const body = document.createElement('div');
-    body.className = 'card-body';
-
-    const titleRow = document.createElement('div');
-    titleRow.className = 'd-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2';
-
-
-    const title = document.createElement('span');
-    title.className = 'badge bg-warning text-dark fs-5 py-2 px-3 mb-0';
-    title.style.minWidth = '150px';
-    title.textContent = r.name;
-
-    const shareBtn = document.createElement('button');
-    shareBtn.className = 'btn btn-outline-secondary btn-sm btn-share';
-    shareBtn.innerHTML = '🔗';
-    shareBtn.title = 'Share recipe';
-    shareBtn.onclick = () => shareRecipe(r.id);
-    card.dataset.recipeId = r.id;
-
-    const editBtn = document.createElement('button');
-    editBtn.className = 'btn btn-outline-primary btn-sm';
-    editBtn.innerHTML = '✏️';
-    editBtn.onclick = () => openInlineEditor(r.id, card);
-
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'btn btn-outline-danger btn-sm';
-    deleteBtn.innerHTML = '🗑️';
-    deleteBtn.onclick = () => confirmDeleteRecipe(r.id, deleteBtn);
-
-    // ✅ Wrap delete button in .delete-area with relative positioning
-    const deleteArea = document.createElement('div');
-    deleteArea.className = 'delete-area position-relative d-inline-block';
-    deleteArea.appendChild(deleteBtn);
-
-    const buttonGroup = document.createElement('div');
-    buttonGroup.className = 'd-flex gap-2 align-items-center';
-    buttonGroup.prepend(shareBtn);
-    buttonGroup.appendChild(editBtn);
-    buttonGroup.appendChild(deleteArea);
-
-    titleRow.appendChild(title);
-    titleRow.appendChild(buttonGroup);
-
-    body.appendChild(titleRow);
-
-    // ➤ Tags and Ratings row
-    const tagsAndRatingRow = document.createElement('div');
-    tagsAndRatingRow.className = 'd-flex justify-content-between align-items-center mb-2';
-
-    const ratingContainer = document.createElement('div');
-    ratingContainer.className = 'rating-stars d-flex gap-1';
-
-    for (let i = 1; i <= 5; i++) {
-      const star = document.createElement('i');
-      star.className = i <= (r.rating || 0) ? 'bi bi-star-fill text-warning' : 'bi bi-star text-warning';
-      star.style.cursor = 'pointer';
-      star.dataset.value = i;
-      star.addEventListener('mouseenter', () => highlightStars(ratingContainer, i));
-      star.addEventListener('mouseleave', () => resetStars(ratingContainer, r.rating || 0));
-      star.addEventListener('click', () => updateRecipeRating(r.id, i));
-      ratingContainer.appendChild(star);
+    if (!list || list.length === 0) {
+        container.innerHTML = '<p class="text-muted text-center mt-3">No matching recipes found. Try adding some or adjusting your filters!</p>';
+        return;
     }
 
-    const tagsRow = document.createElement('div');
-    if (r.tags && r.tags.length > 0) {
-      r.tags.forEach(tag => {
-        const tagBadge = document.createElement('span');
-        tagBadge.className = 'badge me-1';
-        if (highlightTags.some(term => tag.toLowerCase().includes(term))) {
-          tagBadge.classList.add('bg-warning', 'text-dark');
+    list.forEach(recipe => {
+        const card = document.createElement('div');
+        card.className = 'card mb-3 shadow-sm recipe-card';
+        card.dataset.recipeId = recipe.id;
+
+        const body = document.createElement('div');
+        body.className = 'card-body p-3';
+
+        // --- Title Row with Action Buttons ---
+        const titleRow = document.createElement('div');
+        titleRow.className = 'd-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2 mb-2';
+
+        const title = document.createElement('h5'); // Keeping new title formatting
+        title.className = 'recipe-title mb-0 text-primary';
+        title.textContent = recipe.name;
+
+        const buttonGroup = document.createElement('div');
+        buttonGroup.className = 'd-flex gap-2 align-items-center mt-2 mt-sm-0 recipe-card-actions flex-shrink-0';
+
+        const shareBtn = document.createElement('button');
+        shareBtn.className = 'btn btn-outline-secondary btn-sm btn-share';
+        if (!currentUser) {
+            shareBtn.disabled = true;
+            shareBtn.title = 'Sign in to share recipes via a link';
+            shareBtn.innerHTML = '<i class="bi bi-share"></i>';
+            shareBtn.onclick = (e) => {
+                e.preventDefault();
+                showLoginModal();
+            };
         } else {
-          tagBadge.classList.add('bg-primary', 'text-white');
+            shareBtn.innerHTML = '<i class="bi bi-share-fill"></i>'; // Keeping new share icon
+            shareBtn.title = 'Share recipe link';
+            shareBtn.onclick = () => shareRecipe(recipe.id);
         }
-        tagBadge.textContent = tag;
-        tagsRow.appendChild(tagBadge);
-      });
-    }
+        buttonGroup.appendChild(shareBtn);
 
-    tagsAndRatingRow.appendChild(tagsRow);
-    tagsAndRatingRow.appendChild(ratingContainer);
-    body.appendChild(tagsAndRatingRow);
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-outline-primary btn-sm';
+        editBtn.innerHTML = '<i class="bi bi-pencil-fill"></i>'; // Keeping new edit icon
+        editBtn.title = "Edit recipe";
+        editBtn.onclick = () => openInlineEditor(recipe.id, card);
+        buttonGroup.appendChild(editBtn);
 
-    // ➤ Ingredients table
-    const table = document.createElement('table');
-    table.className = 'table table-bordered table-sm mb-2';
+        const deleteArea = document.createElement('div');
+        deleteArea.className = 'delete-area position-relative d-inline-block';
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-outline-danger btn-sm';
+        deleteBtn.innerHTML = '<i class="bi bi-trash-fill"></i>'; // Keeping new delete icon
+        deleteBtn.title = "Delete recipe";
+        deleteBtn.onclick = () => confirmDeleteRecipe(recipe.id, deleteArea);
+        deleteArea.appendChild(deleteBtn);
+        buttonGroup.appendChild(deleteArea);
 
-    const thead = document.createElement('thead');
-    thead.innerHTML = `
-      <tr>
-        <th>Ingredient</th>
-        <th>Qty</th>
-        <th>Unit</th>
-      </tr>
-    `;
-    table.appendChild(thead);
+        titleRow.appendChild(title);
+        titleRow.appendChild(buttonGroup);
+        body.appendChild(titleRow);
 
-    const tbody = document.createElement('tbody');
+        // --- Tags and Ratings Row (Keeping this as you liked tag display) ---
+        const tagsAndRatingRow = document.createElement('div');
+        tagsAndRatingRow.className = 'd-flex flex-wrap justify-content-between align-items-center mb-2 gap-2';
 
-    if (Array.isArray(r.ingredients)) {
-      r.ingredients.forEach(i => {
-        const tr = document.createElement('tr');
-        const nameTd = document.createElement('td');
+        const tagsDiv = document.createElement('div');
+        tagsDiv.className = 'recipe-tags';
+        if (recipe.tags && recipe.tags.length > 0) {
+            recipe.tags.forEach(tag => {
+                const tagBadge = document.createElement('span');
+                tagBadge.className = 'badge me-1 mb-1 ';
+                if (highlightTags.some(term => tag.toLowerCase().includes(term.toLowerCase()))) {
+                    tagBadge.classList.add('bg-warning', 'text-dark');
+                } else {
+                    tagBadge.classList.add('bg-secondary');
+                }
+                tagBadge.textContent = tag;
+                tagsDiv.appendChild(tagBadge);
+            });
+        }
+        tagsAndRatingRow.appendChild(tagsDiv);
 
-        const ingName = typeof i === 'object' ? i.name : i;
+        const ratingContainer = document.createElement('div');
+        ratingContainer.className = 'rating-stars d-flex gap-1 align-items-center';
+        if (currentUser) {
+            for (let i = 1; i <= 5; i++) {
+                const star = document.createElement('i');
+                star.className = `bi text-warning ${i <= (recipe.rating || 0) ? 'bi-star-fill' : 'bi-star'}`;
+                star.style.cursor = 'pointer';
+                star.dataset.value = i;
+                star.addEventListener('mouseenter', () => highlightStars(ratingContainer, i));
+                star.addEventListener('mouseleave', () => resetStars(ratingContainer, recipe.rating || 0));
+                star.addEventListener('click', () => updateRecipeRating(recipe.id, i, !currentUser));
+                ratingContainer.appendChild(star);
+            }
+        } else if (recipe.rating && recipe.rating > 0) {
+            for (let i = 1; i <= 5; i++) {
+                const star = document.createElement('i');
+                star.className = `bi text-warning ${i <= recipe.rating ? 'bi-star-fill' : 'bi-star'}`;
+                ratingContainer.appendChild(star);
+            }
+        }
+        tagsAndRatingRow.appendChild(ratingContainer);
+        body.appendChild(tagsAndRatingRow);
 
-        if (highlightIngredients.some(term => ingName.toLowerCase().includes(term))) {
-          nameTd.innerHTML = `<span class="bg-warning">${ingName}</span>`;
+        const table = document.createElement('table');
+        // Using your previous classes for table structure if they worked well for the grid
+        table.className = 'table table-bordered table-sm mt-3 mb-2';
+
+        const thead = document.createElement('thead'); // ADDED THEAD BACK
+        thead.innerHTML = `
+            <tr>
+                <th>Ingredient</th>
+                <th>Qty</th>
+                <th>Unit</th>
+            </tr>
+        `;
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        if (Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0) {
+            recipe.ingredients.forEach(ing => {
+                const tr = document.createElement('tr');
+                const nameTd = document.createElement('td');
+                const ingName = typeof ing === 'object' ? (ing.name || '') : (ing || '');
+                if (highlightIngredients.some(term => ingName.toLowerCase().includes(term.toLowerCase()))) {
+                    nameTd.innerHTML = `<mark>${ingName}</mark>`;
+                } else {
+                    nameTd.textContent = ingName;
+                }
+
+                const qtyTd = document.createElement('td');
+                qtyTd.textContent = typeof ing === 'object' ? (ing.quantity || '') : '';
+
+                const unitTd = document.createElement('td');
+                unitTd.textContent = typeof ing === 'object' ? (ing.unit || '') : '';
+
+                tr.appendChild(nameTd);
+                tr.appendChild(qtyTd);
+                tr.appendChild(unitTd);
+                tbody.appendChild(tr);
+            });
         } else {
-          nameTd.textContent = ingName;
+            tbody.innerHTML = '<tr><td colspan="3" class="text-muted">No ingredients listed.</td></tr>';
         }
+        table.appendChild(tbody);
+        body.appendChild(table);
 
-        const qtyTd = document.createElement('td');
-        qtyTd.textContent = i.quantity || '';
+        // --- Instructions (Keeping your preferred text formatting) ---
+        const instructionsTitle = document.createElement('h6');
+        instructionsTitle.className = 'mt-3 mb-1 fw-semibold';
+        instructionsTitle.textContent = 'Instructions'; // REMOVED ICON
+        body.appendChild(instructionsTitle);
+        const instructionsP = document.createElement('p');
+        instructionsP.className = 'card-text recipe-instructions'; // Removed 'small' class for now, you can add back if preferred
+        instructionsP.style.whiteSpace = 'pre-wrap'; 
+        instructionsP.textContent = recipe.instructions || 'No instructions provided.';
+        body.appendChild(instructionsP);
 
-        const unitTd = document.createElement('td');
-        unitTd.textContent = i.unit || '';
+        // --- Bottom Button Row: Mark as Made + Plan Meal (Keeping structure) ---
+        const bottomButtonRow = document.createElement('div');
+        bottomButtonRow.className = 'd-flex align-items-center justify-content-start gap-2 mt-3 pt-2 border-top';
 
-        tr.appendChild(nameTd);
-        tr.appendChild(qtyTd);
-        tr.appendChild(unitTd);
-        tbody.appendChild(tr);
-      });
-    }
+        const madeBtn = document.createElement('button');
+        madeBtn.className = 'btn btn-outline-info btn-sm';
+        madeBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Mark as Made';
+        madeBtn.onclick = (e) => markAsMade(recipe.name, e.target);
+        bottomButtonRow.appendChild(madeBtn);
 
-    table.appendChild(tbody);
-    body.appendChild(table);
+        const planArea = document.createElement('div');
+        planArea.className = 'plan-area';
+        const planBtn = document.createElement('button');
+        planBtn.className = 'btn btn-outline-success btn-sm';
+        planBtn.innerHTML = '<i class="bi bi-calendar-plus"></i> Plan Meal';
+        planBtn.onclick = () => openPlanMealForm(recipe, planArea);
+        planArea.appendChild(planBtn);
+        bottomButtonRow.appendChild(planArea);
 
-    // ➤ Instructions
-    const instructions = document.createElement('p');
-    instructions.innerHTML = `<strong>Instructions:</strong> ${r.instructions}`;
-    body.appendChild(instructions);
+        body.appendChild(bottomButtonRow);
 
-    // ➤ Buttons row: Mark as Made + Plan Meal
-    const buttonRow = document.createElement('div');
-    buttonRow.className = 'd-flex align-items-center gap-2 mt-3';
-
-    const madeBtn = document.createElement('button');
-    madeBtn.className = 'btn btn-outline-info btn-sm';
-    madeBtn.textContent = 'Mark as Made';
-    madeBtn.onclick = (e) => markAsMade(r.name, e.target);
-
-    const planArea = document.createElement('div');
-    planArea.className = 'plan-area';
-
-    const planBtn = document.createElement('button');
-    planBtn.className = 'btn btn-outline-success btn-sm';
-    planBtn.textContent = 'Plan Meal';
-    planBtn.onclick = () => openPlanMealForm(r, planArea);
-
-    planArea.appendChild(planBtn);
-
-    buttonRow.appendChild(madeBtn);
-    buttonRow.appendChild(planArea);
-
-    body.appendChild(buttonRow);
-
-    card.appendChild(body);
-    container.appendChild(card);
-  });
+        card.appendChild(body);
+        container.appendChild(card);
+    });
 }
 
 function hashRecipe(recipe) {
@@ -1624,78 +1905,104 @@ async function shareRecipe(recipeId) {
 
 
 function openPlanMealForm(recipe, container) {
-  // Prevent multiple openings
-  if (container.querySelector('input[type="date"]')) return;
-
-  container.innerHTML = ''; // clear the Plan Meal button
-
-  const dateInput = document.createElement('input');
-  dateInput.type = 'date';
-  dateInput.className = 'form-control form-control-sm';
-  dateInput.style.maxWidth = '150px'; // keep it compact inline
-
-  const saveBtn = document.createElement('button');
-  saveBtn.className = 'btn btn-outline-dark btn-sm';
-  saveBtn.textContent = '💾';
-
-  const cancelBtn = document.createElement('button');
-  cancelBtn.className = 'btn btn-outline-danger btn-sm';
-  cancelBtn.textContent = '❌';
-
-  // Inline flex for form
-  const form = document.createElement('div');
-  form.className = 'd-flex align-items-center gap-2';
-  form.appendChild(dateInput);
-  form.appendChild(saveBtn);
-  form.appendChild(cancelBtn);
-
-  container.appendChild(form);
-
-  saveBtn.onclick = () => {
-    const selectedDate = dateInput.value;
-    if (!selectedDate) {
-      dateInput.classList.add('is-invalid');
-      return;
+    // Prevent multiple openings
+    if (container.querySelector('input[type="date"]')) {
+        // If form is already open, perhaps just focus the date input or do nothing
+        const existingDateInput = container.querySelector('input[type="date"]');
+        if (existingDateInput) existingDateInput.focus();
+        return;
     }
 
-    db.collection("planning").add({
-      date: selectedDate,
-      recipeId: recipe.id,
-      recipeName: recipe.name,
-      uid: currentUser.uid // ✅ REQUIRED BY SECURITY RULES
-    }).then(() => {
-      console.log("✅ Meal planned:", recipe.name, "on", selectedDate);
-      container.innerHTML = '<span class="text-success fw-bold">✅ Planned!</span>';
-      setTimeout(() => {
-        container.innerHTML = '';
-        const planBtn = document.createElement('button');
-        planBtn.className = 'btn btn-outline-primary btn-sm';
-        planBtn.textContent = 'Plan Meal';
-        planBtn.onclick = () => openPlanMealForm(recipe, container);
-        container.appendChild(planBtn);
-      }, 2000);
-    }).catch(err => {
-      console.error("❌ Failed to plan meal:", err);
-      container.innerHTML = '<span class="text-danger fw-bold">❌ Failed</span>';
-      setTimeout(() => {
-        container.innerHTML = '';
-        const planBtn = document.createElement('button');
-        planBtn.className = 'btn btn-outline-primary btn-sm';
-        planBtn.textContent = 'Plan Meal';
-        planBtn.onclick = () => openPlanMealForm(recipe, container);
-        container.appendChild(planBtn);
-      }, 2000);
-    });
-  };
+    container.innerHTML = ''; // clear the "Plan Meal" button
 
-  cancelBtn.onclick = () => {
-    container.innerHTML = '';
-    const planBtn = document.createElement('button');
-    planBtn.className = 'btn btn-outline-primary btn-sm';
-    planBtn.textContent = 'Plan Meal';
-    planBtn.onclick = () => openPlanMealForm(recipe, container);
-    container.appendChild(planBtn);
-  };
+    const formWrapper = document.createElement('div');
+    formWrapper.className = 'plan-meal-inline-form d-flex align-items-center gap-2 p-2 border rounded bg-light-subtle mt-1';
+
+
+    const dateInput = document.createElement('input');
+    dateInput.type = 'date';
+    dateInput.className = 'form-control form-control-sm';
+    dateInput.style.maxWidth = '150px';
+    dateInput.value = new Date().toISOString().split('T')[0]; // Default to today
+
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'btn btn-success btn-sm'; // Consistent styling
+    saveBtn.innerHTML = '<i class="bi bi-check-lg"></i>';
+    saveBtn.title = "Save plan";
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-secondary btn-sm'; // Consistent styling
+    cancelBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
+    cancelBtn.title = "Cancel";
+
+    formWrapper.appendChild(dateInput);
+    formWrapper.appendChild(saveBtn);
+    formWrapper.appendChild(cancelBtn);
+    container.appendChild(formWrapper);
+    dateInput.focus();
+
+    const restorePlanButton = () => {
+        container.innerHTML = ''; // Clear the form
+        const planBtn = document.createElement('button');
+        planBtn.className = 'btn btn-outline-success btn-sm'; // Original button style
+        planBtn.textContent = 'Plan Meal';
+        planBtn.onclick = () => openPlanMealForm(recipe, container);
+        container.appendChild(planBtn);
+    };
+
+    saveBtn.onclick = async () => { // Made async for localDB operations
+        const selectedDate = dateInput.value;
+        if (!selectedDate) {
+            dateInput.classList.add('is-invalid'); // Bootstrap validation styling
+            setTimeout(() => dateInput.classList.remove('is-invalid'), 2000);
+            return;
+        }
+
+        const planEntry = {
+            date: selectedDate,
+            recipeName: recipe.name,
+            // recipeId (Firestore) or recipeLocalId (LocalDB) will be set below
+        };
+
+        if (currentUser) {
+            // --- LOGGED IN: Save to Firebase ---
+            planEntry.uid = currentUser.uid; // This line was causing the error when currentUser is null
+            planEntry.recipeId = recipe.id; // This is the Firestore Document ID
+
+            try {
+                await db.collection("planning").add(planEntry);
+                console.log("✅ Meal planned in Firestore:", recipe.name, "on", selectedDate);
+                container.innerHTML = '<span class="text-success fw-bold small p-2">✅ Planned!</span>';
+                // No need to call loadPlannedMeals() from here if showPlanning() is the main view
+                // However, if you want the main Planning page to auto-refresh if it's visible, you could.
+            } catch (err) {
+                console.error("❌ Failed to plan meal in Firestore:", err);
+                container.innerHTML = '<span class="text-danger fw-bold small p-2">❌ Failed</span>';
+            }
+        } else {
+            // --- NOT LOGGED IN: Save to LocalDB ---
+            if (!localDB) {
+                alert("Local storage not available. Please sign in to plan meals.");
+                restorePlanButton(); // Restore button as form submission is effectively cancelled
+                return;
+            }
+            planEntry.localId = generateLocalUUID();
+            planEntry.recipeLocalId = recipe.id; // This is the localId from the recipes store
+
+            try {
+                await localDB.planning.add(planEntry);
+                console.log("✅ Meal planned in LocalDB:", recipe.name, "on", selectedDate);
+                container.innerHTML = '<span class="text-success fw-bold small p-2">✅ Planned (Locally)!</span>';
+            } catch (err) {
+                console.error("❌ Failed to plan meal in LocalDB:", err.stack || err);
+                container.innerHTML = '<span class="text-danger fw-bold small p-2">❌ Failed (Local)</span>';
+            }
+        }
+        // After 2 seconds, restore the "Plan Meal" button
+        setTimeout(restorePlanButton, 2000);
+    };
+
+    cancelBtn.onclick = restorePlanButton;
 }
 
 
@@ -1725,241 +2032,336 @@ function updateRecipeRating(id, rating) {
     });
 }
 
-
-async function openInlineEditor(id, card) {
-  try {
-    const doc = await db.collection('recipes').doc(id).get();
-    if (!doc.exists) {
-      alert("Recipe not found.");
-      return;
+async function openInlineEditor(recipeId, cardElement) {
+    if (!cardElement) {
+        console.error("Card element not provided to openInlineEditor for recipeId:", recipeId);
+        return;
+    }
+    if (cardElement.querySelector('.inline-editor-content')) {
+        console.log("Editor already open for this card:", recipeId);
+        return;
     }
 
-    const data = doc.data();
-    const ingredients = data.ingredients || [];
-    let editingTags = [...(data.tags || [])];
+    let recipeData;
+    let isLocalRecipe = false;
 
-    card.innerHTML = '';
-    const body = document.createElement('div');
-    body.className = 'card-body';
+    // --- Step 1: Fetch Recipe Data (Cloud or Local) ---
+    if (currentUser) {
+        try {
+            console.log("Opening editor for Firestore recipe, ID:", recipeId);
+            const doc = await db.collection('recipes').doc(recipeId).get();
+            if (!doc.exists) {
+                alert("Recipe not found in your account.");
+                loadInitialRecipes();
+                return;
+            }
+            recipeData = { ...doc.data(), id: doc.id, firestoreId: doc.id };
+        } catch (err) {
+            console.error("Error fetching recipe from Firestore for editing:", err);
+            alert("Failed to load recipe data for editing.");
+            return;
+        }
+    } else {
+        if (!localDB) {
+            alert("Local storage is not available.");
+            return;
+        }
+        try {
+            console.log("Opening editor for local recipe, localId (passed as recipeId):", recipeId);
+            const localRecipe = await localDB.recipes.get(recipeId);
+            if (!localRecipe) {
+                alert("Recipe not found locally.");
+                loadInitialRecipes();
+                return;
+            }
+            recipeData = { ...localRecipe, id: localRecipe.localId };
+            isLocalRecipe = true;
+        } catch (err) {
+            console.error("Error fetching recipe from LocalDB for editing:", err.stack || err);
+            alert("Failed to load local recipe data for editing.");
+            return;
+        }
+    }
 
-    // 📛 Recipe Name
+    // --- Step 2: Build the Editor UI ---
+    cardElement.innerHTML = ''; // Clear the card's existing content
+    const editorContentDiv = document.createElement('div');
+    editorContentDiv.className = 'card-body inline-editor-content p-3'; // Keep consistent padding
+
+    // Form Group Styling: Helper function or consistent class
+    const createFormGroup = (elements) => {
+        const group = document.createElement('div');
+        group.className = 'mb-3'; // Standard bottom margin for form groups
+        elements.forEach(el => group.appendChild(el));
+        return group;
+    };
+
+    // Recipe Name
     const nameLabel = document.createElement('label');
-    nameLabel.className = 'form-label fw-semibold';
-    nameLabel.textContent = '📛 Recipe Name';
-    body.appendChild(nameLabel);
-
+    nameLabel.className = 'form-label fw-semibold small'; nameLabel.textContent = 'Recipe Name';
+    nameLabel.htmlFor = `editRecipeName-${recipeData.id}`;
     const nameInput = document.createElement('input');
-    nameInput.className = 'form-control mb-3';
-    nameInput.value = data.name || '';
-    body.appendChild(nameInput);
+    nameInput.type = 'text';
+    nameInput.className = 'form-control form-control-sm'; nameInput.value = recipeData.name || '';
+    nameInput.id = `editRecipeName-${recipeData.id}`;
+    editorContentDiv.appendChild(createFormGroup([nameLabel, nameInput]));
 
-    // 🧂 Ingredients
+    // Ingredients
     const ingLabel = document.createElement('label');
-    ingLabel.className = 'form-label fw-semibold';
-    ingLabel.textContent = '🧂 Ingredients';
-    body.appendChild(ingLabel);
+    ingLabel.className = 'form-label fw-semibold small d-block mb-1'; // d-block for full width
+    ingLabel.textContent = 'Ingredients';
+    editorContentDiv.appendChild(ingLabel);
 
-    const ingredientsGrid = document.createElement('div');
-    ingredientsGrid.className = 'mb-2';
-    ingredientsGrid.innerHTML = `
-      <table class="table table-sm table-bordered mb-2">
-        <thead>
-          <tr><th>Ingredient</th><th>Qty</th><th>Unit</th><th></th></tr>
-        </thead>
-        <tbody id="editIngredientsTable-${id}"></tbody>
-      </table>
+    const ingredientsTableContainer = document.createElement('div');
+    ingredientsTableContainer.className = 'table-responsive mb-2'; // mb-2 before add button
+    const ingredientsTableBodyId = `editIngredientsTable-${recipeData.id.replace(/[^a-zA-Z0-9]/g, "")}`;
+    ingredientsTableContainer.innerHTML = `
+        <table class="table table-sm table-bordered table-ingredients-editor">
+            <thead class="table-light">
+                <tr>
+                    <th>Ingredient</th>
+                    <th style="width: 25%;">Qty</th>
+                    <th style="width: 25%;">Unit</th>
+                    <th style="width: 10%;" class="text-center">Del</th>
+                </tr>
+            </thead>
+            <tbody id="${ingredientsTableBodyId}"></tbody>
+        </table>
     `;
-    body.appendChild(ingredientsGrid);
+    editorContentDiv.appendChild(ingredientsTableContainer);
+    const addIngBtn = document.createElement('button');
+    addIngBtn.type = 'button';
+    addIngBtn.className = 'btn btn-outline-secondary btn-sm mb-3 d-block w-100'; // Full width button
+    addIngBtn.innerHTML = '<i class="bi bi-plus-circle"></i> Add Ingredient';
+    addIngBtn.onclick = () => addIngredientRowToEditor(ingredientsTableBodyId);
+    editorContentDiv.appendChild(addIngBtn);
 
-    const addBtn = document.createElement('button');
-    addBtn.className = 'btn btn-outline-primary btn-sm mb-3';
-    addBtn.textContent = 'Add Ingredient';
-    addBtn.onclick = () => addIngredientRow(id);
-    body.appendChild(addBtn);
+    // Instructions
+    const instrLabel = document.createElement('label');
+    instrLabel.className = 'form-label fw-semibold small'; instrLabel.textContent = 'Instructions';
+    instrLabel.htmlFor = `editRecipeInstructions-${recipeData.id}`;
+    const instructionsInput = document.createElement('textarea');
+    instructionsInput.className = 'form-control form-control-sm';
+    instructionsInput.rows = 5;
+    instructionsInput.id = `editRecipeInstructions-${recipeData.id}`;
+    instructionsInput.value = recipeData.instructions || '';
+    editorContentDiv.appendChild(createFormGroup([instrLabel, instructionsInput]));
 
-const breakLine = document.createElement('div');
-breakLine.className = 'w-100';
-body.appendChild(breakLine);
-
-const instrLabel = document.createElement('label');
-instrLabel.className = 'form-label fw-semibold mt-3';
-instrLabel.textContent = '📝 Instructions';
-body.appendChild(instrLabel);
-
-const instructionsInput = document.createElement('textarea');
-instructionsInput.className = 'form-control mb-3';
-instructionsInput.rows = 4;
-instructionsInput.value = data.instructions || '';
-body.appendChild(instructionsInput);
-
-
-    // 🏷️ Tags
+    // Tags
+    let currentEditingTags = [...(recipeData.tags || [])];
     const tagsLabel = document.createElement('label');
-    tagsLabel.className = 'form-label fw-semibold';
-    tagsLabel.textContent = '🏷️ Tags';
-    body.appendChild(tagsLabel);
+    tagsLabel.className = 'form-label fw-semibold small'; tagsLabel.textContent = 'Tags';
+    tagsLabel.htmlFor = `inlineTagInput-${recipeData.id.replace(/[^a-zA-Z0-9]/g, "")}`;
+    editorContentDiv.appendChild(tagsLabel); // Append label first
+
+    const editorInstanceId = recipeData.id.replace(/[^a-zA-Z0-9]/g, "");
+    const tagsContainerId = `inlineTagsContainer-${editorInstanceId}`;
+    const tagsPlaceholderId = `inlineTagsPlaceholder-${editorInstanceId}`;
+    const tagInputId = `inlineTagInput-${editorInstanceId}`;
+    const addTagBtnId = `inlineAddTagBtn-${editorInstanceId}`;
 
     const tagsWrapper = document.createElement('div');
-    tagsWrapper.className = 'mb-3';
-    tagsWrapper.innerHTML = `
-      <div id="inlineTagsContainer-${id}" class="form-control d-flex flex-wrap align-items-center gap-2 p-2 position-relative" style="min-height: 45px; background-color: #f8f9fa; border: 1px dashed #ced4da;">
-        <span id="inlineTagsPlaceholder-${id}" class="text-muted position-absolute" style="left: 10px; top: 8px; pointer-events: none;">Add some tags...</span>
-      </div>
-      <div class="d-flex flex-nowrap mt-2 gap-2">
-        <input type="text" id="inlineTagInput-${id}" class="form-control" placeholder="Type a tag" />
-        <button type="button" id="inlineAddTagBtn-${id}" class="btn btn-outline-dark btn-sm w-25">Add Tag</button>
-      </div>
-    `;
-    body.appendChild(tagsWrapper);
+    tagsWrapper.className = 'mb-3'; // Group for tags input and display
+    // Tags Display Area
+    const tagsDisplayArea = document.createElement('div');
+    tagsDisplayArea.id = tagsContainerId;
+    tagsDisplayArea.className = 'form-control form-control-sm d-flex flex-wrap align-items-center gap-1 p-2 position-relative mb-2'; // mb-2 for space before input
+    tagsDisplayArea.style.minHeight = '31px'; // Match form-control-sm height
+    tagsDisplayArea.style.backgroundColor = '#f8f9fa';
+    tagsDisplayArea.style.borderStyle = 'dashed';
+    const tagsPlaceholderSpan = document.createElement('span'); // Changed from innerHTML
+    tagsPlaceholderSpan.id = tagsPlaceholderId;
+    tagsPlaceholderSpan.className = 'text-muted position-absolute small';
+    tagsPlaceholderSpan.style.left = '10px';
+    tagsPlaceholderSpan.style.top = '50%';
+    tagsPlaceholderSpan.style.transform = 'translateY(-50%)';
+    tagsPlaceholderSpan.style.pointerEvents = 'none';
+    tagsPlaceholderSpan.textContent = 'No tags yet...';
+    tagsDisplayArea.appendChild(tagsPlaceholderSpan);
+    tagsWrapper.appendChild(tagsDisplayArea);
 
-    const tagDivider = document.createElement('hr');
-    tagDivider.className = 'my-3'; // adds vertical spacing (mt-3 + mb-3)
-    tagDivider.style.borderTop = '2px solid #ccc'; // soft gray line
-    body.appendChild(tagDivider);
+    // Tags Input Group
+    const tagInputGroup = document.createElement('div');
+    tagInputGroup.className = 'input-group input-group-sm';
+    const tagInputField = document.createElement('input');
+    tagInputField.type = 'text';
+    tagInputField.id = tagInputId;
+    tagInputField.className = 'form-control form-control-sm';
+    tagInputField.placeholder = 'Type a tag & press Enter';
+    const addTagButtonElement = document.createElement('button');
+    addTagButtonElement.type = 'button';
+    addTagButtonElement.id = addTagBtnId;
+    addTagButtonElement.className = 'btn btn-outline-secondary'; // Consistent with other outline buttons
+    addTagButtonElement.innerHTML = '<i class="bi bi-plus"></i> Add';
+    tagInputGroup.appendChild(tagInputField);
+    tagInputGroup.appendChild(addTagButtonElement);
+    tagsWrapper.appendChild(tagInputGroup);
+    editorContentDiv.appendChild(tagsWrapper);
 
+    // Append the main editor content to the card BEFORE attaching event listeners to tag elements
+    cardElement.appendChild(editorContentDiv);
+
+    // Get tag elements by ID now that they are in the DOM
+    const liveTagsContainer = document.getElementById(tagsContainerId);
+    const liveTagsPlaceholder = document.getElementById(tagsPlaceholderId);
+    const liveTagInput = document.getElementById(tagInputId);
+    const liveAddTagButton = document.getElementById(addTagBtnId);
+
+    const renderCurrentEditingTags = () => {
+        if (!liveTagsContainer || !liveTagsPlaceholder) return;
+        liveTagsContainer.innerHTML = ''; // Clear only badges, keep placeholder if needed
+        if (currentEditingTags.length === 0) {
+            liveTagsContainer.appendChild(liveTagsPlaceholder); // Re-add placeholder
+            liveTagsPlaceholder.style.display = 'block';
+        } else {
+            liveTagsPlaceholder.style.display = 'none';
+            currentEditingTags.forEach(tag => {
+                const tagBadge = document.createElement('span');
+                tagBadge.className = 'badge bg-primary text-white me-1 mb-1 py-1 px-2 small';
+                tagBadge.textContent = tag;
+                tagBadge.style.cursor = 'pointer';
+                tagBadge.title = 'Click to remove tag';
+                tagBadge.onclick = (e) => {
+                    e.stopPropagation();
+                    currentEditingTags = currentEditingTags.filter(t => t !== tag);
+                    renderCurrentEditingTags();
+                };
+                liveTagsContainer.appendChild(tagBadge);
+            });
+        }
+    };
+
+    const addTagAction = () => {
+        if (!liveTagInput) return;
+        const value = liveTagInput.value.trim().toLowerCase();
+        if (value && !currentEditingTags.includes(value)) {
+            currentEditingTags.push(value);
+            renderCurrentEditingTags();
+        }
+        liveTagInput.value = '';
+        liveTagInput.focus();
+    };
+
+    if (liveAddTagButton) liveAddTagButton.onclick = addTagAction;
+    if (liveTagInput) {
+        liveTagInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); addTagAction(); }
+        });
+    }
+    renderCurrentEditingTags(); // Initial render
 
     // Save / Cancel buttons
     const btnRow = document.createElement('div');
-    btnRow.className = 'd-flex gap-2 mt-3';
-    btnRow.innerHTML = `
-      <button class="btn btn-outline-primary btn-sm">Save</button>
-      <button class="btn btn-outline-dark btn-sm">Cancel</button>
-    `;
-    body.appendChild(btnRow);
-
-    card.appendChild(body);
+    btnRow.className = 'd-flex justify-content-end gap-2 mt-4 pt-3 border-top'; // Added mt-4
+    const saveEditBtn = document.createElement('button');
+    saveEditBtn.type = 'button';
+    saveEditBtn.className = 'btn btn-success btn-sm';
+    saveEditBtn.innerHTML = '<i class="bi bi-check-lg"></i> Save Changes';
+    const cancelEditBtn = document.createElement('button');
+    cancelEditBtn.type = 'button';
+    cancelEditBtn.className = 'btn btn-secondary btn-sm';
+    cancelEditBtn.innerHTML = '<i class="bi bi-x-lg"></i> Cancel';
+    btnRow.appendChild(saveEditBtn);
+    btnRow.appendChild(cancelEditBtn);
+    editorContentDiv.appendChild(btnRow); // Already part of cardElement
 
     // Populate ingredient table
-    const tbody = document.getElementById(`editIngredientsTable-${id}`);
-    ingredients.forEach(i => {
-      const row = document.createElement('tr');
-      row.innerHTML = `
-        <td><input class="form-control form-control-sm" value="${i.name || ''}" placeholder="Ingredient"></td>
-        <td><input class="form-control form-control-sm" value="${i.quantity || ''}" placeholder="Qty"></td>
-        <td><input class="form-control form-control-sm" value="${i.unit || ''}" placeholder="Unit"></td>
-        <td class="text-center">
-          <button class="btn btn-sm btn-outline-danger" title="Delete ingredient">🗑️</button>
-        </td>
-      `;
-      row.querySelector('button').onclick = () => row.remove();
-      tbody.appendChild(row);
-    });
+    const ingredientsTbody = document.getElementById(ingredientsTableBodyId);
+    if (recipeData.ingredients && ingredientsTbody) {
+        recipeData.ingredients.forEach(ing => addIngredientRowToEditor(ingredientsTableBodyId, ing.name, ing.quantity, ing.unit));
+    }
+    if (ingredientsTbody) addIngredientRowToEditor(ingredientsTableBodyId); // Add a blank row
 
-    addIngredientRow(id); // always have a blank row
-
-    // Tags logic
-    const tagInput = document.getElementById(`inlineTagInput-${id}`);
-    const tagsContainer = document.getElementById(`inlineTagsContainer-${id}`);
-    const placeholder = document.getElementById(`inlineTagsPlaceholder-${id}`);
-
-    tagInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ',') {
-        e.preventDefault();
-        const value = tagInput.value.trim().toLowerCase();
-        if (value && !editingTags.includes(value)) {
-          editingTags.push(value);
-          renderInlineTags();
+    // --- Save Logic (remains largely the same, ensure using correct variables) ---
+    saveEditBtn.onclick = async () => {
+        // ... (Construct recipePayload using nameInput, instructionsInput, ingredientsTbody, currentEditingTags)
+        // ... (Your existing save logic for Firestore or LocalDB)
+        // Ensure you are using the live input elements: nameInput, instructionsInput, ingredientsTbody
+        const updatedName = nameInput.value.trim();
+        if (!updatedName) {
+            alert("Recipe name cannot be empty.");
+            nameInput.focus();
+            return;
         }
-        tagInput.value = '';
-      }
-    });
 
-    const tagAddButton = document.getElementById('tagAddButton');
-    tagAddButton.onclick = () => {
-      const value = tagInput.value.trim().toLowerCase();
-      if (value && !currentTags.includes(value)) {
-        currentTags.push(value);
-        renderTags();
-      }
-      tagInput.value = '';
-    };
-
-
-    function renderInlineTags() {
-      tagsContainer.innerHTML = '';
-
-      if (editingTags.length === 0) {
-        placeholder.style.display = 'block';
-      } else {
-        placeholder.style.display = 'none';
-      }
-
-      editingTags.forEach(tag => {
-        const tagBadge = document.createElement('span');
-        tagBadge.className = 'badge bg-primary text-white me-1';
-        tagBadge.textContent = tag;
-        tagBadge.onclick = () => {
-          editingTags = editingTags.filter(t => t !== tag);
-          renderInlineTags();
+        const updatedIngredients = [];
+        if (ingredientsTbody) {
+            ingredientsTbody.querySelectorAll('tr').forEach(row => {
+                const inputs = row.querySelectorAll('input');
+                if (inputs.length >= 3) { // Ensure all inputs are present
+                    const ingName = inputs[0].value.trim();
+                    const ingQty = inputs[1].value.trim();
+                    const ingUnit = inputs[2].value.trim();
+                    if (ingName) { 
+                        updatedIngredients.push({ name: ingName, quantity: ingQty, unit: ingUnit });
+                    }
+                }
+            });
+        }
+        
+        const recipePayload = {
+            name: updatedName,
+            ingredients: updatedIngredients,
+            instructions: instructionsInput.value.trim(),
+            tags: [...currentEditingTags],
+            rating: recipeData.rating || 0, 
         };
-        tagsContainer.appendChild(tagBadge);
-      });
-    }
 
-    renderInlineTags();
-
-    // Save button
-    btnRow.querySelector('.btn-outline-primary').onclick = async () => {
-      const updatedName = nameInput.value.trim();
-      const updatedInstructions = instructionsInput.value.trim();
-      const updatedIngredients = [];
-
-      const rows = document.querySelectorAll(`#editIngredientsTable-${id} tr`);
-      rows.forEach(row => {
-        const cells = row.querySelectorAll('input');
-        const name = cells[0].value.trim();
-        const quantity = cells[1].value.trim();
-        const unit = cells[2].value.trim();
-        if (name) {
-          updatedIngredients.push({ name, quantity, unit });
+        try {
+            if (currentUser && !isLocalRecipe) {
+                recipePayload.uid = recipeData.uid || currentUser.uid;
+                recipePayload.timestamp = firebase.firestore.FieldValue.serverTimestamp();
+                const docIdToUpdate = recipeData.firestoreId || recipeData.id;
+                console.log("Saving updated recipe to Firestore, ID:", docIdToUpdate);
+                await db.collection('recipes').doc(docIdToUpdate).set(recipePayload, { merge: true });
+                showSuccessMessage("Recipe updated in your account!");
+            } else { 
+                 if (!localDB) { alert("Local storage not available to save changes."); return; }
+                recipePayload.localId = recipeData.id; 
+                recipePayload.timestamp = new Date().toISOString();
+                console.log("Saving updated recipe to LocalDB, localId:", recipePayload.localId);
+                await localDB.recipes.put(recipePayload);
+                showSuccessMessage("Local recipe updated!");
+            }
+            loadInitialRecipes(); 
+        } catch (err) {
+            console.error("Error saving recipe changes:", err.stack || err);
+            alert("Failed to save changes: " + err.message);
         }
-      });
-
-      try {
-        await db.collection('recipes').doc(id).update({
-          name: updatedName,
-          ingredients: updatedIngredients,
-          instructions: updatedInstructions,
-          tags: editingTags,
-        });
-        console.log("✅ Recipe updated:", updatedName);
-        loadRecipesFromFirestore(); // refresh view
-      } catch (err) {
-        console.error("Error updating recipe:", err);
-        alert("Failed to save changes.");
-      }
     };
 
-    // Cancel button
-    btnRow.querySelector('.btn-outline-dark').onclick = () => {
-      loadRecipesFromFirestore(); // reload and exit
+    cancelEditBtn.onclick = () => {
+        loadInitialRecipes();
     };
-
-    // Add blank ingredient row
-    function addIngredientRow(editId) {
-      const tbody = document.getElementById(`editIngredientsTable-${editId}`);
-      const newRow = document.createElement('tr');
-      newRow.innerHTML = `
-        <td><input class="form-control form-control-sm" placeholder="Ingredient"></td>
-        <td><input class="form-control form-control-sm" placeholder="Qty"></td>
-        <td><input class="form-control form-control-sm" placeholder="Unit"></td>
-        <td class="text-center">
-          <button class="btn btn-sm btn-outline-danger" title="Delete ingredient">🗑️</button>
-        </td>
-      `;
-      newRow.querySelector('button').onclick = () => newRow.remove();
-      tbody.appendChild(newRow);
-    }
-
-  } catch (err) {
-    console.error("Error opening inline editor:", err);
-  }
 }
 
 
 
 
+function addIngredientRowToEditor(tbodyId, name = '', quantity = '', unit = '') {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) {
+        console.error("Ingredient table body not found for ID:", tbodyId);
+        return;
+    }
 
+    const newRow = document.createElement('tr');
+    newRow.innerHTML = `
+        <td><input class="form-control form-control-sm" value="${name}" placeholder="Ingredient"></td>
+        <td><input class="form-control form-control-sm" value="${quantity}" placeholder="Qty"></td>
+        <td><input class="form-control form-control-sm" value="${unit}" placeholder="Unit"></td>
+        <td class="text-center align-middle">
+            <button class="btn btn-sm btn-outline-danger py-0 px-1" title="Delete ingredient" onclick="this.closest('tr').remove()">
+                <i class="bi bi-trash"></i>
+            </button>
+        </td>
+    `;
+    tbody.appendChild(newRow);
+    if (name === '' && quantity === '' && unit === '') { // If it's a new blank row
+        const firstInput = newRow.querySelector('input');
+        if (firstInput) firstInput.focus();
+    }
+}
 
 function addIngredientEditRow(container, name = '', qty = '', unit = '') {
   const row = document.createElement('div');
@@ -2031,61 +2433,116 @@ async function saveInlineEdit(recipeId, nameInput, tagsInput, ingredientsDiv, in
 function deleteRecipe(id) {
   if (!confirm("Are you sure you want to delete this recipe?")) return;
 
-  db.collection("recipes").doc(id).delete().then(() => {
-    console.log("Recipe deleted:", id);
-    loadRecipesFromFirestore(); // Refresh list
-  }).catch(err => {
-    console.error("Error deleting recipe:", err);
-    alert("Failed to delete recipe.");
-  });
+  if (currentUser) {
+    db.collection("recipes").doc(id).delete()
+    .then(() => {
+        loadRecipesFromFirestore(); // Refresh
+    })
+    // ... catch ...
+} else {
+    if (!localDB) return;
+    localDB.recipes.delete(id) // id here is the localId
+    .then(() => {
+        console.log("Recipe deleted from LocalDB:", id);
+        loadRecipesFromLocal(); // Refresh
+    })
+    .catch(err => {
+        console.error("❌ Error deleting recipe from LocalDB:", err);
+        alert("Failed to delete local recipe.");
+        confirmBar.remove();
+        buttonElement.style.display = '';
+    });
+}
 }
 
 function confirmDeleteRecipe(id, buttonElement) {
-  const container = buttonElement.closest('.delete-area');
+    const container = buttonElement.closest('.delete-area');
 
-  if (!container || container.querySelector('.confirm-delete')) return;
+    if (!container || container.querySelector('.confirm-delete')) return;
 
-  // Hide the original delete button
-  buttonElement.style.display = 'none';
+    // Hide the original delete button
+    buttonElement.style.display = 'none';
 
-  // Inline confirm bar (mimicking Plan Meal style)
-  const confirmBar = document.createElement('div');
-  confirmBar.className = 'confirm-delete d-inline-flex align-items-center gap-2';
+    // Inline confirm bar
+    const confirmBar = document.createElement('div');
+    confirmBar.className = 'confirm-delete d-inline-flex align-items-center gap-2';
 
-  const text = document.createElement('span');
-  text.className = 'text-danger fw-semibold';
-  text.textContent = 'Confirm?';
+    const text = document.createElement('span');
+    text.className = 'text-danger fw-semibold';
+    text.textContent = 'Confirm?';
 
-  const confirmBtn = document.createElement('button');
-  confirmBtn.className = 'btn btn-sm btn-outline-success';
-  confirmBtn.innerHTML = '✅';
-  confirmBtn.onclick = () => {
-    db.collection("recipes").doc(id).delete()
-      .then(() => {
-        loadRecipesFromFirestore(); // Refresh
-      })
-      .catch(err => {
-        console.error("❌ Error deleting recipe:", err);
-        alert("Failed to delete recipe.");
-        // Restore on failure
-        confirmBar.remove();
-        buttonElement.style.display = '';
-      });
-  };
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'btn btn-sm btn-outline-success';
+    confirmBtn.innerHTML = '✅';
 
-  const cancelBtn = document.createElement('button');
-  cancelBtn.className = 'btn btn-sm btn-outline-danger';
-  cancelBtn.innerHTML = '❌';
-  cancelBtn.onclick = () => {
-    confirmBar.remove();
-    buttonElement.style.display = ''; // Restore original icon
-  };
+    confirmBtn.onclick = () => {
+        console.log("Delete confirmation clicked. ID:", id, "currentUser:", currentUser);
 
-  confirmBar.appendChild(text);
-  confirmBar.appendChild(confirmBtn);
-  confirmBar.appendChild(cancelBtn);
+        // Restore button and remove confirm bar regardless of outcome,
+        // or do it specifically in .then() and .catch()
+        const cleanupUI = () => {
+            if (confirmBar.parentNode) { // Check if confirmBar is still in DOM
+                confirmBar.remove();
+            }
+            buttonElement.style.display = ''; // Restore original icon
+        };
 
-  container.appendChild(confirmBar);
+        if (currentUser) {
+            // --- User is LOGGED IN: Delete from Firestore ---
+            console.log("Attempting to delete Firestore recipe ID:", id, "by user UID:", currentUser.uid);
+            db.collection("recipes").doc(id).delete()
+                .then(() => {
+                    console.log("Recipe successfully deleted from Firestore.");
+                    showSuccessMessage("Recipe deleted from your account.");
+                    loadInitialRecipes(); // This will call loadRecipesFromFirestore()
+                    cleanupUI();
+                })
+                .catch(err => {
+                    console.error("❌ Error deleting recipe from Firestore:", err);
+                    alert("Failed to delete recipe: " + err.message);
+                    cleanupUI(); // Restore UI on failure
+                });
+        } else {
+            // --- User is NOT LOGGED IN: Delete from LocalDB ---
+            console.log("Attempting to delete local recipe with localId:", id);
+            if (!localDB) {
+                console.error("LocalDB not initialized. Cannot delete local recipe.");
+                alert("Local storage not available.");
+                cleanupUI();
+                return;
+            }
+
+            // 'id' here is the localId because loadRecipesFromLocal maps localId to id
+            localDB.recipes.delete(id)
+                .then(() => {
+                    console.log("Recipe deleted from LocalDB:", id);
+                    showSuccessMessage("Recipe deleted locally.");
+                    loadInitialRecipes(); // This will call loadRecipesFromLocal()
+                    cleanupUI();
+                })
+                .catch(err => {
+                    console.error("❌ Error deleting recipe from LocalDB:", err.stack || err);
+                    alert("Failed to delete local recipe: " + err.message);
+                    cleanupUI(); // Restore UI on failure
+                });
+        }
+    };
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-sm btn-outline-danger';
+    cancelBtn.innerHTML = '❌';
+    cancelBtn.onclick = () => {
+        if (confirmBar.parentNode) {
+            confirmBar.remove();
+        }
+        buttonElement.style.display = ''; // Restore original icon
+    };
+
+    confirmBar.appendChild(text);
+    confirmBar.appendChild(confirmBtn);
+    confirmBar.appendChild(cancelBtn);
+
+    container.appendChild(confirmBar);
 }
 
 
@@ -2252,189 +2709,528 @@ function loadIngredientsFromFirestore() {
 }
 
 function showPlanning() {
-  const view = document.getElementById('mainView');
-  view.className = 'section-planning';
-  view.innerHTML = `
-    <h5 class="mb-3">📋 Planned Meals</h5>
+    const view = document.getElementById('mainView');
+    view.className = 'section-planning container py-3'; // Added container and padding
+    view.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0"><i class="bi bi-calendar-week"></i> Planned Meals</h5>
+            <button id="clearAllPlanningBtn" class="btn btn-outline-danger btn-sm" onclick="confirmClearAllPlanning(this)">
+                <i class="bi bi-trash3"></i> Clear All Planned
+            </button>
+        </div>
+        <div id="plannedMealsList" class="mb-4 list-group"></div> <hr class="my-4" />
 
-    <div class="d-flex justify-content-between align-items-center mb-2">
-      <h6 class="mb-0">Planned Meals</h6>
-      <button id="clearPlanningBtn" class="btn btn-outline-danger btn-sm" onclick="clearAllPlanning(this)">🧹 Clear Planned Meals</button>
-    </div>
+        <h5 class="mb-3"><i class="bi bi-calendar-plus"></i> Plan a New Meal</h5>
+        <div class="card card-body bg-light-subtle mb-4"> <div class="row g-3">
+                <div class="col-md-6">
+                    <label for="planDate" class="form-label fw-semibold">Select Date:</label>
+                    <input type="date" class="form-control" id="planDate" value="${new Date().toISOString().split('T')[0]}">
+                </div>
+                <div class="col-md-6">
+                    <label for="planRecipe" class="form-label fw-semibold">Select Recipe:</label>
+                    <select id="planRecipe" class="form-select">
+                        <option value="">-- Choose a recipe --</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mt-3 text-end">
+                <button class="btn btn-success" onclick="addPlannedMeal()">
+                    <i class="bi bi-plus-circle"></i> Add to Plan
+                </button>
+            </div>
+        </div>
 
-    <div id="plannedMealsList" class="mb-4"></div>
+        <hr class="my-4" />
+        
+        <div class="d-flex justify-content-between align-items-center mb-3">
+             <h5 class="mb-0"><i class="bi bi-cart3"></i> Shopping List</h5>
+             <div> <button class="btn btn-primary me-2" onclick="generateShoppingList()">
+                    <i class="bi bi-list-check"></i> Generate Ingredient Checklist
+                </button>
+                <button id="clearShoppingListBtn" class="btn btn-outline-danger btn-sm" onclick="confirmClearShoppingList()" disabled>
+                    <i class="bi bi-trash2"></i> Clear Shopping List
+                </button>
+            </div>
+        </div>
+        <div id="shoppingListResults" class="mb-4"></div>
+    `;
 
-    <hr />
-
-    <h5 class="mb-3">🛒 Shopping List</h5>
-
-    <div class="d-flex justify-content-between align-items-center mb-2">
-      <button class="btn btn-outline-success" onclick="generateShoppingList()">🛒 Generate Ingredient Checklist</button>
-      <button id="clearShoppingListBtn" class="btn btn-outline-danger btn-sm" onclick="clearShoppingList()" disabled>🗑️ Clear Shopping List</button>
-    </div>
-
-    <div id="shoppingListResults" class="mb-4"></div>
-
-    <hr />
-
-    <h5 class="mb-3">Plan a New Meal</h5>
-
-    <div class="mb-3">
-      <label class="form-label">📅 Select Date:</label>
-      <input type="date" class="form-control" id="planDate" />
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label">🍽️ Select Recipe:</label>
-      <select id="planRecipe" class="form-select">
-        <option value="">-- Choose --</option>
-      </select>
-    </div>
-
-    <button class="btn btn-outline-success btn-sm">
-      <span class="text-success"></span> Add to Plan
-    </button>
-
-  `;
-
-  populateRecipeDropdown();
-  loadPlannedMeals();
-  loadShoppingList();
-}
-
-function populateRecipeDropdown() {
-  const select = document.getElementById('planRecipe');
-  select.innerHTML = '<option value="">-- Choose --</option>';
-  recipes.forEach(recipe => {
-    const option = document.createElement('option');
-    option.value = recipe.id;
-    option.textContent = recipe.name;
-    select.appendChild(option);
-  });
-}
-
-function addPlannedMeal() {
-  const date = document.getElementById('planDate').value;
-  const recipeId = document.getElementById('planRecipe').value;
-
-  if (!date || !recipeId) {
-    alert("Please select a date and a recipe!");
-    return;
-  }
-
-  // ✅ Find the recipe object
-  const recipe = recipes.find(r => r.id === recipeId);
-
-  if (!recipe) {
-    alert("Recipe not found!");
-    return;
-  }
-
-  db.collection("planning").add({
-    date,
-    recipeId,
-    recipeName: recipe.name,
-    uid: currentUser.uid // 🔥 save the user id
-  }).then(() => {
-    console.log("✅ Meal added to planning:", recipe.name);
+    populateRecipeDropdownForPlanning(); // Renamed for clarity
     loadPlannedMeals();
-  }).catch(err => {
-    console.error("❌ Error adding to planning:", err);
-  });
+    loadShoppingList(); // This will be adapted in the next phase
 }
 
+function populateRecipeDropdownForPlanning() {
+    const select = document.getElementById('planRecipe');
+    if (!select) return;
+    select.innerHTML = '<option value="">-- Choose a recipe --</option>';
 
-function loadPlannedMeals() {
-  const list = document.getElementById('plannedMealsList');
-  list.innerHTML = 'Loading...';
-
-  db.collection("planning")
-  .where('uid', '==', currentUser.uid)
-  .orderBy('date')
-  .get().then(snapshot => {
-    if (snapshot.empty) {
-      list.innerHTML = '<p class="text-muted">No planned meals yet.</p>';
-      return;
+    // The global 'recipes' array is already populated by loadInitialRecipes()
+    // with either Firestore or LocalDB recipes.
+    if (recipes && recipes.length > 0) {
+        // Sort recipes by name for the dropdown
+        const sortedRecipes = [...recipes].sort((a, b) => a.name.localeCompare(b.name));
+        sortedRecipes.forEach(recipe => {
+            const option = document.createElement('option');
+            // When not logged in, recipe.id is recipe.localId
+            // When logged in, recipe.id is Firestore doc ID
+            option.value = recipe.id; 
+            option.textContent = recipe.name;
+            select.appendChild(option);
+        });
+    } else {
+        const option = document.createElement('option');
+        option.value = "";
+        option.textContent = "No recipes available to plan";
+        option.disabled = true;
+        select.appendChild(option);
     }
-
-    const ul = document.createElement('ul');
-    ul.className = 'list-group';
-
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      const li = document.createElement('li');
-      li.className = 'list-group-item d-flex justify-content-between align-items-center';
-
-      const info = document.createElement('div');
-      info.innerHTML = `<strong>${data.date}:</strong> ${data.recipeName}`;
-
-      const deleteBtn = document.createElement('button');
-      deleteBtn.className = 'btn btn-outline-danger btn-sm';
-      deleteBtn.innerHTML = '🗑️';
-      deleteBtn.onclick = () => deletePlannedMeal(doc.id, deleteBtn);
-
-      li.appendChild(info);
-      li.appendChild(deleteBtn);
-      ul.appendChild(li);
-    });
-
-    list.innerHTML = '';
-    list.appendChild(ul);
-  }).catch(err => {
-    console.error("Error loading planning:", err);
-  });
 }
 
-function generateShoppingList() {
-  const output = document.getElementById('shoppingListResults');
-  output.innerHTML = 'Generating...';
+async function addPlannedMeal() { // Made async
+    const date = document.getElementById('planDate').value;
+    const recipeId = document.getElementById('planRecipe').value; // This will be Firestore ID or localId
 
-  db.collection("planning")
-  .where('uid', '==', currentUser.uid)
-  .get()
-  .then(snapshot => {
-    if (snapshot.empty) {
-      output.innerHTML = '<p class="text-muted">No planned meals found.</p>';
-      return;
+    if (!date || !recipeId) {
+        alert("Please select a date and a recipe!");
+        return;
     }
 
-    const recipeIds = snapshot.docs.map(doc => doc.data().recipeId);
-    const ingredientMap = {};
+    // Find the recipe object from the global 'recipes' array
+    const selectedRecipe = recipes.find(r => r.id === recipeId);
 
-    recipeIds.forEach(id => {
-      const recipe = recipes.find(r => r.id === id);
-      if (!recipe || !recipe.ingredients) return;
+    if (!selectedRecipe) {
+        alert("Selected recipe not found. Please refresh.");
+        return;
+    }
 
-      recipe.ingredients.forEach(ing => {
-        const key = `${ing.name}|${ing.unit}`.toLowerCase();
-        const qty = parseFloat(ing.quantity) || 0;
+    const planEntry = {
+        date,
+        recipeName: selectedRecipe.name,
+        // 'recipeId' will store Firestore ID if logged in, 'recipeLocalId' will store localId if not
+    };
 
-        if (!ingredientMap[key]) {
-          ingredientMap[key] = { ...ing, quantity: qty };
-        } else {
-          ingredientMap[key].quantity += qty;
+    if (currentUser) {
+        // --- LOGGED IN: Save to Firebase ---
+        planEntry.uid = currentUser.uid;
+        planEntry.recipeId = selectedRecipe.id; // This is the Firestore Document ID
+
+        try {
+            await db.collection("planning").add(planEntry);
+            console.log("✅ Meal added to Firestore planning:", selectedRecipe.name);
+            showSuccessMessage("Meal planned successfully!");
+            loadPlannedMeals(); // Refresh list
+        } catch (err) {
+            console.error("❌ Error adding to Firestore planning:", err);
+            alert("Error planning meal: " + err.message);
         }
-      });
-    });
+    } else {
+        // --- NOT LOGGED IN: Save to LocalDB ---
+        if (!localDB) {
+            alert("Local storage not available. Please sign in to plan meals.");
+            return;
+        }
+        planEntry.localId = generateLocalUUID();
+        planEntry.recipeLocalId = selectedRecipe.id; // This is the localId from the recipes store
 
-    // Prepare ingredients list
-    const ingredients = Object.values(ingredientMap).map(ing => ({
-      name: ing.name,
-      unit: ing.unit,
-      quantity: ing.quantity,
-      checked: false // start unchecked
-    }));
+        try {
+            await localDB.planning.add(planEntry);
+            console.log("✅ Meal added to LocalDB planning:", selectedRecipe.name);
+            showSuccessMessage("Meal planned locally!");
+            loadPlannedMeals(); // Refresh list
+        } catch (err) {
+            console.error("❌ Error adding to LocalDB planning:", err.stack || err);
+            alert("Error planning meal locally: " + err.message);
+        }
+    }
+}
 
-    renderShoppingList(ingredients);
 
-    // Save it to Firestore!
-    db.collection("shopping").doc(currentUser.uid).set({
-      ingredients,
-      uid: currentUser.uid
-      })
-      .then(() => console.log("✅ Shopping list saved to cloud"))
-      .catch(err => console.error("❌ Failed to save shopping list:", err));
-  });
+async function loadPlannedMeals() { // Made async
+    const listContainer = document.getElementById('plannedMealsList');
+    if (!listContainer) return;
+    listContainer.innerHTML = '<div class="list-group-item text-muted">Loading planned meals...</div>';
+
+    if (currentUser) {
+        // --- LOGGED IN: Load from Firebase ---
+        try {
+            const snapshot = await db.collection("planning")
+                .where('uid', '==', currentUser.uid)
+                .orderBy('date') // Then perhaps by recipeName or an added timestamp
+                .get();
+
+            if (snapshot.empty) {
+                listContainer.innerHTML = '<div class="list-group-item text-muted text-center">No meals planned yet.</div>';
+                return;
+            }
+            const plannedMeals = snapshot.docs.map(doc => ({ firestoreId: doc.id, ...doc.data() }));
+            renderPlannedMealsList(plannedMeals.map(p => ({ ...p, id: p.firestoreId })));
+        } catch (err) {
+            console.error("Error loading planning from Firestore:", err);
+            listContainer.innerHTML = '<div class="list-group-item text-danger text-center">Error loading planned meals.</div>';
+        }
+    } else {
+        // --- NOT LOGGED IN: Load from LocalDB ---
+        if (!localDB) {
+            listContainer.innerHTML = '<div class="list-group-item text-warning text-center">Local storage not available.</div>';
+            return;
+        }
+        try {
+            const plannedMeals = await localDB.planning.orderBy('date').toArray();
+            if (!plannedMeals || plannedMeals.length === 0) {
+                listContainer.innerHTML = '<div class="list-group-item text-muted text-center">No meals planned locally yet.</div>';
+                return;
+            }
+            renderPlannedMealsList(plannedMeals.map(p => ({ ...p, id: p.localId })));
+        } catch (err) {
+            console.error("Error loading planning from LocalDB:", err.stack || err);
+            listContainer.innerHTML = '<div class="list-group-item text-danger text-center">Error loading local planned meals.</div>';
+        }
+    }
+}
+
+function renderPlannedMealsList(plannedEntries) {
+    const listContainer = document.getElementById('plannedMealsList');
+    listContainer.innerHTML = ''; // Clear previous items or loading message
+
+    if (!plannedEntries || plannedEntries.length === 0) {
+         listContainer.innerHTML = `<div class="list-group-item text-muted text-center">No meals planned yet. Use the form below to add some!</div>`;
+        return;
+    }
+    
+    // Group by date
+    const mealsByDate = plannedEntries.reduce((acc, entry) => {
+        const date = entry.date;
+        if (!acc[date]) {
+            acc[date] = [];
+        }
+        acc[date].push(entry);
+        return acc;
+    }, {});
+
+    const sortedDates = Object.keys(mealsByDate).sort();
+
+    for (const date of sortedDates) {
+        const dateHeader = document.createElement('h6');
+        dateHeader.className = 'mt-3 mb-2 text-primary fw-bold ps-1'; // Styling for date header
+        dateHeader.textContent = new Date(date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        listContainer.appendChild(dateHeader);
+
+        mealsByDate[date].forEach(entry => {
+            const li = document.createElement('div'); // Changed to div for better styling flexibility with list-group-item
+            li.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center mb-1 rounded'; // Added mb-1 and rounded
+
+            const info = document.createElement('span');
+            info.textContent = entry.recipeName;
+            // You could add a link to view the recipe here if recipeLocalId/recipeId is available
+            // e.g., if (entry.recipeLocalId || entry.recipeId) { ... }
+
+            const deleteBtnContainer = document.createElement('div'); // Container for delete button
+            deleteBtnContainer.className = 'delete-planned-meal-area';
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn btn-outline-danger btn-sm py-0 px-1'; // Smaller padding
+            deleteBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
+            deleteBtn.title = `Remove ${entry.recipeName} from ${date}`;
+            deleteBtn.onclick = () => confirmDeletePlannedMeal(entry.id, deleteBtnContainer, li); // entry.id is firestoreId or localId
+
+            deleteBtnContainer.appendChild(deleteBtn);
+            li.appendChild(info);
+            li.appendChild(deleteBtnContainer);
+            listContainer.appendChild(li);
+        });
+    }
+}
+
+function confirmDeletePlannedMeal(planId, deleteAreaContainer, listItemElement) {
+    if (!deleteAreaContainer || deleteAreaContainer.querySelector('.confirm-delete-plan-controls')) return;
+
+    const originalButton = deleteAreaContainer.querySelector('button');
+    if (originalButton) originalButton.style.display = 'none';
+
+    const confirmControls = document.createElement('div');
+    confirmControls.className = 'confirm-delete-plan-controls d-flex align-items-center gap-1'; // Smaller gap
+
+    const confirmText = document.createElement('span');
+    confirmText.className = 'text-danger small me-1';
+    confirmText.textContent = 'Del?'; // Shorter confirm text
+
+    const yesBtn = document.createElement('button');
+    yesBtn.className = 'btn btn-danger btn-sm py-0 px-1';
+    yesBtn.innerHTML = '<i class="bi bi-check-lg"></i>';
+
+    const noBtn = document.createElement('button');
+    noBtn.className = 'btn btn-secondary btn-sm py-0 px-1';
+    noBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
+
+    const cleanupConfirmationUI = () => {
+        confirmControls.remove();
+        if (originalButton) originalButton.style.display = '';
+    };
+
+    yesBtn.onclick = async () => { // Made async
+        if (currentUser) {
+            // --- LOGGED IN: Delete from Firebase ---
+            try {
+                await db.collection("planning").doc(planId).delete();
+                console.log("✅ Meal removed from Firestore plan:", planId);
+                listItemElement.remove(); // Optimistic UI update
+                showSuccessMessage("Planned meal removed.");
+            } catch (err) {
+                console.error("❌ Error removing planned meal from Firestore:", err);
+                alert("Error removing planned meal: " + err.message);
+                cleanupConfirmationUI();
+            }
+        } else {
+            // --- NOT LOGGED IN: Delete from LocalDB ---
+            if (!localDB) {
+                alert("Local storage not available.");
+                cleanupConfirmationUI();
+                return;
+            }
+            try {
+                await localDB.planning.delete(planId); // planId is localId here
+                console.log("✅ Meal removed from LocalDB plan:", planId);
+                listItemElement.remove(); // Optimistic UI update
+                showSuccessMessage("Locally planned meal removed.");
+            } catch (err) {
+                console.error("❌ Error removing planned meal from LocalDB:", err.stack || err);
+                alert("Error removing local planned meal: " + err.message);
+                cleanupConfirmationUI();
+            }
+        }
+    };
+
+    noBtn.onclick = cleanupConfirmationUI;
+
+    confirmControls.appendChild(confirmText);
+    confirmControls.appendChild(yesBtn);
+    confirmControls.appendChild(noBtn);
+    deleteAreaContainer.appendChild(confirmControls);
+}
+
+async function generateShoppingList() { // Made async
+    const outputContainer = document.getElementById('shoppingListResults');
+    if (!outputContainer) return;
+    outputContainer.innerHTML = '<div class="list-group-item text-muted">Generating shopping list... <span class="spinner-border spinner-border-sm"></span></div>';
+    document.getElementById('clearShoppingListBtn').disabled = true;
+
+
+    const ingredientMap = {}; // To aggregate ingredients
+
+    if (currentUser) {
+        // --- LOGGED IN: Generate from Firestore planned meals ---
+        try {
+            const planningSnapshot = await db.collection("planning")
+                .where('uid', '==', currentUser.uid)
+                .get();
+
+            if (planningSnapshot.empty) {
+                outputContainer.innerHTML = '<div class="list-group-item text-muted text-center">No meals planned in your account to generate a list from.</div>';
+                return;
+            }
+
+            const recipeIds = planningSnapshot.docs.map(doc => doc.data().recipeId);
+
+            // Ensure `recipes` array (loaded from Firestore) is available
+            if (!recipes || recipes.length === 0) {
+                console.warn("Firestore recipes not loaded, attempting to reload for shopping list.");
+                await loadRecipesFromFirestore(); // Make sure loadRecipesFromFirestore is async and populates `recipes`
+                if (!recipes || recipes.length === 0) {
+                     outputContainer.innerHTML = '<p class="text-danger text-center">Could not load recipe details for shopping list.</p>';
+                     return;
+                }
+            }
+            
+            recipeIds.forEach(id => {
+                const recipe = recipes.find(r => r.id === id); // r.id is Firestore doc ID
+                if (recipe && recipe.ingredients) {
+                    recipe.ingredients.forEach(ing => {
+                        const key = `${ing.name}|${ing.unit}`.toLowerCase();
+                        const qty = parseFloat(ing.quantity) || 0;
+                        if (!ingredientMap[key]) {
+                            ingredientMap[key] = { ...ing, quantity: qty, checked: false };
+                        } else {
+                            ingredientMap[key].quantity += qty;
+                        }
+                    });
+                }
+            });
+
+            const aggregatedIngredients = Object.values(ingredientMap);
+            renderShoppingList(aggregatedIngredients); // Your existing function
+
+            // Save to Firestore shopping collection
+            await db.collection("shopping").doc(currentUser.uid).set({
+                ingredients: aggregatedIngredients,
+                uid: currentUser.uid,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            console.log("✅ Shopping list saved to Firestore for user", currentUser.uid);
+            if (aggregatedIngredients.length > 0) {
+                document.getElementById('clearShoppingListBtn').disabled = false;
+            }
+
+        } catch (err) {
+            console.error("❌ Error generating shopping list from Firestore:", err);
+            outputContainer.innerHTML = '<p class="text-danger text-center">Error generating shopping list.</p>';
+        }
+
+    } else {
+        // --- NOT LOGGED IN: Generate from LocalDB planned meals ---
+        if (!localDB) {
+            outputContainer.innerHTML = '<p class="text-warning text-center">Local storage not available.</p>';
+            return;
+        }
+        try {
+            const localPlannedMeals = await localDB.planning.toArray(); // Get all local planned meals
+
+            if (!localPlannedMeals || localPlannedMeals.length === 0) {
+                outputContainer.innerHTML = '<div class="list-group-item text-muted text-center">No meals planned locally to generate a list from.</div>';
+                return;
+            }
+
+            // Ensure `recipes` array (loaded from LocalDB) is available
+            if (!recipes || recipes.length === 0) {
+                 console.warn("Local recipes not loaded, attempting to reload for shopping list.");
+                 await loadRecipesFromLocal(); // Make sure this is async and populates `recipes`
+                 if (!recipes || recipes.length === 0) {
+                     outputContainer.innerHTML = '<p class="text-danger text-center">Could not load local recipe details for shopping list.</p>';
+                     return;
+                 }
+            }
+
+            localPlannedMeals.forEach(plan => {
+                // plan.recipeLocalId is the key to find the recipe in the local `recipes` store
+                // (remember recipes loaded locally have their `localId` mapped to `id`)
+                const recipe = recipes.find(r => r.id === plan.recipeLocalId);
+                if (recipe && recipe.ingredients) {
+                    recipe.ingredients.forEach(ing => {
+                        const key = `${ing.name}|${ing.unit}`.toLowerCase();
+                        // Ensure quantity is parsed correctly, default to 0 if not a number
+                        let qtyToAdd = 0;
+                        if (typeof ing.quantity === 'string' && ing.quantity.includes('/')) {
+                            // Basic fraction handling e.g., "1/2" -> 0.5, "1 1/2" -> 1.5
+                            // This can be made more robust if needed
+                            try {
+                                qtyToAdd = ing.quantity.split(' ').reduce((acc, part) => {
+                                    const fractionParts = part.split('/');
+                                    return acc + (fractionParts.length === 2 ? parseFloat(fractionParts[0]) / parseFloat(fractionParts[1]) : parseFloat(part) || 0);
+                                }, 0);
+                            } catch { qtyToAdd = 0; }
+                        } else {
+                            qtyToAdd = parseFloat(ing.quantity) || 0;
+                        }
+                        
+                        if (!ingredientMap[key]) {
+                            ingredientMap[key] = { ...ing, quantity: qtyToAdd, checked: false };
+                        } else {
+                            ingredientMap[key].quantity += qtyToAdd;
+                        }
+                    });
+                }
+            });
+
+            const aggregatedIngredients = Object.values(ingredientMap);
+            renderShoppingList(aggregatedIngredients); // Your existing function
+
+            // Save to LocalDB shoppingList store
+            // We'll overwrite the existing local list (assuming only one for anonymous user)
+            // Using a known ID/name for the single local list, or just clearing and adding.
+            // For simplicity, let's clear and add.
+            await localDB.shoppingList.clear(); // Clear any old list
+            if (aggregatedIngredients.length > 0) {
+                await localDB.shoppingList.add({
+                    id: "localUserShoppingList", // Use a fixed ID
+                    name: "My Local Shopping List", 
+                    ingredients: aggregatedIngredients,
+                    updatedAt: new Date().toISOString()
+                });
+                document.getElementById('clearShoppingListBtn').disabled = false;
+            }
+            console.log("✅ Shopping list saved to LocalDB.");
+
+        } catch (err) {
+            console.error("❌ Error generating shopping list from LocalDB:", err.stack || err);
+            outputContainer.innerHTML = '<p class="text-danger text-center">Error generating local shopping list.</p>';
+        }
+    }
+}
+
+function confirmClearAllPlanning(button) { // Renamed to reflect it shows a confirmation
+    const existingConfirm = button.parentElement.querySelector('.confirm-clear-all-planning');
+    if (existingConfirm) {
+        existingConfirm.remove(); // Remove if already there
+        button.style.display = 'inline-block'; // Show original button
+        return;
+    }
+    
+    button.style.display = 'none'; // Hide original button
+
+    const confirmArea = document.createElement('span'); // Use span for inline display next to where button was
+    confirmArea.className = 'confirm-clear-all-planning ms-2'; // Added margin
+
+    const confirmText = document.createElement('span');
+    confirmText.className = 'text-danger fw-semibold me-2 small';
+    confirmText.textContent = 'Delete ALL planned meals?';
+
+    const yesBtn = document.createElement('button');
+    yesBtn.className = 'btn btn-sm btn-danger me-1';
+    yesBtn.innerHTML = '<i class="bi bi-check-lg"></i> Yes, Clear All';
+
+    const noBtn = document.createElement('button');
+    noBtn.className = 'btn btn-sm btn-secondary';
+    noBtn.innerHTML = '<i class="bi bi-x-lg"></i> No';
+
+    const cleanupAndRestore = () => {
+        confirmArea.remove();
+        button.style.display = 'inline-block'; // Show original button
+    };
+
+    yesBtn.onclick = async () => { // Made async
+        if (currentUser) {
+            // --- LOGGED IN: Clear Firebase planning for this user ---
+            try {
+                const snapshot = await db.collection("planning").where('uid', '==', currentUser.uid).get();
+                const batch = db.batch();
+                snapshot.forEach(doc => batch.delete(doc.ref));
+                await batch.commit();
+                console.log("✅ All Firestore planning cleared for user.");
+                showSuccessMessage("All planned meals cleared from your account.");
+                loadPlannedMeals(); // Refresh the list
+            } catch (err) {
+                console.error("❌ Error clearing Firestore planning:", err);
+                alert("Error clearing planned meals: " + err.message);
+            } finally {
+                cleanupAndRestore();
+            }
+        } else {
+            // --- NOT LOGGED IN: Clear LocalDB planning ---
+            if (!localDB) {
+                alert("Local storage not available.");
+                cleanupAndRestore();
+                return;
+            }
+            try {
+                await localDB.planning.clear(); // Clears the entire 'planning' object store
+                console.log("✅ All LocalDB planning cleared.");
+                showSuccessMessage("All locally planned meals cleared.");
+                loadPlannedMeals(); // Refresh the list
+            } catch (err) {
+                console.error("❌ Error clearing LocalDB planning:", err.stack || err);
+                alert("Error clearing local planned meals: " + err.message);
+            } finally {
+                cleanupAndRestore();
+            }
+        }
+    };
+
+    noBtn.onclick = cleanupAndRestore;
+
+    confirmArea.appendChild(confirmText);
+    confirmArea.appendChild(yesBtn);
+    confirmArea.appendChild(noBtn);
+    button.parentElement.appendChild(confirmArea);
 }
 
 function deletePlannedMeal(planId, button) {
@@ -2481,194 +3277,285 @@ function deletePlannedMeal(planId, button) {
 }
 
 function renderShoppingList(ingredients) {
-  const output = document.getElementById('shoppingListResults');
-  output.innerHTML = '';
+    const outputContainer = document.getElementById('shoppingListResults');
+    const clearBtn = document.getElementById('clearShoppingListBtn'); // To enable/disable it
 
-  const list = document.createElement('ul');
-  list.className = 'list-group';
+    if (!outputContainer) {
+        console.error("Shopping list output container not found!");
+        return;
+    }
+    outputContainer.innerHTML = ''; // Clear previous list or messages
 
-  ingredients.forEach((ing, idx) => {
-    const item = document.createElement('li');
-    item.className = 'list-group-item d-flex justify-content-between align-items-center';
-    item.dataset.index = idx;
-
-    const leftSide = document.createElement('div');
-    leftSide.className = 'd-flex align-items-center gap-2';
-
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.className = 'form-check-input';
-    checkbox.checked = ing.checked;
-
-    const label = document.createElement('span');
-    label.textContent = `${ing.quantity} ${ing.unit} ${ing.name}`;
-
-    if (checkbox.checked) {
-      label.style.textDecoration = 'line-through';
-      label.style.opacity = '0.6';
+    if (!ingredients || ingredients.length === 0) {
+        outputContainer.innerHTML = '<div class="list-group-item text-muted text-center">Your shopping list is empty. Generate one from planned meals!</div>';
+        if (clearBtn) clearBtn.disabled = true;
+        return;
     }
 
-    leftSide.appendChild(checkbox);
-    leftSide.appendChild(label);
+    const listGroup = document.createElement('ul');
+    listGroup.className = 'list-group shopping-list-group'; // Added custom class for potential styling
 
-    // 🗑️ Delete button
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'btn btn-outline-danger btn-sm';
-    deleteBtn.innerHTML = '🗑️';
-    deleteBtn.onclick = () => {
-      ingredients.splice(idx, 1); // Remove from local array
-      db.collection("shopping").doc(currentUser.uid).set({
-        ingredients,
-        uid: currentUser.uid // ✅ Required by your Firestore rules
-      })
-        .then(() => {
-          renderShoppingList(ingredients); // Re-render
-        })
-        .catch(err => {
-          console.error("❌ Failed to update shopping list:", err);
-        });
+    // Helper function to update the persisted shopping list
+    const updatePersistedShoppingList = async (updatedIngredients) => {
+        if (currentUser) {
+            // --- LOGGED IN: Update Firestore ---
+            try {
+                await db.collection("shopping").doc(currentUser.uid).set({
+                    ingredients: updatedIngredients,
+                    uid: currentUser.uid,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                console.log("Firestore shopping list updated.");
+            } catch (err) {
+                console.error("Error updating Firestore shopping list:", err);
+                alert("Could not save changes to your shopping list. Please try again.");
+                // Optionally, you might want to revert the UI change if saving fails.
+            }
+        } else {
+            // --- NOT LOGGED IN: Update LocalDB ---
+            if (!localDB) {
+                console.error("LocalDB not initialized. Cannot update local shopping list.");
+                alert("Local storage not available to save shopping list changes.");
+                return;
+            }
+            try {
+                // Assuming a single shopping list document with a fixed ID for anonymous users
+                await localDB.shoppingList.put({
+                    id: "localUserShoppingList",
+                    name: "My Local Shopping List",
+                    ingredients: updatedIngredients,
+                    updatedAt: new Date().toISOString()
+                });
+                console.log("LocalDB shopping list updated.");
+            } catch (err) {
+                console.error("Error updating LocalDB shopping list:", err.stack || err);
+                alert("Could not save changes to your local shopping list. Please try again.");
+            }
+        }
+        // Update the state of the "Clear Shopping List" button
+        if (clearBtn) {
+            clearBtn.disabled = updatedIngredients.length === 0;
+        }
     };
 
-    item.appendChild(leftSide);
-    item.appendChild(deleteBtn);
-    list.appendChild(item);
+    ingredients.forEach((ing, index) => {
+        const item = document.createElement('li');
+        item.className = 'list-group-item d-flex justify-content-between align-items-center shopping-list-item';
+        // Use a unique key for data-attribute if needed, though index works for direct manipulation here
+        item.dataset.index = index;
 
-    // 📦 Click anywhere in left side toggles checkbox
-    item.addEventListener('click', (e) => {
-      if (e.target === deleteBtn || e.target === checkbox) return; // Ignore clicking delete/checkbox
+        const leftSide = document.createElement('div');
+        leftSide.className = 'd-flex align-items-center form-check'; // Using form-check for better alignment
 
-      checkbox.checked = !checkbox.checked;
-      if (checkbox.checked) {
-        label.style.textDecoration = 'line-through';
-        label.style.opacity = '0.6';
-      } else {
-        label.style.textDecoration = 'none';
-        label.style.opacity = '1';
-      }
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'form-check-input me-2'; // Bootstrap class for checkboxes
+        checkbox.checked = ing.checked || false; // Default to false if undefined
+        checkbox.id = `shopping-item-${index}`; // Unique ID for label association
 
-      ingredients[idx].checked = checkbox.checked;
-      db.collection("shopping").doc(currentUser.uid).set({
-        ingredients,
-        uid: currentUser.uid
-      });
+        const label = document.createElement('label');
+        label.className = 'form-check-label shopping-item-label';
+        label.htmlFor = `shopping-item-${index}`; // Associate label with checkbox
+        // Format quantity nicely (e.g., handle whole numbers without decimals if they are .0)
+        let displayQuantity = ing.quantity;
+        if (typeof ing.quantity === 'number' && ing.quantity % 1 === 0) {
+            displayQuantity = ing.quantity; // Keep as whole number
+        } else if (typeof ing.quantity === 'number') {
+            displayQuantity = ing.quantity.toFixed(2).replace(/\.00$/, ''); // Show up to 2 decimals, remove trailing .00
+        }
+        label.textContent = `${displayQuantity} ${ing.unit || ''} ${ing.name}`;
+
+        if (checkbox.checked) {
+            label.style.textDecoration = 'line-through';
+            label.style.opacity = '0.6';
+        }
+
+        leftSide.appendChild(checkbox);
+        leftSide.appendChild(label);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-outline-danger btn-sm py-0 px-1 shopping-item-delete-btn';
+        deleteBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
+        deleteBtn.title = `Remove ${ing.name}`;
+
+        // Event listener for checkbox change
+        checkbox.addEventListener('change', () => {
+            ingredients[index].checked = checkbox.checked;
+            if (checkbox.checked) {
+                label.style.textDecoration = 'line-through';
+                label.style.opacity = '0.6';
+            } else {
+                label.style.textDecoration = 'none';
+                label.style.opacity = '1';
+            }
+            updatePersistedShoppingList([...ingredients]); // Pass a copy of the array
+        });
+
+        // Event listener for clicking the label or item area (excluding the delete button)
+        // to toggle the checkbox
+        item.addEventListener('click', (e) => {
+            // Prevent toggling if the click was on the delete button itself or the checkbox input
+            if (e.target === deleteBtn || e.target.closest('.shopping-item-delete-btn') === deleteBtn || e.target === checkbox) {
+                return;
+            }
+            checkbox.checked = !checkbox.checked;
+            // Manually trigger the 'change' event on the checkbox so its listener fires
+            checkbox.dispatchEvent(new Event('change'));
+        });
+
+        // Event listener for delete button
+        deleteBtn.onclick = (e) => {
+            e.stopPropagation(); // Prevent item click listener from firing
+            ingredients.splice(index, 1); // Remove item from the array
+            renderShoppingList(ingredients); // Re-render the entire list (simple way to update UI)
+            updatePersistedShoppingList([...ingredients]); // Persist the change (pass a copy)
+            if (ingredients.length === 0) {
+                 showSuccessMessage("Shopping list emptied!");
+            }
+        };
+
+        item.appendChild(leftSide);
+        item.appendChild(deleteBtn);
+        listGroup.appendChild(item);
     });
 
-    checkbox.addEventListener('change', () => {
-      if (checkbox.checked) {
-        label.style.textDecoration = 'line-through';
-        label.style.opacity = '0.6';
-      } else {
-        label.style.textDecoration = 'none';
-        label.style.opacity = '1';
-      }
+    outputContainer.appendChild(listGroup);
 
-      ingredients[idx].checked = checkbox.checked;
-      db.collection("shopping").doc(currentUser.uid).set({
-        ingredients,
-        uid: currentUser.uid
-      });
-    });
-  });
-
-  output.appendChild(list);
-
-  const clearBtn = document.getElementById('clearShoppingListBtn');
-  if (clearBtn) clearBtn.disabled = ingredients.length === 0;
-}
-
-
-
-function loadShoppingList() {
-  const uid = currentUser.uid;
-  const docRef = db.collection("shopping").doc(uid);
-
-  docRef.get().then(doc => {
-    const clearBtn = document.getElementById('clearShoppingListBtn');
-
-    if (doc.exists) {
-      const data = doc.data();
-      if (data.ingredients && data.ingredients.length > 0) {
-        renderShoppingList(data.ingredients);
-        if (clearBtn) clearBtn.disabled = false;
-      } else {
-        document.getElementById('shoppingListResults').innerHTML = '<p class="text-muted">No shopping list generated.</p>';
-        if (clearBtn) clearBtn.disabled = true;
-      }
-    } else {
-      // 🆕 Create an empty shopping list document scoped to user
-      docRef.set({
-        ingredients: [],
-        uid: uid
-      }).then(() => {
-        console.log("✅ Initialized empty shopping list for", uid);
-        document.getElementById('shoppingListResults').innerHTML = '<p class="text-muted">No shopping list generated.</p>';
-        if (clearBtn) clearBtn.disabled = true;
-      }).catch(err => {
-        console.error("❌ Failed to initialize shopping list:", err);
-      });
+    // Enable or disable the "Clear Shopping List" button based on whether the list has items
+    if (clearBtn) {
+        clearBtn.disabled = ingredients.length === 0;
     }
-  }).catch(err => {
-    console.error("❌ Failed to load shopping list:", err);
-  });
 }
 
-function clearShoppingList() {
-  console.log("🛠️ clearShoppingList() clicked");
-  
-  const clearBtn = document.getElementById('clearShoppingListBtn');
-  if (!clearBtn) {
-    console.log("❌ clearShoppingListBtn not found");
-    return;
-  }
 
-  // Prevent multiple confirms
-  if (clearBtn.parentElement.querySelector('.confirm-clear-shopping')) {
-    console.log("❌ Already confirming");
-    return;
-  }
 
-  clearBtn.style.display = 'none'; // Hide original button
+async function loadShoppingList() { // Made async
+    const outputContainer = document.getElementById('shoppingListResults');
+    const clearBtn = document.getElementById('clearShoppingListBtn');
+    if (!outputContainer || !clearBtn) return;
 
-  const confirmArea = document.createElement('div');
-  confirmArea.className = 'confirm-clear-shopping d-flex gap-2 align-items-center';
+    outputContainer.innerHTML = '<div class="list-group-item text-muted">Loading shopping list...</div>';
+    clearBtn.disabled = true;
 
-  const confirmText = document.createElement('span');
-  confirmText.textContent = 'Clear entire shopping list?';
+    if (currentUser) {
+        // --- LOGGED IN: Load from Firebase ---
+        try {
+            const docRef = db.collection("shopping").doc(currentUser.uid);
+            const doc = await docRef.get();
+            if (doc.exists) {
+                const data = doc.data();
+                if (data.ingredients && data.ingredients.length > 0) {
+                    renderShoppingList(data.ingredients);
+                    clearBtn.disabled = false;
+                } else {
+                    outputContainer.innerHTML = '<div class="list-group-item text-muted text-center">Generate a list from your planned meals.</div>';
+                }
+            } else {
+                outputContainer.innerHTML = '<div class="list-group-item text-muted text-center">No shopping list found. Generate one!</div>';
+                // Optional: Initialize an empty list document if it's critical for other logic
+                // await docRef.set({ ingredients: [], uid: currentUser.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+            }
+        } catch (err) {
+            console.error("❌ Failed to load shopping list from Firestore:", err);
+            outputContainer.innerHTML = '<p class="text-danger text-center">Error loading shopping list.</p>';
+        }
+    } else {
+        // --- NOT LOGGED IN: Load from LocalDB ---
+        if (!localDB) {
+            outputContainer.innerHTML = '<p class="text-warning text-center">Local storage not available.</p>';
+            return;
+        }
+        try {
+            // Assuming we use a fixed ID for the anonymous user's shopping list
+            const localShoppingList = await localDB.shoppingList.get("localUserShoppingList");
+            if (localShoppingList && localShoppingList.ingredients && localShoppingList.ingredients.length > 0) {
+                renderShoppingList(localShoppingList.ingredients);
+                clearBtn.disabled = false;
+            } else {
+                outputContainer.innerHTML = '<div class="list-group-item text-muted text-center">No local shopping list. Generate one from locally planned meals!</div>';
+            }
+        } catch (err) {
+            console.error("❌ Failed to load shopping list from LocalDB:", err.stack || err);
+            outputContainer.innerHTML = '<p class="text-danger text-center">Error loading local shopping list.</p>';
+        }
+    }
+}
 
-  const yesBtn = document.createElement('button');
-  yesBtn.className = 'btn btn-sm btn-outline-danger';
-  yesBtn.textContent = 'Yes';
+function confirmClearShoppingList() {
+    const clearBtn = document.getElementById('clearShoppingListBtn');
+    if (!clearBtn || clearBtn.disabled) return;
 
-  const noBtn = document.createElement('button');
-  noBtn.className = 'btn btn-sm btn-outline-dark';
-  noBtn.textContent = 'No';
+    const existingConfirm = clearBtn.parentElement.querySelector('.confirm-clear-shopping-controls');
+    if (existingConfirm) {
+        existingConfirm.remove();
+        clearBtn.style.display = 'inline-block';
+        return;
+    }
 
-  confirmArea.appendChild(confirmText);
-  confirmArea.appendChild(yesBtn);
-  confirmArea.appendChild(noBtn);
+    clearBtn.style.display = 'none';
 
-  clearBtn.parentElement.appendChild(confirmArea);
+    const confirmControls = document.createElement('span');
+    confirmControls.className = 'confirm-clear-shopping-controls ms-2';
+    // ... (setup confirmText, yesBtn, noBtn as in confirmClearAllPlanning) ...
+    const confirmText = document.createElement('span'); /* ... */
+    const yesBtn = document.createElement('button');    /* ... */
+    const noBtn = document.createElement('button');     /* ... */
+    confirmText.textContent = "Clear entire shopping list?";
+    yesBtn.className = 'btn btn-sm btn-danger me-1'; yesBtn.innerHTML = 'Yes, Clear';
+    noBtn.className = 'btn btn-sm btn-secondary'; noBtn.innerHTML = 'No';
 
-  // Confirm YES
-  yesBtn.onclick = () => {
-    db.collection("shopping").doc(currentUser.uid).delete().then(() => {
-      document.getElementById('shoppingListResults').innerHTML = '<p class="text-muted">No shopping list generated.</p>';
-      console.log("✅ Shopping list cleared.");
 
-      // Clean up confirm box
-      confirmArea.remove();
-      clearBtn.disabled = true; // Disable after clearing
-      clearBtn.style.display = 'block';
-    }).catch(err => {
-      console.error("❌ Failed to clear shopping list:", err);
-    });
-  };
+    const cleanupAndRestore = () => {
+        confirmControls.remove();
+        clearBtn.style.display = 'inline-block';
+    };
 
-  // Cancel NO
-  noBtn.onclick = () => {
-    confirmArea.remove();
-    clearBtn.style.display = 'block'; // Restore the original button
-  };
+    yesBtn.onclick = async () => { // Made async
+        const outputContainer = document.getElementById('shoppingListResults');
+        if (currentUser) {
+            // --- LOGGED IN: Clear Firebase shopping list for this user ---
+            try {
+                await db.collection("shopping").doc(currentUser.uid).set({ ingredients: [], uid: currentUser.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+                if(outputContainer) outputContainer.innerHTML = '<div class="list-group-item text-muted text-center">Shopping list cleared.</div>';
+                clearBtn.disabled = true;
+                console.log("✅ Firestore shopping list cleared.");
+                showSuccessMessage("Shopping list cleared from your account.");
+            } catch (err) {
+                console.error("❌ Failed to clear Firestore shopping list:", err);
+                alert("Error clearing shopping list: " + err.message);
+            } finally {
+                cleanupAndRestore();
+            }
+        } else {
+            // --- NOT LOGGED IN: Clear LocalDB shopping list ---
+            if (!localDB) {
+                alert("Local storage not available.");
+                cleanupAndRestore();
+                return;
+            }
+            try {
+                // Remove the specific item or clear the ingredients array within it
+                await localDB.shoppingList.put({ id: "localUserShoppingList", name: "My Local Shopping List", ingredients: [], updatedAt: new Date().toISOString() });
+                // Or if you want to delete the whole record: await localDB.shoppingList.delete("localUserShoppingList");
+                if(outputContainer) outputContainer.innerHTML = '<div class="list-group-item text-muted text-center">Local shopping list cleared.</div>';
+                clearBtn.disabled = true;
+                console.log("✅ LocalDB shopping list cleared.");
+                showSuccessMessage("Local shopping list cleared.");
+            } catch (err) {
+                console.error("❌ Failed to clear LocalDB shopping list:", err.stack || err);
+                alert("Error clearing local shopping list: " + err.message);
+            } finally {
+                cleanupAndRestore();
+            }
+        }
+    };
+    noBtn.onclick = cleanupAndRestore;
+    // ... (append confirmText, yesBtn, noBtn to confirmControls) ...
+    // ... (append confirmControls to clearBtn.parentElement) ...
+    confirmControls.appendChild(confirmText);
+    confirmControls.appendChild(yesBtn);
+    confirmControls.appendChild(noBtn);
+    clearBtn.parentElement.appendChild(confirmControls);
 }
 
 
@@ -3039,43 +3926,344 @@ function signOut() {
     });
 }
 
-// Watch auth state
+// Watch auth state and test
+// script.js
+
+// ... (your existing Firebase initialization, currentUser, localDB, etc.)
+
 auth.onAuthStateChanged(user => {
+    const previousUser = currentUser; // Capture previous state
     currentUser = user;
     updateAuthUI(user);
+    loadInitialRecipes(); // This will load from Firestore if 'user' is truthy, or local if 'user' is null
 
     if (user) {
-        loadRecipesFromFirestore();
+        console.log("User authenticated:", user.uid);
 
-        const pendingShared = localStorage.getItem('pendingSharedRecipe');
-        if (pendingShared) {
-            const recipe = JSON.parse(pendingShared);
-            localStorage.removeItem('pendingSharedRecipe');
-            saveSharedRecipe(recipe); // Your existing function
-            showSuccessMessage("✅ Shared recipe saved!");
-        }
-
-        // Add this for pending chatbot recipes
-        const pendingChatbot = localStorage.getItem('pendingChatbotRecipe');
-        if (pendingChatbot) {
-            currentChatbotRecipe = JSON.parse(pendingChatbot); // Load it into currentChatbotRecipe
-            localStorage.removeItem('pendingChatbotRecipe');
-            saveCurrentChatbotRecipe(); // Then try to save it
-            // showSuccessMessage is handled by saveCurrentChatbotRecipe
+        // Check if this is a login/signup event AFTER an anonymous session with data
+        // We can set a flag when local data is saved, or simply check if local stores have data.
+        if (!previousUser && user) { // User just logged in (was previously null)
+            checkAndPromptForLocalDataMigration(user);
         }
 
     } else {
-        recipes = [];
-        showRecipeFilter();
-        // Optionally, if chatbot modal is open and user signs out, handle UI changes
-        const saveChatbotRecipeBtn = document.getElementById('saveChatbotRecipeBtn');
-        if (saveChatbotRecipeBtn) {
-            // saveChatbotRecipeBtn.textContent = 'Sign In to Save';
-            // saveChatbotRecipeBtn.onclick = () => showSignInPermissionsPrompt(); // or similar
-        }
+        console.log("User is not authenticated. Operating in 'Local Mode'.");
+        // loadInitialRecipes() already handles loading local data
     }
 });
 
+async function checkAndPromptForLocalDataMigration(loggedInUser) {
+    if (!localDB) {
+        console.warn("LocalDB not available, skipping migration check.");
+        return;
+    }
+
+    try {
+        const localRecipeCount = await localDB.recipes.count();
+        const localHistoryCount = await localDB.history.count();
+        const localPlanningCount = await localDB.planning.count();
+        const totalLocalItems = localRecipeCount + localHistoryCount + localPlanningCount;
+
+        if (totalLocalItems > 0) {
+            console.log(`Found ${localRecipeCount} local recipes, ${localHistoryCount} history items, ${localPlanningCount} planned meals to potentially migrate.`);
+            
+            const welcomeName = loggedInUser.displayName || loggedInUser.email;
+            const title = `Welcome, ${welcomeName}!`;
+            const body = `
+                <p>You have <strong>${totalLocalItems} item(s)</strong> (recipes, history, plans) saved locally on this device from a previous session.</p>
+                <p>Would you like to save them to your account? This will allow you to access them on other devices.</p>
+            `;
+            const buttons = [
+                {
+                    text: 'Yes, Save to My Account',
+                    class: 'btn-success',
+                    onClick: async () => {
+                        infoConfirmModalInstance.hide(); // Hide prompt modal first
+                        console.log("User agreed to migrate local data.");
+                        await migrateLocalDataToFirestore(currentUser);
+                    },
+                    dismissOnClick: false // Don't auto-close; migrateLocalDataToFirestore will handle further UI
+                },
+                {
+                    text: 'Not Now',
+                    class: 'btn-secondary',
+                    onClick: () => {
+                        console.log("User declined to migrate local data at this time.");
+                        // Use the modal again for this secondary message or a toast
+                        infoConfirmModalInstance.hide(); // Hide the current modal first
+                        setTimeout(() => { // Slight delay to ensure first modal is gone
+                            showInfoConfirmModal(
+                                "Local Data Notice",
+                                "<p>Your local data will remain on this device only for now. You can manage or migrate it later from app settings (if this feature is added).</p>",
+                                [{ text: 'OK', class: 'btn-primary', dismiss: true }]
+                            );
+                        }, 300);
+                    },
+                    dismissOnClick: false
+                }
+            ];
+            showInfoConfirmModal(title, body, buttons);
+
+        } else {
+            console.log("No significant local data found to migrate.");
+        }
+    } catch (error) {
+        console.error("Error checking for local data to migrate:", error.stack || err);
+        showInfoConfirmModal("Migration Check Error", `<p class="text-danger">An error occurred while checking for local data to migrate: ${error.message}</p>`);
+    }
+}
+
+async function migrateLocalDataToFirestore(user) {
+    if (!user || !user.uid || !localDB) {
+        console.error("Migration cannot proceed: User not logged in or localDB not available.");
+        // Use the modal for user-facing errors
+        showInfoConfirmModal(
+            "Migration Error",
+            "<p class='text-danger'>Could not start data migration. Please ensure you are properly logged in and local storage is accessible.</p>",
+            [{ text: 'OK', class: 'btn-primary', dismiss: true }]
+        );
+        return;
+    }
+
+    // Show a persistent "Migrating..." message using the modal
+    showInfoConfirmModal(
+        "Migrating Data",
+        "<p>Migrating your locally saved data to your account... Please wait.</p><div class='progress'><div class='progress-bar progress-bar-striped progress-bar-animated' role='progressbar' style='width: 100%' aria-valuenow='100' aria-valuemin='0' aria-valuemax='100'></div></div>",
+        [] // No buttons initially, it will be updated by the summary
+    );
+
+    const migrationStatus = {
+        recipes: { migrated: 0, skipped: 0, failed: 0, existing: 0 },
+        history: { migrated: 0, skipped: 0, failed: 0 },
+        planning: { migrated: 0, skipped: 0, failed: 0, recipeNotFound: 0 },
+        shoppingList: { migrated: 0, failed: 0, itemsMigrated: 0 } // Track if the list itself was migrated and how many items
+    };
+
+    const localToCloudRecipeIdMap = new Map();
+
+    // --- 1. Migrate Recipes and build ID Map ---
+    try {
+        const localRecipes = await localDB.recipes.toArray();
+        if (localRecipes.length > 0) {
+            console.log(`Starting migration of ${localRecipes.length} local recipes.`);
+            let existingCloudRecipes = new Map();
+            const cloudSnapshot = await db.collection('recipes').where('uid', '==', user.uid).get();
+            cloudSnapshot.forEach(doc => {
+                const data = doc.data();
+                if (data.name) {
+                    existingCloudRecipes.set(data.name.toLowerCase().trim(), doc.id);
+                }
+            });
+
+            for (const localRecipe of localRecipes) {
+                const localRecipeNameLower = (localRecipe.name || "").toLowerCase().trim();
+                if (existingCloudRecipes.has(localRecipeNameLower)) {
+                    const existingFirestoreId = existingCloudRecipes.get(localRecipeNameLower);
+                    localToCloudRecipeIdMap.set(localRecipe.localId, existingFirestoreId);
+                    migrationStatus.recipes.existing++;
+                    continue;
+                }
+
+                const recipeForFirestore = {
+                    name: localRecipe.name,
+                    ingredients: localRecipe.ingredients || [],
+                    instructions: localRecipe.instructions || "",
+                    tags: localRecipe.tags || [],
+                    rating: localRecipe.rating || 0,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    uid: user.uid
+                };
+                try {
+                    const docRef = await db.collection('recipes').add(recipeForFirestore);
+                    localToCloudRecipeIdMap.set(localRecipe.localId, docRef.id);
+                    migrationStatus.recipes.migrated++;
+                } catch (err) {
+                    console.error(`Failed to migrate recipe "${localRecipe.name}":`, err);
+                    migrationStatus.recipes.failed++;
+                }
+            }
+        }
+    } catch (err) {
+        console.error("Error during local recipes migration phase:", err);
+        const uncounted = await localDB.recipes.count(); // approx
+        migrationStatus.recipes.failed = uncounted - (migrationStatus.recipes.migrated + migrationStatus.recipes.existing + migrationStatus.recipes.skipped);
+
+    }
+
+    // --- 2. Migrate History ---
+    try {
+        const localHistoryItems = await localDB.history.toArray();
+        if (localHistoryItems.length > 0) {
+            console.log(`Starting migration of ${localHistoryItems.length} local history items.`);
+            for (const localItem of localHistoryItems) {
+                const historyForFirestore = {
+                    recipeName: localItem.recipeName,
+                    notes: localItem.notes || "",
+                    tags: localItem.tags || [],
+                    timestamp: localItem.timestamp,
+                    uid: user.uid
+                };
+                try {
+                    await db.collection('history').add(historyForFirestore);
+                    migrationStatus.history.migrated++;
+                } catch (err) {
+                    console.error(`Failed to migrate history for "${localItem.recipeName}":`, err);
+                    migrationStatus.history.failed++;
+                }
+            }
+        }
+    } catch (err) {
+        console.error("Error during local history migration phase:", err);
+        migrationStatus.history.failed = (await localDB.history.count()) - migrationStatus.history.migrated;
+    }
+
+    // --- 3. Migrate Planning (using the localToCloudRecipeIdMap) ---
+    try {
+        const localPlanningItems = await localDB.planning.toArray();
+        if (localPlanningItems.length > 0) {
+            console.log(`Starting migration of ${localPlanningItems.length} local planning items.`);
+            for (const localItem of localPlanningItems) {
+                const firestoreRecipeId = localToCloudRecipeIdMap.get(localItem.recipeLocalId);
+                if (!firestoreRecipeId) {
+                    migrationStatus.planning.recipeNotFound++;
+                }
+                const planningForFirestore = {
+                    date: localItem.date,
+                    recipeName: localItem.recipeName,
+                    recipeId: firestoreRecipeId || null,
+                    uid: user.uid
+                };
+                try {
+                    await db.collection('planning').add(planningForFirestore);
+                    migrationStatus.planning.migrated++;
+                } catch (err) {
+                    console.error(`Failed to migrate plan for "${localItem.recipeName}" on ${localItem.date}:`, err);
+                    migrationStatus.planning.failed++;
+                }
+            }
+        }
+    } catch (err) {
+        console.error("Error during local planning migration phase:", err);
+         migrationStatus.planning.failed = (await localDB.planning.count()) - (migrationStatus.planning.migrated + migrationStatus.planning.recipeNotFound);
+    }
+
+    // --- 4. Migrate Shopping List ---
+    try {
+        const localShoppingListData = await localDB.shoppingList.get("localUserShoppingList");
+        if (localShoppingListData && localShoppingListData.ingredients && localShoppingListData.ingredients.length > 0) {
+            console.log(`Starting migration of local shopping list with ${localShoppingListData.ingredients.length} items.`);
+            const shoppingListForFirestore = {
+                ingredients: localShoppingListData.ingredients,
+                uid: user.uid,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            try {
+                // This will overwrite any existing cloud shopping list for the user
+                await db.collection("shopping").doc(user.uid).set(shoppingListForFirestore);
+                migrationStatus.shoppingList.migrated = 1; // Indicate the list itself was migrated
+                migrationStatus.shoppingList.itemsMigrated = localShoppingListData.ingredients.length;
+                console.log("Migrated local shopping list to Firestore.");
+            } catch (err) {
+                console.error("Failed to migrate shopping list:", err);
+                migrationStatus.shoppingList.failed = 1;
+            }
+        } else {
+            console.log("No active local shopping list found to migrate.");
+        }
+    } catch (err) {
+        console.error("Error during local shopping list migration phase:", err);
+    }
+
+    // --- Migration Summary & Cleanup ---
+    let summaryTitle = "Migration Complete";
+    let summaryBody = "<p>Your local data migration to your account is complete:</p><ul>";
+    let hadItemsToReport = false;
+    let hadFailures = false;
+
+    if (migrationStatus.recipes.migrated > 0 || migrationStatus.recipes.existing > 0 || migrationStatus.recipes.failed > 0 || migrationStatus.recipes.skipped > 0) {
+        summaryBody += `<li>Recipes: ${migrationStatus.recipes.migrated} saved, ${migrationStatus.recipes.existing} found in cloud, ${migrationStatus.recipes.skipped} skipped, ${migrationStatus.recipes.failed} failed.</li>`;
+        hadItemsToReport = true;
+        if (migrationStatus.recipes.failed > 0) hadFailures = true;
+    }
+    if (migrationStatus.history.migrated > 0 || migrationStatus.history.failed > 0 || migrationStatus.history.skipped > 0) {
+        summaryBody += `<li>History: ${migrationStatus.history.migrated} saved, ${migrationStatus.history.skipped} skipped, ${migrationStatus.history.failed} failed.</li>`;
+        hadItemsToReport = true;
+        if (migrationStatus.history.failed > 0) hadFailures = true;
+    }
+    if (migrationStatus.planning.migrated > 0 || migrationStatus.planning.recipeNotFound > 0 || migrationStatus.planning.failed > 0 || migrationStatus.planning.skipped > 0) {
+        summaryBody += `<li>Planned Meals: ${migrationStatus.planning.migrated} saved, ${migrationStatus.planning.recipeNotFound} recipe links missing, ${migrationStatus.planning.skipped} skipped, ${migrationStatus.planning.failed} failed.</li>`;
+        hadItemsToReport = true;
+        if (migrationStatus.planning.failed > 0 || migrationStatus.planning.recipeNotFound > 0) hadFailures = true;
+    }
+    if (migrationStatus.shoppingList.migrated > 0 || migrationStatus.shoppingList.failed > 0) {
+        summaryBody += `<li>Shopping List: ${migrationStatus.shoppingList.itemsMigrated} items saved to your account ${migrationStatus.shoppingList.failed > 0 ? '(failed to save list)' : ''}.</li>`;
+        hadItemsToReport = true;
+        if (migrationStatus.shoppingList.failed > 0) hadFailures = true;
+    }
+    summaryBody += "</ul>";
+
+    if (!hadItemsToReport) {
+        summaryBody = "<p>No new local data was found to migrate to your account.</p>";
+    }
+    if (hadFailures) {
+        summaryBody += `<p class="text-danger mt-2">Some items could not be saved to your account. They will remain on this device for now.</p>`;
+    }
+
+    // Show summary modal, replacing the "Migrating..." content
+    const summaryButtons = [{
+        text: 'OK',
+        class: 'btn-primary',
+        onClick: () => {
+            infoConfirmModalInstance.hide();
+            const totalMigratedOrExisting = migrationStatus.recipes.migrated + migrationStatus.recipes.existing +
+                                       migrationStatus.history.migrated +
+                                       migrationStatus.planning.migrated +
+                                       migrationStatus.shoppingList.migrated; // Count list as 1 if items > 0
+
+            if (totalMigratedOrExisting > 0 && !hadFailures) { // Only offer to clear if migration was largely successful for processed items
+                setTimeout(() => {
+                    const cleanupTitle = "Clear Local Data?";
+                    const cleanupBody = "<p>Relevant local data has been saved to your account.</p><p>Would you like to remove these local copies from this device now?</p>";
+                    const cleanupButtons = [
+                        {
+                            text: 'Yes, Clear Local Data', class: 'btn-danger',
+                            onClick: async () => {
+                                infoConfirmModalInstance.hide();
+                                try {
+                                    if (migrationStatus.recipes.migrated > 0 || migrationStatus.recipes.existing > 0) await localDB.recipes.clear();
+                                    if (migrationStatus.history.migrated > 0) await localDB.history.clear();
+                                    if (migrationStatus.planning.migrated > 0) await localDB.planning.clear();
+                                    if (migrationStatus.shoppingList.migrated > 0) await localDB.shoppingList.delete("localUserShoppingList");
+                                    console.log("Relevant local data stores cleared after migration.");
+                                    showSuccessMessage("Local data cleared from this device.");
+                                } catch (err) {
+                                    console.error("Error clearing local data after migration:", err);
+                                    showInfoConfirmModal("Cleanup Error", `<p class="text-danger">Could not fully clear local data. You can clear browser storage manually if needed.</p>`);
+                                }
+                                loadInitialRecipes(); // Reload from Firestore
+                            },
+                            dismissOnClick: false
+                        },
+                        {
+                            text: 'No, Keep Local Data', class: 'btn-secondary',
+                            onClick: () => {
+                                infoConfirmModalInstance.hide();
+                                showInfoConfirmModal("Local Data Kept", "<p>Your local data has been kept on this device. You can clear it from browser settings if desired.</p>");
+                                loadInitialRecipes();
+                            },
+                            dismissOnClick: false
+                        }
+                    ];
+                    showInfoConfirmModal(cleanupTitle, cleanupBody, cleanupButtons);
+                }, 300);
+            } else {
+                loadInitialRecipes(); // Still reload from Firestore
+            }
+        },
+        dismissOnClick: false // Important: Let the onClick logic handle hiding
+    }];
+    showInfoConfirmModal(summaryTitle, summaryBody, summaryButtons);
+}
 
 // Global click listener to close user dropdown
 document.addEventListener('click', function (event) {
@@ -3086,80 +4274,208 @@ document.addEventListener('click', function (event) {
 });
 
 function showSharedOverlay(recipe) {
-  const overlay = document.createElement('div');
-  overlay.className = 'position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-75 d-flex justify-content-center align-items-start overflow-auto';
-  overlay.style.zIndex = 2000;
-  overlay.style.padding = '2rem';
+    // Remove existing overlay if any
+    const existingOverlay = document.querySelector('.shared-recipe-overlay-container');
+    if (existingOverlay) existingOverlay.remove();
 
-  const card = document.createElement('div');
-  card.className = 'card shadow-lg p-4 position-relative';
-  card.style.maxWidth = '600px';
-  card.style.width = '95%';
-  card.style.margin = 'auto';
+    const overlay = document.createElement('div');
+    overlay.className = 'position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-75 d-flex justify-content-center align-items-start overflow-auto shared-recipe-overlay-container';
+    overlay.style.zIndex = 2000;
+    overlay.style.padding = '2rem';
 
-  card.innerHTML = `
-    <!-- Close button in top-right -->
-    <button type="button" class="btn-close position-absolute top-0 end-0 m-2" aria-label="Close"></button>
+    const card = document.createElement('div');
+    card.className = 'card shadow-lg p-4 position-relative';
+    card.style.maxWidth = '600px';
+    card.style.width = '95%';
+    card.style.margin = 'auto';
 
-    <h4 class="mb-3">${recipe.name}</h4>
+    // Using generateRecipeDisplayHTML for consistency
+    card.innerHTML = `
+        <button type="button" class="btn-close position-absolute top-0 end-0 m-3" aria-label="Close"></button>
+        <div id="sharedRecipeContent">
+            ${generateRecipeDisplayHTML(recipe)} 
+        </div>
+        <div class="d-flex justify-content-end gap-2 mt-3">
+            <button id="saveSharedRecipeBtnInModal" class="btn btn-success">Save to My Recipes</button>
+            <button id="closeSharedOverlayBtn" class="btn btn-outline-dark">Close</button>
+        </div>
+    `;
 
-    <div class="mb-2">
-      ${(recipe.tags || []).map(tag => `<span class="badge bg-primary me-1">${tag}</span>`).join('')}
-    </div>
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
 
-    <table class="table table-sm table-bordered">
-      <thead><tr><th>Ingredient</th><th>Qty</th><th>Unit</th></tr></thead>
-      <tbody>
-        ${(recipe.ingredients || []).map(i => `
-          <tr><td>${i.name}</td><td>${i.quantity}</td><td>${i.unit}</td></tr>
-        `).join('')}
-      </tbody>
-    </table>
+    const closeOverlay = () => {
+        if (overlay && overlay.parentNode) {
+            overlay.remove();
+        }
+    };
 
-    <p><strong>Instructions:</strong> ${recipe.instructions}</p>
+    overlay.addEventListener('click', (e) => {
+        if (!card.contains(e.target)) closeOverlay();
+    });
 
-    <div class="d-flex justify-content-end gap-2 mt-3">
-      <button id="saveSharedBtn" class="btn btn-outline-success">Save to My Recipes</button>
-      <button class="btn btn-outline-dark">Close</button>
-    </div>
-  `;
+    card.querySelector('.btn-close').onclick = closeOverlay;
+    card.querySelector('#closeSharedOverlayBtn').onclick = closeOverlay;
 
-  overlay.appendChild(card);
-  document.body.appendChild(overlay);
+    const saveBtn = card.querySelector('#saveSharedRecipeBtnInModal'); // Make sure ID is unique or use a class
+    if (saveBtn) {
+        saveBtn.textContent = 'Save to My Recipes'; // Or just "Save Recipe"
 
-  // Handle close via outside click
-  overlay.addEventListener('click', (e) => {
-    if (!card.contains(e.target)) overlay.remove();
-  });
+        saveBtn.onclick = () => {
+            const closeOverlay = () => { // Helper to close the overlay
+                if (overlay && overlay.parentNode) {
+                    overlay.remove();
+                }
+            };
 
-  // Close via top-right "X" button
-  const closeBtn = card.querySelector('.btn-close');
-  if (closeBtn) closeBtn.onclick = () => overlay.remove();
+            if (currentUser) { // User IS LOGGED IN
+                console.log("User logged in, saving shared recipe to Firestore.");
+                saveSharedRecipeToFirestore(recipe); // Saves to Firestore
+                closeOverlay();
+            } else {
+                // --- User is NOT LOGGED IN: Save to LocalDB ---
+                console.log("User not logged in, saving shared recipe to LocalDB.");
+                if (!localDB) {
+                    alert("Local storage is not available at the moment. Please try again later or sign in.");
+                    return;
+                }
+                const recipeToSaveLocally = {
+                    name: recipe.name || "Unnamed Shared Recipe",
+                    ingredients: recipe.ingredients || [],
+                    instructions: recipe.instructions || "",
+                    tags: recipe.tags || [],
+                    sourceUrl: recipe.sourceUrl || null, // If shared recipes have a source URL
+                    localId: generateLocalUUID(),
+                    timestamp: new Date().toISOString(),
+                };
+                // Clean up any original shared recipe IDs or irrelevant fields
+                delete recipeToSaveLocally.id; 
+                delete recipeToSaveLocally.firestoreId;
+                delete recipeToSaveLocally.uid;
+                delete recipeToSaveLocally.hash;
+                delete recipeToSaveLocally.createdAt;
 
-  // Close via footer button
-  const footerCloseBtn = card.querySelector('.btn-outline-dark');
-  if (footerCloseBtn) footerCloseBtn.onclick = () => overlay.remove();
 
-  // Save button logic
-  const saveBtn = document.getElementById('saveSharedBtn');
-
-  // Update button text based on login state
-  if (!currentUser) {
-    saveBtn.textContent = 'Sign up and Save to My Recipes';
-  }
-
-  saveBtn.onclick = () => {
-    if (!currentUser) {
-      localStorage.setItem('pendingSharedRecipe', JSON.stringify(recipe));
-      showSignInPermissionsPrompt();
-      return;
+                localDB.recipes.add(recipeToSaveLocally)
+                    .then(() => {
+                        showSuccessMessage("✅ Recipe saved locally!");
+                        closeOverlay();
+                        loadInitialRecipes(); // Refresh recipe list
+                        showDelayedCloudSavePrompt("Recipe saved to this device! Sign up or log in to save it to the cloud and access anywhere!");
+                    })
+                    .catch(err => {
+                        console.error("❌ Error saving shared recipe locally:", err.stack || err);
+                        alert("Failed to save recipe locally: " + err.message);
+                    });
+            }
+        };
     }
-
-    saveSharedRecipe(recipe);
-    overlay.remove();
-  };
 }
 
+function saveSharedRecipeToFirestore(recipeDataFromSharedSource) {
+    if (!currentUser) {
+        console.error("Attempted to save shared recipe to Firestore without a current user.");
+        alert("You must be signed in to save this recipe to your account.");
+        return;
+    }
+    const newRecipe = {
+        name: recipeDataFromSharedSource.name || "Unnamed Shared Recipe",
+        ingredients: recipeDataFromSharedSource.ingredients || [],
+        instructions: recipeDataFromSharedSource.instructions || "",
+        tags: recipeDataFromSharedSource.tags || [],
+        sourceUrl: recipeDataFromSharedSource.sourceUrl || null, // If shared recipes have a source URL
+        uid: currentUser.uid,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp(), // Use server timestamp
+        rating: 0 // Default rating
+    };
+
+    db.collection("recipes").add(newRecipe).then((docRef) => {
+        showSuccessMessage(`✅ Recipe "${newRecipe.name}" saved to your account!`);
+        console.log("Shared recipe added to user's Firestore with ID:", docRef.id);
+        loadInitialRecipes(); // Refresh recipes
+        if (window.history.replaceState) { // Clean URL query params from shared link
+            history.replaceState({}, document.title, window.location.pathname);
+        }
+    }).catch(err => {
+        console.error("❌ Error saving shared recipe to Firestore:", err);
+        alert("Failed to save shared recipe to your account: " + err.message);
+    });
+}
+
+function saveCurrentChatbotRecipeToFirestore() {
+    if (!currentUser || !currentChatbotRecipe) {
+        alert("Cannot save recipe. Ensure you are signed in and a recipe is generated.");
+        return;
+    }
+
+    const recipeToSave = {
+        name: currentChatbotRecipe.name || "AI Generated Recipe",
+        ingredients: currentChatbotRecipe.ingredients || [],
+        instructions: currentChatbotRecipe.instructions || "",
+        tags: currentChatbotRecipe.tags || [],
+        uid: currentUser.uid,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        rating: currentChatbotRecipe.rating || 0,
+    };
+    delete recipeToSave.localId;
+
+    db.collection("recipes").add(recipeToSave)
+        .then(docRef => {
+            console.log("✅ Chatbot recipe saved to Firestore with ID:", docRef.id);
+            showSuccessMessage("✅ Recipe from Chef Bot saved to your account!");
+            if (chatbotModalElement && typeof chatbotModalElement.remove === 'function') {
+                chatbotModalElement.remove();
+            }
+            chatbotModalElement = null;
+            currentChatbotRecipe = null;
+            loadInitialRecipes();
+        })
+        .catch(error => {
+            console.error("❌ Error saving chatbot recipe to Firestore:", error);
+            alert("Failed to save the recipe from Chef Bot to your account: " + error.message);
+        });
+}
+
+function showDelayedCloudSavePrompt(message) {
+    // Remove any existing prompt first
+    const existingPrompt = document.getElementById('cloudSavePrompt');
+    if (existingPrompt) {
+        bootstrap.Alert.getOrCreateInstance(existingPrompt).close();
+    }
+
+    const promptDiv = document.createElement('div');
+    promptDiv.id = 'cloudSavePrompt'; // Added ID for easy removal
+    promptDiv.className = 'alert alert-info alert-dismissible fade show fixed-bottom m-3 shadow-sm';
+    promptDiv.role = 'alert';
+    promptDiv.style.zIndex = "1055"; // Ensure it's above most things, but potentially below active modals
+    promptDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn btn-primary btn-sm ms-3" onclick="showLoginModalAndClosePrompt(this.closest('.alert'))">Sign Up / Log In</button>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    document.body.appendChild(promptDiv);
+
+    // Auto-dismiss after some time if not interacted with
+    setTimeout(() => {
+        const currentPrompt = document.getElementById('cloudSavePrompt');
+        if (currentPrompt && currentPrompt.parentNode) { // Check if it still exists
+            bootstrap.Alert.getOrCreateInstance(currentPrompt).close();
+        }
+    }, 15000); // 15 seconds
+}
+
+function showLoginModalAndClosePrompt(promptElement) {
+    if (promptElement && typeof promptElement.remove === 'function') {
+        // If using Bootstrap's Alert for dismiss, this ensures proper removal
+        const alertInstance = bootstrap.Alert.getOrCreateInstance(promptElement);
+        if (alertInstance) {
+            alertInstance.close();
+        } else {
+            promptElement.remove(); // Fallback if not a BS alert
+        }
+    }
+    showLoginModal(); // Your existing function to show the main login modal
+}
 
 function showSignInPrompt() {
   const overlay = document.createElement('div');
@@ -3391,18 +4707,45 @@ function showChatbotModal() {
     };
 
     saveChatbotRecipeBtn.onclick = () => {
-        if (!currentChatbotRecipe) {
-            alert("No recipe to save.");
+        if (!currentChatbotRecipe || !currentChatbotRecipe.name) {
+            alert("No valid recipe generated by Chef Bot to save.");
             return;
         }
-        if (!currentUser) {
-            // If you have a pending recipe mechanism like for shared recipes:
-            localStorage.setItem('pendingChatbotRecipe', JSON.stringify(currentChatbotRecipe));
-            showSignInPermissionsPrompt(); // Or your preferred sign-in prompt
-            // closeModal(); // Optionally close modal after prompting sign-in
-            return;
+
+        if (currentUser) { // User IS LOGGED IN
+            console.log("User logged in, saving Chef Bot recipe to Firestore.");
+            saveCurrentChatbotRecipeToFirestore(); // This saves to Firestore
+        } else {
+            // --- User is NOT LOGGED IN: Save to LocalDB ---
+            console.log("User not logged in, saving Chef Bot recipe to LocalDB.");
+            if (!localDB) {
+                alert("Local storage is not available at the moment. Please try again later or sign in.");
+                return;
+            }
+            const recipeToSaveLocally = {
+                ...currentChatbotRecipe,
+                localId: generateLocalUUID(),
+                timestamp: new Date().toISOString(),
+            };
+            delete recipeToSaveLocally.uid; // Ensure no leftover uid
+
+            localDB.recipes.add(recipeToSaveLocally)
+                .then(() => {
+                    showSuccessMessage("✅ Chef Bot recipe saved locally!");
+                    if (chatbotModalElement && typeof chatbotModalElement.remove === 'function') {
+                        chatbotModalElement.remove();
+                    }
+                    chatbotModalElement = null;
+                    currentChatbotRecipe = null;
+                    loadInitialRecipes(); // Refresh recipe list to show the new local recipe
+                    // Now, optionally prompt to sign up for cloud benefits
+                    showDelayedCloudSavePrompt("Chef Bot recipe saved to this device! Sign up or log in to save it to the cloud and access anywhere!");
+                })
+                .catch(err => {
+                    console.error("❌ Error saving Chef Bot recipe locally:", err.stack || err);
+                    alert("Failed to save Chef Bot recipe locally: " + err.message);
+                });
         }
-        saveCurrentChatbotRecipe();
     };
 }
 
@@ -3525,26 +4868,36 @@ function saveSharedRecipe(recipe) {
 
 
 window.onload = () => {
-  const params = new URLSearchParams(window.location.search);
-  const sharedId = params.get('sharedId');
+    // The initial recipe load is now handled by onAuthStateChanged.
+    // Keep other onload logic, like handling sharedId parameters.
 
-  if (sharedId) {
-    db.collection('sharedRecipes').doc(sharedId).get()
-      .then(doc => {
-        if (doc.exists) {
-          const sharedRecipe = doc.data();
-          showSharedOverlay(sharedRecipe);
-          history.replaceState({}, document.title, window.location.pathname); // Clear URL
-        } else {
-          console.error("❌ Shared recipe not found.");
-          alert("Shared recipe not found.");
-        }
-      })
-      .catch(err => {
-        console.error("❌ Error loading shared recipe:", err);
-      });
-  } else {
-    loadRecipesFromFirestore();
-  }
+    const params = new URLSearchParams(window.location.search);
+    const sharedId = params.get('sharedId');
+
+    if (sharedId) {
+        // ... (your existing shared recipe loading logic) ...
+        // This part may need to be deferred until Firebase is initialized
+        // or handled within onAuthStateChanged if it relies on `db`.
+        // For now, let's assume it's okay here. If it errors, move it.
+        firebase.auth().onAuthStateChanged(user => { // Ensure db is ready
+            if (db) { // Check if db (Firebase Firestore instance) is initialized
+                db.collection('sharedRecipes').doc(sharedId).get()
+                .then(doc => {
+                    if (doc.exists) {
+                        const sharedRecipe = doc.data();
+                        showSharedOverlay(sharedRecipe);
+                        history.replaceState({}, document.title, window.location.pathname);
+                    } else {
+                        console.error("❌ Shared recipe not found.");
+                        // alert("Shared recipe not found."); // Avoid alert if onAuthStateChanged handles main load
+                    }
+                })
+                .catch(err => {
+                    console.error("❌ Error loading shared recipe:", err);
+                });
+            }
+        });
+    }
+    // Removed loadRecipesFromFirestore() from here as onAuthStateChanged handles it.
 };
 
