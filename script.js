@@ -3039,7 +3039,7 @@ function signOut() {
     });
 }
 
-// Watch auth state
+// Watch auth state and test
 auth.onAuthStateChanged(user => {
     currentUser = user;
     updateAuthUI(user);
