@@ -126,13 +126,13 @@ exports.handler = async (event) => {
                     const recipeJson = JSON.parse(responseText);
                     console.log("process-recipe-image.js: Successfully parsed JSON.");
                     // Validate essential fields more thoroughly if needed
-                    if (recipeJson.name && Array.isArray(recipeJson.ingredients) && recipeJson.instructions) {
-                        recipeJson.tags = recipeJson.tags || []; // Ensure tags array exists, even if empty
-                        console.log("process-recipe-image.js: Recipe JSON appears valid, returning 200.");
-                        return { statusCode: 200, headers, body: JSON.stringify(recipeJson) };
+                    if (recipeJson.name && Array.isArray(recipeJson.ingredients) && typeof recipeJson.instructions === 'string') { // NEW
+                        recipeJson.tags = recipeJson.tags || []; // Ensure tags array exists
+                        console.log("process-recipe-image.js: Recipe JSON structure is acceptable (instructions might be empty), returning 200.");
+                        return { statusCode: 200, headers: headers, body: JSON.stringify(recipeJson) };
                     } else {
-                        console.error("process-recipe-image.js: Parsed JSON is missing required recipe fields (name, ingredients array, or instructions):", responseText);
-                        return { statusCode: 500, headers, body: JSON.stringify({ error: "AI response did not provide all required recipe fields.", rawResponse: responseText }) };
+                        console.error("process-recipe-image.js: Parsed JSON is missing required recipe fields (name or ingredients array, or instructions not a string):", responseText);
+                        return { statusCode: 500, headers: headers, body: JSON.stringify({ error: "AI response did not provide all critical recipe fields (name, ingredients) or instructions was not a string.", rawResponse: responseText }) };
                     }
                 } catch (parseError) {
                     console.error("process-recipe-image.js: Error parsing AI response as JSON (inner catch):", parseError, "\nRaw response that failed parsing was:", responseText);
