@@ -7,6 +7,9 @@ let chatbotModalElement = null; // To keep a reference to the modal DOM element
 let loginModalInstance = null; // To store the Bootstrap modal instance
 let localDB = null; // Initialize localDB as null
 let infoConfirmModalInstance = null; // To store the Bootstrap modal instance
+let codeReader = null;
+let selectedDeviceId = null; // To store selected camera device ID
+let videoStream = null;      // To store the active video stream for stopping
 
 document.addEventListener('DOMContentLoaded', () => {
     const loginModalElement = document.getElementById('loginModal');
@@ -80,31 +83,29 @@ function showInfoConfirmModal(title, bodyContent, buttons = []) {
 
 function initializeLocalDB() {
     if (!window.indexedDB) {
-        console.warn("IndexedDB not supported by this browser. Local storage features will be limited.");
+        console.warn("IndexedDB not supported. Local features will be limited.");
         return;
     }
-
     localDB = new Dexie("RecipeAppDB");
-    // Increment the version number if you're changing the schema after users might have version 1
-    // For development, you can clear your browser's IndexedDB for the site to start fresh with a new schema.
-    // Or, handle upgrades: https://dexie.org/docs/Tutorial/Design#database-versioning
-    localDB.version(3).stores({ // Increment version if 'shoppingList' store is new or changing structure
+    localDB.version(4).stores({ // Increment version number
         recipes: '++localId, name, timestamp, *tags',
-        history: '++localId, recipeName, timestamp, *tags',
+        history: '++localId, recipeName, originalRecipeId, timestamp, *tags',
         planning: '++localId, date, recipeLocalId, recipeName',
-        shoppingList: '++id, name, ingredients' // NEW or UPDATED: for local shopping list
-                                                // '++id' simple auto-incrementing key
-                                                // 'name' could be a generic name like "localShoppingList"
-                                                // 'ingredients' will be an array of ingredient objects
+        shoppingList: '&id, name, ingredients', // id is the primary key, e.g., "localUserShoppingList"
+        pantryItems: '++localId, name, &upc, expiryDate' // NEW: upc can be an index if unique, name for searching
     }).upgrade(tx => {
-        console.log("Upgrading RecipeAppDB to version 3, ensuring 'shoppingList' store is present/updated.");
-        // If version 2 didn't have shoppingList or had a different structure,
-        // you might need to handle that here. For adding a new table, this is often enough.
+        console.log("Upgrading RecipeAppDB to version 4, ensuring 'pantryItems' store is present/updated.");
+        // If version 3 didn't have pantryItems or its schema was different,
+        // you might need migration logic here if there's existing data.
+        // For a new store, this is usually fine.
     });
 
-
     localDB.open().then(() => {
-        console.log("RecipeAppDB (IndexedDB via Dexie) opened successfully with stores: recipes, history, planning.");
+        console.log("RecipeAppDB (IndexedDB via Dexie) opened successfully.");
+    }).catch('MissingUpgradeError', e => {
+        console.warn("Dexie schema changed; a newer version of the DB already exists or an upgrade is needed but not fully handled:", e);
+        // This can happen if you lower the version number after a higher one has been established.
+        // For development, clearing browser application storage for this site is the easiest fix.
     }).catch(err => {
         console.error("Failed to open RecipeAppDB:", err.stack || err);
         localDB = null;
@@ -213,6 +214,323 @@ function switchToSignUpView() {
     } else {
         document.getElementById('passwordForSignUp').focus();
     }
+}
+
+function showManualPantryForm() {
+    const formDiv = document.getElementById('manualPantryForm');
+    const nameInput = document.getElementById('pantryItemName');
+    const errorDiv = document.getElementById('manualPantryAddError');
+
+    if (formDiv) formDiv.style.display = 'block';
+    if (nameInput) nameInput.focus();
+    if (errorDiv) errorDiv.style.display = 'none'; // Hide any previous errors
+    
+    // Ensure scanner is off if it was running (if stopBarcodeScanner is implemented)
+    // stopBarcodeScanner(); 
+}
+
+function hideManualPantryForm() {
+    const formDiv = document.getElementById('manualPantryForm');
+    if (formDiv) {
+        formDiv.style.display = 'none';
+        // Clear form fields
+        document.getElementById('pantryItemName').value = '';
+        document.getElementById('pantryItemQuantity').value = '';
+        document.getElementById('pantryItemUnit').value = '';
+        document.getElementById('pantryItemExpiry').value = '';
+        const errorDiv = document.getElementById('manualPantryAddError');
+        if (errorDiv) errorDiv.style.display = 'none';
+    }
+}
+
+async function saveManualPantryItem() {
+    const name = document.getElementById('pantryItemName').value.trim();
+    const quantity = document.getElementById('pantryItemQuantity').value.trim(); // Keep as string for flexibility
+    const unit = document.getElementById('pantryItemUnit').value.trim();
+    const expiryDate = document.getElementById('pantryItemExpiry').value; // YYYY-MM-DD string or empty
+
+    if (!name) {
+        alert("Please enter an item name.");
+        document.getElementById('pantryItemName').focus();
+        return;
+    }
+
+    const pantryItemData = {
+        name,
+        quantity,
+        unit,
+        expiryDate: expiryDate || null, // Store as null if empty
+        dateAdded: new Date().toISOString(),
+        // upc: null, // Will be populated by barcode scanner later
+        // category: "Uncategorized" // Default category, can be set later
+    };
+
+    if (currentUser) {
+        // --- LOGGED IN: Save to Firebase ---
+        pantryItemData.uid = currentUser.uid;
+        console.log("Saving pantry item to Firestore:", pantryItemData);
+        try {
+            await db.collection("users").doc(currentUser.uid).collection("pantryItems").add(pantryItemData);
+            showSuccessMessage("Item added to your cloud pantry!");
+            hideManualPantryForm();
+            loadAndRenderPantryItems(); // Refresh list
+        } catch (error) {
+            console.error("Error saving pantry item to Firestore:", error);
+            alert("Failed to save item to cloud pantry: " + error.message);
+        }
+    } else {
+        // --- NOT LOGGED IN: Save to LocalDB ---
+        if (!localDB) {
+            alert("Local storage is not available.");
+            return;
+        }
+        // localId will be auto-generated by Dexie due to '++localId'
+        console.log("Saving pantry item to LocalDB:", pantryItemData);
+        try {
+            await localDB.pantryItems.add(pantryItemData);
+            showSuccessMessage("Item added to your local pantry!");
+            hideManualPantryForm();
+            loadAndRenderPantryItems(); // Refresh list
+        } catch (error) {
+            console.error("Error saving pantry item to LocalDB:", error.stack || error);
+            alert("Failed to save item to local pantry: " + error.message);
+        }
+    }
+}
+
+async function loadAndRenderPantryItems() {
+    const pantryListContainer = document.getElementById('pantryListContainer');
+    const searchInput = document.getElementById('pantrySearchInput'); // Assuming you have this input
+    
+    // Ensure elements exist before proceeding
+    if (!pantryListContainer) {
+        console.error("loadAndRenderPantryItems: pantryListContainer not found!");
+        return;
+    }
+    // searchInput can be optional for this loading logic
+
+    console.log("loadAndRenderPantryItems called. currentUser:", currentUser ? currentUser.uid : "null"); // Log UID for clarity
+
+    pantryListContainer.innerHTML = '<div class="list-group-item text-muted text-center">Loading pantry items... <span class="spinner-border spinner-border-sm"></span></div>';
+    let items = [];
+    const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : "";
+
+    try {
+        if (currentUser) {
+            // --- LOGGED IN: Load from Firebase ---
+            console.log("Attempting to load pantry items from Firestore for user:", currentUser.uid);
+            
+            const pantryCollectionRef = db.collection("users").doc(currentUser.uid).collection("pantryItems");
+            let query = pantryCollectionRef.orderBy("name"); // Or your preferred default order
+
+            const querySnapshot = await query.get();
+
+            // === CRUCIAL LOGS START ===
+            console.log("Firestore pantry querySnapshot received.");
+            console.log("Is snapshot empty?", querySnapshot.empty);
+            console.log("Snapshot size (number of documents found):", querySnapshot.size);
+            // === CRUCIAL LOGS END ===
+
+            if (!querySnapshot.empty) {
+                items = querySnapshot.docs.map(doc => ({
+                    firestoreId: doc.id, // Keep original Firestore ID
+                    id: doc.id,          // Use Firestore ID as the common 'id' for rendering
+                    ...doc.data()
+                }));
+                console.log("Pantry items successfully fetched from Firestore:", items.length, "items. First item:", items[0]);
+            } else {
+                console.log("No pantry items found in Firestore for this user.");
+                items = []; // Ensure items is an empty array if snapshot is empty
+            }
+
+            // Client-side search (only if items were fetched)
+            if (searchTerm && items.length > 0) {
+                items = items.filter(item => item.name && item.name.toLowerCase().includes(searchTerm));
+                console.log("Pantry items after client-side search:", items);
+            }
+            
+        } else {
+            // --- NOT LOGGED IN: Load from LocalDB ---
+            if (!localDB) {
+                console.warn("LocalDB not initialized, cannot load local pantry items.");
+                pantryListContainer.innerHTML = '<div class="alert alert-warning text-center">Local storage not available.</div>';
+                return;
+            }
+            console.log("Loading pantry items from LocalDB.");
+            // ... (your existing localDB loading logic, ensure it sets `items`) ...
+            // Example:
+            if (searchTerm) {
+                items = await localDB.pantryItems
+                    .where('name').startsWithIgnoreCase(searchTerm)
+                    .sortBy('name');
+            } else {
+                items = await localDB.pantryItems.orderBy("name").toArray();
+            }
+            items = items.map(item => ({ ...item, id: item.localId, isLocal: true })); // Map localId to id
+            console.log("Pantry items loaded from LocalDB:", items);
+        }
+        renderPantryItems(items, searchTerm); // Call render with the fetched (and possibly filtered) items
+    } catch (error) {
+        console.error("Error loading pantry items:", error.stack || error);
+        pantryListContainer.innerHTML = '<div class="alert alert-danger text-center">Could not load pantry items.</div>';
+    }
+}
+
+function renderPantryItems(items, searchTerm = "") {
+    const pantryListContainer = document.getElementById('pantryListContainer');
+    if (!pantryListContainer) {
+        console.error("renderPantryItems: pantryListContainer not found!");
+        return;
+    }
+    pantryListContainer.innerHTML = ''; // Clear previous items or messages
+
+    // console.log("renderPantryItems: Received items to render:", items ? items.length : 0, "Search term:", searchTerm); // Less verbose
+
+    if (!items || items.length === 0) {
+        if (searchTerm) {
+            pantryListContainer.innerHTML = `<div class="list-group-item text-muted text-center">No pantry items found matching "<strong>${searchTerm}</strong>".</div>`;
+        } else {
+            pantryListContainer.innerHTML = `
+                <div class="text-center p-4 p-md-5 mt-3">
+                    <i class="bi bi-box-seam" style="font-size: 3rem; color: #6c757d;"></i>
+                    <h5 class="mt-3">Your Pantry is Empty</h5>
+                    <p class="text-muted">Use the "Add Item" or "Scan Item" buttons in the Pantry section to stock it up!</p>
+                </div>`;
+        }
+        return;
+    }
+
+    items.forEach(item => {
+        // item.id should be firestoreId for cloud items, or localId for local items
+        // This mapping happens in loadAndRenderPantryItems
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'list-group-item d-flex justify-content-between align-items-center pantry-item flex-wrap py-2 px-3'; // Adjusted padding
+        itemDiv.dataset.itemId = item.id;
+
+        const detailsDiv = document.createElement('div');
+        detailsDiv.className = 'flex-grow-1 me-2 pantry-item-details-container';
+
+        const nameHeading = document.createElement('h6');
+        nameHeading.className = 'mb-0 pantry-item-name';
+        nameHeading.textContent = item.name || "Unnamed Item";
+        detailsDiv.appendChild(nameHeading);
+
+        const quantityUnitText = document.createElement('small');
+        quantityUnitText.className = 'text-muted pantry-item-details d-block';
+        let qtyUnitString = "";
+        if (item.quantity && String(item.quantity).trim() !== "") qtyUnitString += `${item.quantity} `;
+        if (item.unit && String(item.unit).trim() !== "") qtyUnitString += `${item.unit}`;
+        // Only show UPC if it exists and is not just whitespace
+        if (item.upc && String(item.upc).trim() !== "") qtyUnitString += ` (UPC: ${item.upc.trim()})`;
+        quantityUnitText.textContent = qtyUnitString.trim() || "No quantity/unit"; // Default message if both are empty
+        detailsDiv.appendChild(quantityUnitText);
+        
+        if (item.expiryDate) {
+            const today = new Date();
+            today.setHours(0,0,0,0); 
+            const expiry = new Date(item.expiryDate + 'T00:00:00'); // Ensure date is parsed in local timezone correctly
+            const daysDiff = Math.round((expiry - today) / (1000 * 60 * 60 * 24));
+            
+            let expiryClass = 'text-muted';
+            let expiryMessage = `Expires: ${expiry.toLocaleDateString()}`; // Use browser's default locale for date format
+
+            if (daysDiff < 0) {
+                expiryClass = 'text-danger fw-bold';
+                expiryMessage += ` (Expired ${Math.abs(daysDiff)} days ago)`;
+            } else if (daysDiff === 0) {
+                expiryClass = 'text-danger fw-semibold'; // Stronger than warning for today
+                expiryMessage += ` (Expires today!)`;
+            } else if (daysDiff <= 7) {
+                expiryClass = 'text-warning fw-semibold';
+                expiryMessage += ` (Expires in ${daysDiff} day${daysDiff > 1 ? 's' : ''})`;
+            }
+
+            const expiryDiv = document.createElement('div');
+            expiryDiv.className = `mt-1 small ${expiryClass}`;
+            expiryDiv.textContent = expiryMessage;
+            detailsDiv.appendChild(expiryDiv);
+        }
+        itemDiv.appendChild(detailsDiv);
+
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'pantry-item-actions flex-shrink-0 d-flex align-items-center'; // Use flex for button alignment
+
+        // Placeholder for Edit Button (implement openPantryItemEditor later)
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-outline-primary btn-sm py-0 px-1 me-1 edit-pantry-item-btn';
+        editBtn.innerHTML = '<i class="bi bi-pencil"></i>';
+        editBtn.title = `Edit ${item.name}`;
+        editBtn.onclick = () => {
+            alert(`Edit feature for "${item.name}" (ID: ${item.id}) coming soon!`);
+            // openPantryItemEditor(item.id, itemDiv); // You'll create this function
+        };
+        actionsDiv.appendChild(editBtn);
+
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-outline-danger btn-sm py-0 px-1 delete-pantry-item-btn';
+        deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+        deleteBtn.title = `Delete ${item.name}`;
+
+        deleteBtn.onclick = () => {
+            // Inline confirmation logic
+            actionsDiv.innerHTML = ''; // Clear existing buttons (edit and delete)
+
+            const confirmText = document.createElement('span');
+            confirmText.className = 'text-danger small me-2';
+            confirmText.textContent = 'Delete?';
+
+            const yesBtn = document.createElement('button');
+            yesBtn.className = 'btn btn-danger btn-sm py-0 px-1 me-1';
+            yesBtn.innerHTML = '<i class="bi bi-check-lg"></i>';
+            yesBtn.title = 'Confirm delete';
+
+            const noBtn = document.createElement('button');
+            noBtn.className = 'btn btn-secondary btn-sm py-0 px-1';
+            noBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
+            noBtn.title = 'Cancel';
+
+            yesBtn.onclick = async () => {
+                try {
+                    if (currentUser) {
+                        console.log("Deleting pantry item from Firestore:", item.id);
+                        await db.collection("users").doc(currentUser.uid).collection("pantryItems").doc(item.id).delete();
+                    } else if (localDB) {
+                        console.log("Deleting pantry item from LocalDB:", item.id); // item.id here is localId
+                        await localDB.pantryItems.delete(item.id);
+                    }
+                    showSuccessMessage(`"${item.name}" deleted from pantry.`);
+                    itemDiv.remove(); // Remove the item from the UI directly
+                    
+                    // Check if the list is now empty and update UI accordingly
+                    if (pantryListContainer.childElementCount === 0) {
+                        renderPantryItems([], searchTerm); // Call with empty array to show "empty" message
+                    }
+                } catch (error) {
+                    console.error("Error deleting pantry item:", error.stack || error);
+                    alert("Failed to delete pantry item: " + error.message);
+                    // Restore original buttons if deletion failed
+                    actionsDiv.innerHTML = '';
+                    actionsDiv.appendChild(editBtn); // Re-add edit button
+                    actionsDiv.appendChild(deleteBtn); // Re-add delete button
+                }
+            };
+
+            noBtn.onclick = () => {
+                actionsDiv.innerHTML = ''; // Clear confirmation
+                actionsDiv.appendChild(editBtn); // Restore original edit button
+                actionsDiv.appendChild(deleteBtn); // Restore original delete button
+            };
+
+            actionsDiv.appendChild(confirmText);
+            actionsDiv.appendChild(yesBtn);
+            actionsDiv.appendChild(noBtn);
+        };
+
+        actionsDiv.appendChild(deleteBtn); // Initially add the delete button
+        itemDiv.appendChild(actionsDiv);
+        pantryListContainer.appendChild(itemDiv);
+    });
 }
 
 function renderTags() {
@@ -4264,6 +4582,349 @@ async function migrateLocalDataToFirestore(user) {
     }];
     showInfoConfirmModal(summaryTitle, summaryBody, summaryButtons);
 }
+
+async function startBarcodeScanner() {
+    const scannerArea = document.getElementById('barcodeScannerArea');
+    const viewport = document.getElementById('barcodeScannerViewport');
+    const resultDiv = document.getElementById('barcodeResult');
+    const stopScanBtn = document.getElementById('stopBarcodeScanBtn');
+
+    if (!scannerArea || !viewport || !resultDiv || !stopScanBtn) {
+        console.error("Barcode scanner UI elements not found!");
+        alert("Could not initialize barcode scanner UI.");
+        return;
+    }
+
+    hideManualPantryForm(); // Hide manual add form if open
+    scannerArea.style.display = 'block';
+    resultDiv.textContent = 'Initializing camera...';
+    stopScanBtn.style.display = 'inline-block';
+
+    if (!window.ZXing) { // Check if ZXing is loaded (if using CDN)
+        resultDiv.textContent = 'Error: Barcode scanning library not loaded.';
+        console.error("ZXing library not found. Ensure it's included.");
+        return;
+    }
+    codeReader = new ZXing.BrowserMultiFormatReader();
+
+    try {
+        // Request camera permission and list devices
+        const videoInputDevices = await codeReader.listVideoInputDevices();
+        if (videoInputDevices && videoInputDevices.length > 0) {
+            // For simplicity, use the first available camera.
+            // In a more advanced setup, you could let the user choose.
+            selectedDeviceId = videoInputDevices[0].deviceId; 
+            if (videoInputDevices.length > 1 && videoInputDevices.some(d => d.label.toLowerCase().includes('back'))) {
+                // Prefer rear camera if available
+                const rearCamera = videoInputDevices.find(d => d.label.toLowerCase().includes('back'));
+                if (rearCamera) selectedDeviceId = rearCamera.deviceId;
+            }
+
+
+            console.log(`Using video device: ${selectedDeviceId}`);
+            resultDiv.textContent = 'Starting camera... Aim at a barcode.';
+
+            // Remove any old video element
+            const oldVideoElement = viewport.querySelector('video');
+            if (oldVideoElement) {
+                oldVideoElement.remove();
+            }
+            // Create a new video element each time to ensure fresh stream
+            const videoElement = document.createElement('video');
+            videoElement.style.width = '100%';
+            videoElement.style.height = 'auto';
+            videoElement.setAttribute('playsinline', 'true'); // Important for iOS
+            viewport.appendChild(videoElement);
+
+
+            codeReader.decodeFromVideoDevice(selectedDeviceId, videoElement, (result, err, controls) => {
+                if (result) {
+                    console.log("Barcode detected:", result);
+                    resultDiv.textContent = `Detected: ${result.getText()} (Format: ${result.getBarcodeFormat()})`;
+                    
+                    // Stop the scanner
+                    if (controls && typeof controls.stop === 'function') {
+                        controls.stop(); // Stop this specific decoding stream
+                    }
+                    stopStream(); // Stop the camera stream
+
+                    // Lookup barcode
+                    lookupBarcodeAndFillPantryForm(result.getText());
+                    scannerArea.style.display = 'none'; // Hide scanner after detection
+                }
+                if (err) {
+                    if (err instanceof ZXing.NotFoundException) {
+                        // console.log('No barcode found yet.'); // Can be spammy
+                    } else if (err instanceof ZXing.ChecksumException) {
+                        console.warn('Barcode checksum error:', err);
+                        resultDiv.textContent = 'Barcode detected but checksum failed. Try again.';
+                    } else if (err instanceof ZXing.FormatException) {
+                        console.warn('Barcode format error:', err);
+                        resultDiv.textContent = 'Barcode format error. Try again.';
+                    } else {
+                        // Don't log generic 'Video stream has ended' errors if we stopped it.
+                        if (err.message && !err.message.includes("Video stream has ended") && !err.message.includes("terminated")) {
+                            console.error('Barcode scan error:', err);
+                            resultDiv.textContent = `Scan Error: ${err.message.substring(0, 50)}...`;
+                        }
+                    }
+                }
+            }).then(controls => {
+                // Store the stream to stop it later
+                if (videoElement.srcObject) {
+                    videoStream = videoElement.srcObject;
+                }
+            }).catch(err => {
+                console.error("Error starting video stream for barcode scanning:", err);
+                resultDiv.textContent = "Error starting camera. Check permissions.";
+                 if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+                    resultDiv.textContent = "Camera permission denied. Please allow access.";
+                } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError"){
+                    resultDiv.textContent = "No camera found.";
+                }
+            });
+
+        } else {
+            resultDiv.textContent = 'No video input devices found.';
+            console.error('No video input devices found.');
+        }
+    } catch (error) {
+        console.error('Error initializing barcode scanner:', error);
+        resultDiv.textContent = 'Failed to initialize scanner.';
+    }
+}
+
+function stopStream() {
+    if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+        videoStream = null;
+        console.log("Camera stream stopped.");
+    }
+}
+
+function stopBarcodeScanner() {
+    console.log("Stopping barcode scanner explicitly...");
+    if (codeReader) {
+        codeReader.reset(); // Resets the decoding state of the reader
+    }
+    stopStream(); // Stop the camera tracks
+
+    const scannerArea = document.getElementById('barcodeScannerArea');
+    const viewport = document.getElementById('barcodeScannerViewport');
+    const resultDiv = document.getElementById('barcodeResult');
+    const stopScanBtn = document.getElementById('stopBarcodeScanBtn');
+
+    if (scannerArea) scannerArea.style.display = 'none';
+    if (resultDiv) resultDiv.textContent = '';
+    if (stopScanBtn) stopScanBtn.style.display = 'none';
+    const videoElement = viewport ? viewport.querySelector('video') : null;
+    if (videoElement) {
+        videoElement.remove(); // Clean up video element
+    }
+}
+
+async function lookupBarcodeAndFillPantryForm(barcode) {
+    console.log("Looking up barcode:", barcode);
+    const resultDiv = document.getElementById('barcodeResult'); // For status updates
+    if (resultDiv) resultDiv.textContent = `Looking up product for barcode: ${barcode}...`;
+
+    showManualPantryForm(); // Show the form to pre-fill
+    const nameInput = document.getElementById('pantryItemName');
+    const quantityInput = document.getElementById('pantryItemQuantity');
+    const unitInput = document.getElementById('pantryItemUnit');
+    // We'll also need a hidden input or a way to store the UPC if found
+    // Let's add a data attribute or a hidden field later if needed for saving the UPC.
+    // For now, we'll just fill the name.
+
+    // Temporarily disable save while looking up
+    const saveManualBtn = document.getElementById('saveManualPantryItemBtn');
+    if(saveManualBtn) saveManualBtn.disabled = true;
+
+
+    try {
+        // In a real app, you'd call your Netlify function here, which then calls Open Food Facts
+        // const response = await fetch(`/.netlify/functions/lookup-barcode?barcode=${barcode}`);
+        // For now, let's simulate a direct call for simplicity if Open Food Facts API allows CORS (it often does for GET)
+        // IMPORTANT: For production, route this through a Netlify function if API keys are involved or for rate limiting.
+        
+        console.log(`Workspaceing from Open Food Facts: https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
+        const productResponse = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
+
+        if (!productResponse.ok) {
+            throw new Error(`Product not found or API error (Status: ${productResponse.status})`);
+        }
+        const productData = await productResponse.json();
+
+        if (productData.status === 1 && productData.product) {
+            const product = productData.product;
+            console.log("Product found:", product);
+            if(resultDiv) resultDiv.textContent = `Found: ${product.product_name || 'Unnamed Product'}`;
+            
+            if (nameInput) nameInput.value = product.product_name_en || product.product_name || product.generic_name_en || product.generic_name || '';
+            if (quantityInput && product.quantity) {
+                // Try to parse quantity and unit if present (e.g., "500 g")
+                const qtyMatch = String(product.quantity).match(/^([\d.]+)\s*(\w*)$/);
+                if (qtyMatch) {
+                    quantityInput.value = qtyMatch[1];
+                    if (unitInput) unitInput.value = qtyMatch[2] || '';
+                } else {
+                    quantityInput.value = ''; // Or '1' as a default
+                }
+            } else if (quantityInput) {
+                quantityInput.value = '1'; // Default if not found
+            }
+            if (unitInput && !unitInput.value && product.serving_quantity_unit) { // Check if we found unit from quantity field
+                unitInput.value = product.serving_quantity_unit || '';
+            }
+            
+            // You can also try to prefill category or other fields if available
+            // document.getElementById('pantryItemUPC').value = barcode; // If you have a UPC field
+
+            showSuccessMessage("Product details filled from barcode scan!");
+        } else {
+            if(resultDiv) resultDiv.textContent = `Product not found for barcode: ${barcode}. Please enter details manually.`;
+            if (nameInput) nameInput.focus(); // Focus name field for manual entry
+        }
+    } catch (error) {
+        console.error("Barcode lookup error:", error);
+        if(resultDiv) resultDiv.textContent = "Error looking up barcode. Please enter details manually.";
+        if (nameInput) nameInput.focus();
+    } finally {
+        if(saveManualBtn) saveManualBtn.disabled = false; // Re-enable save button
+    }
+}
+
+function showPantryView() {
+    const view = document.getElementById('mainView');
+    if (!view) {
+        console.error("mainView element not found!");
+        return;
+    }
+
+    view.innerHTML = `
+        <div class="container pt-3">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h4 class="mb-0"><i class="bi bi-basket3-fill me-2"></i>My Pantry</h4>
+                <div>
+                    <button class="btn btn-success btn-sm me-2" id="scanBarcodeToPantryBtn" title="Scan item barcode">
+                        <i class="bi bi-upc-scan"></i> Scan Item
+                    </button>
+                    <button class="btn btn-primary btn-sm" id="addPantryItemManuallyBtn" title="Add item manually">
+                        <i class="bi bi-plus-circle"></i> Add Item
+                    </button>
+                </div>
+            </div>
+
+            <div id="barcodeScannerArea" class="mb-3" style="display: none;">
+                <div class="card card-body bg-light-subtle">
+                    <p class="text-center mb-2">Point your camera at a barcode:</p>
+                    <div id="barcodeScannerViewport" style="width: 100%; max-width: 400px; height: auto; margin:0 auto; border: 1px solid #ccc; position: relative;">
+                        </div>
+                    <div id="barcodeResult" class="mt-2 text-center small"></div>
+                    <button class="btn btn-sm btn-outline-danger mt-2 mx-auto d-block" id="stopBarcodeScanBtn">Stop Scan</button>
+                </div>
+            </div>
+
+            <div id="manualPantryForm" class="card card-body mb-3" style="display: none;">
+                <h6 class="mb-3">Add Item to Pantry</h6>
+                <div class="mb-2">
+                    <label for="pantryItemName" class="form-label small">Item Name:</label>
+                    <input type="text" id="pantryItemName" class="form-control form-control-sm">
+                </div>
+                <div class="row g-2 mb-2">
+                    <div class="col">
+                        <label for="pantryItemQuantity" class="form-label small">Quantity:</label>
+                        <input type="text" id="pantryItemQuantity" class="form-control form-control-sm">
+                    </div>
+                    <div class="col">
+                        <label for="pantryItemUnit" class="form-label small">Unit:</label>
+                        <input type="text" id="pantryItemUnit" class="form-control form-control-sm" placeholder="e.g., oz, grams, item">
+                    </div>
+                </div>
+                <div class="mb-3">
+                     <label for="pantryItemExpiry" class="form-label small">Expiry Date (Optional):</label>
+                     <input type="date" id="pantryItemExpiry" class="form-control form-control-sm">
+                </div>
+                <div id="manualPantryAddError" class="alert alert-danger small p-2" style="display:none;"></div>
+                <div class="text-end">
+                    <button type="button" class="btn btn-secondary btn-sm me-2" id="cancelManualPantryAddBtn">Cancel</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="saveManualPantryItemBtn">Save to Pantry</button>
+                </div>
+            </div>
+            
+            <input type="text" class="form-control mb-3" id="pantrySearchInput" placeholder="Search your pantry...">
+            <div id="pantryListContainer" class="list-group">
+                </div>
+        </div>
+    `;
+
+    // --- Attach Event Listeners ---
+    const scanBtn = document.getElementById('scanBarcodeToPantryBtn');
+    const addManualBtn = document.getElementById('addPantryItemManuallyBtn');
+    const stopScanBtn = document.getElementById('stopBarcodeScanBtn');
+    const cancelManualBtn = document.getElementById('cancelManualPantryAddBtn');
+    const saveManualBtn = document.getElementById('saveManualPantryItemBtn');
+    const searchInput = document.getElementById('pantrySearchInput');
+
+    if(scanBtn) scanBtn.onclick = startBarcodeScanner; // Placeholder for startBarcodeScanner
+    if(addManualBtn) addManualBtn.onclick = showManualPantryForm; // <<<< CORRECTED HERE
+    if(stopScanBtn) stopScanBtn.onclick = () => alert('Stop scan clicked'); // Placeholder for stopBarcodeScanner
+    if(cancelManualBtn) cancelManualBtn.onclick = hideManualPantryForm;
+    if(saveManualBtn) saveManualBtn.onclick = saveManualPantryItem;
+    if(searchInput) searchInput.addEventListener('input', loadAndRenderPantryItems);
+
+    loadAndRenderPantryItems();
+}
+
+async function loadAndRenderPantryItems() {
+    // console.log("loadAndRenderPantryItems: Function START. currentUser:", currentUser ? currentUser.uid : "null"); // Verbose log removed
+
+    const pantryListContainer = document.getElementById('pantryListContainer');
+    const searchInput = document.getElementById('pantrySearchInput');
+
+    if (!pantryListContainer) {
+        console.error("loadAndRenderPantryItems: pantryListContainer element NOT FOUND! Exiting.");
+        return;
+    }
+
+    pantryListContainer.innerHTML = '<div class="list-group-item text-muted text-center">Loading pantry items... <span class="spinner-border spinner-border-sm"></span></div>';
+    let items = [];
+    const searchTerm = (searchInput && typeof searchInput.value === 'string') ? searchInput.value.toLowerCase().trim() : "";
+
+    try {
+        if (currentUser) {
+            // console.log("loadAndRenderPantryItems: Condition 'currentUser' is TRUE. Attempting Firestore load for user:", currentUser.uid); // Verbose
+            const pantryCollectionRef = db.collection("users").doc(currentUser.uid).collection("pantryItems");
+            let query = pantryCollectionRef.orderBy("name");
+            const querySnapshot = await query.get();
+            // console.log("loadAndRenderPantryItems: Firestore querySnapshot received. Empty:", querySnapshot.empty, "Size:", querySnapshot.size); // Verbose
+
+            if (!querySnapshot.empty) {
+                items = querySnapshot.docs.map(doc => ({ firestoreId: doc.id, id: doc.id, ...doc.data() }));
+            } else {
+                items = [];
+            }
+            if (searchTerm && items.length > 0) {
+                items = items.filter(item => item.name && item.name.toLowerCase().includes(searchTerm));
+            }
+        } else {
+            // console.log("loadAndRenderPantryItems: Condition 'currentUser' is FALSE. Attempting LocalDB load."); // Verbose
+            if (!localDB) { /* ... handle error ... */ return; }
+            if (searchTerm) {
+                items = await localDB.pantryItems.where('name').startsWithIgnoreCase(searchTerm).sortBy('name');
+            } else {
+                items = await localDB.pantryItems.orderBy("name").toArray();
+            }
+            items = items.map(item => ({ ...item, id: item.localId, isLocal: true }));
+        }
+        renderPantryItems(items, searchTerm);
+    } catch (error) {
+        console.error("loadAndRenderPantryItems: Error in main try block:", error.stack || error);
+        if (pantryListContainer) pantryListContainer.innerHTML = '<div class="alert alert-danger text-center">Could not load pantry items.</div>';
+    }
+    // console.log("loadAndRenderPantryItems: Function END."); // Verbose
+}
+
 
 // Global click listener to close user dropdown
 document.addEventListener('click', function (event) {
