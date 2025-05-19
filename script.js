@@ -1832,114 +1832,120 @@ function createHighlightRegex(term) {
     return new RegExp(`(${escapedTerm})`, 'gi'); // 'g' for global, 'i' for case-insensitive
 }
 
+// script.js
+
 function openRecipeSpecificChatModal(recipe) {
-    if (!recipe) { /* ... handle error ... */ return; }
+    if (!recipe) {
+        console.error("No recipe data provided for Chef Bot chat.");
+        return;
+    }
 
-    let conversationHistory = []; // Initialize history for THIS chat session
-    const MAX_HISTORY_TURNS_RECIPE_CHAT = 5; 
+    let conversationHistory = [];
+    const MAX_HISTORY_TURNS_RECIPE_CHAT = 5;
 
-    // ... (Remove existing chat modal if any, create new modal HTML as before) ...
-    // The HTML structure should include: recipeChatMessages, recipeChatInput, sendRecipeChatBtn,
-    // recipeChatUpdateArea, suggestedUpdateText, applyRecipeUpdateBtn.
-    const existingChatModal = document.getElementById('recipeChatModal');
-    if (existingChatModal) existingChatModal.remove();
+    // Remove existing chat modal if any to prevent ID conflicts and ensure clean state
+    const existingChatModalElement = document.getElementById('recipeChatModal');
+    if (existingChatModalElement) {
+        // If a Bootstrap modal instance was associated, dispose of it
+        const existingBsModal = bootstrap.Modal.getInstance(existingChatModalElement);
+        if (existingBsModal) {
+            existingBsModal.hide(); // Hide it first to trigger 'hidden.bs.modal' if needed
+        }
+        existingChatModalElement.remove(); // Then remove from DOM
+    }
 
     const chatModal = document.createElement('div');
     chatModal.id = 'recipeChatModal';
     chatModal.className = 'modal fade';
-    // ... (set other modal attributes: tabindex, aria-labelledby, etc.)
-    chatModal.innerHTML = `... (your full modal HTML for recipe chat as defined previously) ...`;
+    chatModal.setAttribute('tabindex', '-1');
+    chatModal.setAttribute('aria-labelledby', 'recipeChatModalLabel');
+    chatModal.setAttribute('aria-hidden', 'true');
+
+    chatModal.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="recipeChatModalLabel">
+                        <i class="bi bi-robot"></i> Chat about: ${recipe.name}
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" style="min-height: 300px; display: flex; flex-direction: column;">
+                    <div id="recipeChatMessages" class="flex-grow-1 overflow-auto mb-3 p-2 border rounded">
+                        <p class="text-muted small">Ask me anything about "${recipe.name}"! For example: "How can I make this gluten-free?", "What's a good side dish?", "Can I substitute an ingredient?"</p>
+                    </div>
+                    <div class="input-group">
+                        <textarea id="recipeChatInput" class="form-control" placeholder="Type your question..." rows="2"></textarea>
+                        <button id="sendRecipeChatBtn" class="btn btn-primary">Send</button>
+                    </div>
+                    <div id="recipeChatUpdateArea" class="mt-3" style="display:none;">
+                        <h6>Suggested Update:</h6>
+                        <pre id="suggestedUpdateText" class="bg-light p-2 border rounded small"></pre>
+                        <button id="applyRecipeUpdateBtn" class="btn btn-sm btn-success mt-2">Apply Update to Recipe</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
     document.body.appendChild(chatModal);
-    const bsChatModal = new bootstrap.Modal(chatModal);
-    bsChatModal.show();
     document.body.classList.add('modal-open-custom'); // For scroll lock
 
-
+    // --- Get DOM Elements AFTER the modal is in the document.body ---
     const chatInput = document.getElementById('recipeChatInput');
     const sendBtn = document.getElementById('sendRecipeChatBtn');
-    const messagesContainer = document.getElementById('recipeChatMessages');
+    const messagesContainer = document.getElementById('recipeChatMessages'); // Now this should be found
     const updateArea = document.getElementById('recipeChatUpdateArea');
     const suggestedUpdateText = document.getElementById('suggestedUpdateText');
     const applyUpdateBtn = document.getElementById('applyRecipeUpdateBtn');
-    
-    const initialMessage = messagesContainer.querySelector('p.text-muted.small');
+    const closeButtonInModal = chatModal.querySelector('.btn-close'); // Query within chatModal
 
+    // It's safer to initialize Bootstrap modal AFTER its element is in the DOM
+    const bsChatModal = new bootstrap.Modal(chatModal);
+    bsChatModal.show();
+
+    // Now that messagesContainer is guaranteed to be found (or log an error if ID is wrong):
+    const initialMessage = messagesContainer ? messagesContainer.querySelector('p.text-muted.small') : null;
 
     const addChatMessage = (message, sender = 'bot') => {
+        if (!messagesContainer) return; // Guard clause
         if (initialMessage && messagesContainer.contains(initialMessage) && messagesContainer.children.length === 1 && sender !== 'initial') {
              initialMessage.remove();
         }
+        // ... (rest of addChatMessage logic)
         const msgDiv = document.createElement('div');
         msgDiv.classList.add('mb-2', sender === 'user' ? 'text-end' : 'text-start');
         const msgBubble = document.createElement('span');
         msgBubble.classList.add('p-2', 'rounded', 'chat-bubble', sender === 'user' ? 'bg-primary' : 'bg-light', sender === 'user' ? 'text-white' : 'text-dark');
         msgBubble.style.display = 'inline-block';
         msgBubble.style.maxWidth = '80%';
-        msgBubble.textContent = message; // For text, or use .innerHTML if message contains HTML
+        msgBubble.textContent = message; 
         msgDiv.appendChild(msgBubble);
         messagesContainer.appendChild(msgDiv);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     };
-    
-    // Add initial bot message if desired
-    // addChatMessage(`Ask me anything about "${recipe.name}"! For example...`, 'initial');
-
 
     if (sendBtn) {
         sendBtn.onclick = async () => {
-            const userQuestion = chatInput.value.trim();
-            if (!userQuestion) return;
-
-            addChatMessage(userQuestion, 'user');
-            // Add user's question to history BEFORE sending
-            conversationHistory.push({ role: "user", text: userQuestion });
-            if (conversationHistory.length > MAX_HISTORY_TURNS_RECIPE_CHAT * 2) { // Keep history trimmed
-                conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS_RECIPE_CHAT * 2);
-            }
-
-            chatInput.value = '';
-            sendBtn.disabled = true;
-            sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-            if(updateArea) updateArea.style.display = 'none';
-
-            try {
-                const response = await fetch('/.netlify/functions/ask-about-recipe', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        recipeContext: {
-                            id: recipe.id, name: recipe.name, ingredients: recipe.ingredients,
-                            instructions: recipe.instructions, tags: recipe.tags
-                        },
-                        question: userQuestion,
-                        history: conversationHistory // Send the current history
-                    })
-                });
-                // ... (rest of your response handling, same as before) ...
-                if (!response.ok) { /* ... throw error ... */ }
-                const data = await response.json();
-
-                if (data.answer) {
-                    addChatMessage(data.answer, 'bot');
-                    // Add bot's answer to history AFTER receiving it
-                    conversationHistory.push({ role: "model", text: data.answer });
-                     if (conversationHistory.length > MAX_HISTORY_TURNS_RECIPE_CHAT * 2) {
-                         conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS_RECIPE_CHAT * 2);
-                     }
-                } else { /* ... handle error ... */ }
-
-                if (data.suggestedUpdate && Object.keys(data.suggestedUpdate).length > 0) {
-                    // ... (your existing logic to display suggestedUpdate and handle applyUpdateBtn) ...
-                } else { /* ... hide update area ... */ }
-
-            } catch (err) { /* ... */ } 
-            finally { /* ... reset sendBtn ... */ }
+            // ... (your existing sendBtn.onclick async logic for fetching from Netlify function)
+            // ... (remember to call addChatMessage and manage conversationHistory)
         };
+    } else {
+        console.error("Send button for recipe chat not found!");
     }
     
+    if (closeButtonInModal) { // For the 'x' button in the modal header
+        closeButtonInModal.onclick = () => {
+            bsChatModal.hide(); // Use Bootstrap's hide method
+        };
+    }
+
     chatModal.addEventListener('hidden.bs.modal', () => {
-        chatModal.remove();
+        // This event is triggered by Bootstrap after the modal is hidden
         document.body.classList.remove('modal-open-custom');
+        if (chatModal.parentNode) { // Ensure it's still in DOM before trying to remove
+            chatModal.remove();
+        }
+        console.log("Recipe chat modal hidden and removed.");
     });
 }
 
