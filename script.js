@@ -1832,6 +1832,190 @@ function createHighlightRegex(term) {
     return new RegExp(`(${escapedTerm})`, 'gi'); // 'g' for global, 'i' for case-insensitive
 }
 
+function openRecipeSpecificChatModal(recipe) {
+    if (!recipe) {
+        console.error("No recipe data provided for Chef Bot chat.");
+        return;
+    }
+
+    // For now, let's just alert. You'd build a proper modal UI here.
+    // This modal would allow asking questions *about the passed 'recipe' object*.
+    // It would then send the question AND the recipe context to a Netlify function.
+
+    const existingChatModal = document.getElementById('recipeChatModal');
+    if (existingChatModal) existingChatModal.remove(); // Remove if one already exists
+
+    const chatModal = document.createElement('div');
+    // Basic modal structure - you'll want to style this properly with Bootstrap
+    chatModal.id = 'recipeChatModal';
+    chatModal.className = 'modal fade'; // Add fade for Bootstrap
+    chatModal.setAttribute('tabindex', '-1');
+    chatModal.setAttribute('aria-labelledby', 'recipeChatModalLabel');
+    chatModal.setAttribute('aria-hidden', 'true');
+
+    chatModal.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="recipeChatModalLabel">
+                        <i class="bi bi-robot"></i> Chat about: ${recipe.name}
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" style="min-height: 300px; display: flex; flex-direction: column;">
+                    <div id="recipeChatMessages" class="flex-grow-1 overflow-auto mb-3 p-2 border rounded">
+                        <p class="text-muted small">Ask me anything about "${recipe.name}"! For example: "How can I make this gluten-free?", "What's a good side dish?", "Can I substitute an ingredient?"</p>
+                    </div>
+                    <div class="input-group">
+                        <textarea id="recipeChatInput" class="form-control" placeholder="Type your question..." rows="2"></textarea>
+                        <button id="sendRecipeChatBtn" class="btn btn-primary">Send</button>
+                    </div>
+                    <div id="recipeChatUpdateArea" class="mt-3" style="display:none;">
+                        <h6>Suggested Update:</h6>
+                        <pre id="suggestedUpdateText" class="bg-light p-2 border rounded small"></pre>
+                        <button id="applyRecipeUpdateBtn" class="btn btn-sm btn-success mt-2">Apply Update to Recipe</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(chatModal);
+
+    const bsChatModal = new bootstrap.Modal(chatModal);
+    bsChatModal.show();
+
+    const chatInput = document.getElementById('recipeChatInput');
+    const sendBtn = document.getElementById('sendRecipeChatBtn');
+    const messagesContainer = document.getElementById('recipeChatMessages');
+    const updateArea = document.getElementById('recipeChatUpdateArea');
+    const suggestedUpdateText = document.getElementById('suggestedUpdateText');
+    const applyUpdateBtn = document.getElementById('applyRecipeUpdateBtn');
+
+    // Clear initial placeholder if it exists and isn't the first message
+    const initialMessage = messagesContainer.querySelector('p.text-muted.small');
+
+    const addChatMessage = (message, sender = 'bot') => {
+        if (initialMessage && messagesContainer.contains(initialMessage) && messagesContainer.children.length === 1) {
+            initialMessage.remove(); // Remove placeholder once a real message comes
+        }
+        const msgDiv = document.createElement('div');
+        msgDiv.classList.add('mb-2', sender === 'user' ? 'text-end' : 'text-start');
+        const msgBubble = document.createElement('span');
+        msgBubble.classList.add('p-2', 'rounded', sender === 'user' ? 'bg-primary' : 'bg-light', sender === 'user' ? 'text-white' : 'text-dark');
+        msgBubble.style.display = 'inline-block';
+        msgBubble.style.maxWidth = '80%';
+        msgBubble.textContent = message;
+        msgDiv.appendChild(msgBubble);
+        messagesContainer.appendChild(msgDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight; // Scroll to bottom
+    };
+
+    sendBtn.onclick = async () => {
+        const question = chatInput.value.trim();
+        if (!question) return;
+
+        addChatMessage(question, 'user');
+        chatInput.value = '';
+        sendBtn.disabled = true;
+        sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+        updateArea.style.display = 'none'; // Hide previous update suggestion
+
+        try {
+            const response = await fetch('/.netlify/functions/ask-about-recipe', { // Your new function
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    recipeContext: { // Send enough context
+                        id: recipe.id, // Original recipe ID (local or cloud)
+                        name: recipe.name,
+                        ingredients: recipe.ingredients,
+                        instructions: recipe.instructions,
+                        tags: recipe.tags
+                    },
+                    question: question
+                })
+            });
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({ error: "Server error while asking about recipe." }));
+                throw new Error(errData.error || `Error ${response.status}`);
+            }
+            const data = await response.json(); // Expects { answer: "...", suggestedUpdate: {...} or null }
+
+            if (data.answer) {
+                addChatMessage(data.answer, 'bot');
+            } else {
+                addChatMessage("I'm sorry, I couldn't process that request properly.", 'bot');
+            }
+
+            if (data.suggestedUpdate && Object.keys(data.suggestedUpdate).length > 0) {
+                updateArea.style.display = 'block';
+                // Pretty print the suggested changes. You might want to format this better for the user.
+                let updateDetails = "AI suggests updating the following:\n";
+                for (const key in data.suggestedUpdate) {
+                    if (key === 'ingredients') {
+                        updateDetails += `- Ingredients: (see new list below)\n${JSON.stringify(data.suggestedUpdate.ingredients, null, 2)}\n`;
+                    } else if (key === 'tags') {
+                        updateDetails += `- Tags: ${data.suggestedUpdate.tags.join(', ')}\n`;
+                    } else {
+                        updateDetails += `- ${key.charAt(0).toUpperCase() + key.slice(1)}: ${data.suggestedUpdate[key]}\n`;
+                    }
+                }
+                suggestedUpdateText.textContent = updateDetails;
+                
+                applyUpdateBtn.style.display = 'inline-block'; // Ensure it's visible
+                applyUpdateBtn.onclick = async () => {
+                    console.log("Applying update:", data.suggestedUpdate);
+                    // Create the full updated recipe object
+                    const recipeToUpdate = { ...recipe }; // Start with the original recipe
+
+                    // Carefully merge suggested updates.
+                    // For arrays like ingredients and tags, the AI should provide the *complete new array*.
+                    if (data.suggestedUpdate.name) recipeToUpdate.name = data.suggestedUpdate.name;
+                    if (data.suggestedUpdate.ingredients) recipeToUpdate.ingredients = data.suggestedUpdate.ingredients;
+                    if (data.suggestedUpdate.instructions) recipeToUpdate.instructions = data.suggestedUpdate.instructions;
+                    if (data.suggestedUpdate.tags) recipeToUpdate.tags = data.suggestedUpdate.tags;
+                    // Add any other fields the AI might update (prepTime, cookTime, etc.)
+
+                    // Now save this recipeToUpdate (to Firestore or LocalDB)
+                    // This will call your existing saveRecipe logic or a dedicated updateRecipe function.
+                    // You'll need to pass whether it's a local or cloud recipe.
+                    try {
+                        if (currentUser && !recipe.isLocal) { // Assuming 'isLocal' flag exists or check recipe.firestoreId
+                            await db.collection('recipes').doc(recipe.id).set(recipeToUpdate, { merge: true });
+                            showSuccessMessage("Recipe updated in your account!");
+                        } else if (localDB) {
+                            recipeToUpdate.localId = recipe.id; // Ensure localId is set for Dexie's put
+                            await localDB.recipes.put(recipeToUpdate);
+                            showSuccessMessage("Local recipe updated!");
+                        }
+                        bsChatModal.hide(); // Close chat modal
+                        loadInitialRecipes(); // Refresh the main recipe list
+                    } catch (saveError) {
+                        console.error("Error applying recipe update:", saveError);
+                        alert("Failed to apply update: " + saveError.message);
+                    }
+                    updateArea.style.display = 'none';
+                };
+            } else {
+                updateArea.style.display = 'none';
+                applyUpdateBtn.style.display = 'none';
+            }
+
+        } catch (err) {
+            addChatMessage(`Error: ${err.message}`, 'bot');
+            console.error("Error in recipe chat:", err);
+        } finally {
+            sendBtn.disabled = false;
+            sendBtn.innerHTML = 'Send';
+        }
+    };
+    
+    // Remove modal from DOM when hidden to avoid ID conflicts if opened again
+    chatModal.addEventListener('hidden.bs.modal', () => {
+        chatModal.remove();
+    });
+}
+
 function displayRecipes(listToDisplay, containerId = 'recipeResults', options = {}) {
     const container = document.getElementById(containerId);
     if (!container) {
@@ -1864,58 +2048,64 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
         const titleElement = document.createElement('h5');
         titleElement.className = 'recipe-title mb-0 text-primary';
         let recipeName = recipe.name || "Untitled Recipe";
-        if (nameRegex && options.highlightNameTerm && recipeName.toLowerCase().includes(options.highlightNameTerm.toLowerCase())) { // Added options.highlightNameTerm check
+        if (nameRegex && options.highlightNameTerm && recipeName.toLowerCase().includes(options.highlightNameTerm.toLowerCase())) {
             titleElement.innerHTML = recipeName.replace(nameRegex, '<mark>$1</mark>');
         } else {
             titleElement.textContent = recipeName;
         }
         titleRow.appendChild(titleElement);
 
-        // --- Button Group (Share, Edit, Delete) ---
+        // --- Button Group (Share, Edit, Chef Bot, Delete) ---
         const buttonGroup = document.createElement('div');
         buttonGroup.className = 'd-flex gap-2 align-items-center mt-2 mt-sm-0 recipe-card-actions flex-shrink-0';
 
-        // Share Button
         const shareBtn = document.createElement('button');
         shareBtn.className = 'btn btn-outline-secondary btn-sm btn-share';
-        if (!currentUser) {
+        if (!currentUser) { /* ... shareBtn logic ... */
             shareBtn.disabled = true;
             shareBtn.title = 'Sign in to share recipes via a link';
             shareBtn.innerHTML = '<i class="bi bi-share"></i>';
-            shareBtn.onclick = (e) => {
-                e.preventDefault();
-                showLoginModal();
-            };
-        } else {
+            shareBtn.onclick = (e) => { e.preventDefault(); showLoginModal(); };
+        } else { /* ... */ 
             shareBtn.innerHTML = '<i class="bi bi-share-fill"></i>';
             shareBtn.title = 'Share recipe link';
-            shareBtn.onclick = () => shareRecipe(recipe.id); // recipe.id is Firestore ID here
+            shareBtn.onclick = () => shareRecipe(recipe.id);
         }
         buttonGroup.appendChild(shareBtn);
 
-        // Edit Button
         const editBtn = document.createElement('button');
         editBtn.className = 'btn btn-outline-primary btn-sm';
         editBtn.innerHTML = '<i class="bi bi-pencil-fill"></i>';
         editBtn.title = "Edit recipe";
-        editBtn.onclick = () => openInlineEditor(recipe.id, card); // recipe.id is localId or FirestoreId
+        editBtn.onclick = () => openInlineEditor(recipe.id, card);
         buttonGroup.appendChild(editBtn);
 
-        // Delete Button Area
+        // ** NEW: Chef Bot Button for This Specific Recipe **
+        const chefBotRecipeBtn = document.createElement('button');
+        chefBotRecipeBtn.className = 'btn btn-outline-warning btn-sm ask-chef-bot-recipe';
+        chefBotRecipeBtn.innerHTML = '<i class="bi bi-robot"></i>';
+        chefBotRecipeBtn.title = `Ask Chef Bot about "${recipe.name}"`;
+        chefBotRecipeBtn.dataset.recipeId = recipe.id;
+        chefBotRecipeBtn.onclick = () => {
+            openRecipeSpecificChatModal(recipe); 
+        };
+        buttonGroup.appendChild(chefBotRecipeBtn);
+        
         const deleteArea = document.createElement('div');
         deleteArea.className = 'delete-area position-relative d-inline-block';
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'btn btn-outline-danger btn-sm';
         deleteBtn.innerHTML = '<i class="bi bi-trash-fill"></i>';
         deleteBtn.title = "Delete recipe";
-        deleteBtn.onclick = () => confirmDeleteRecipe(recipe.id, deleteArea); // Pass deleteArea for confirm UI
+        deleteBtn.onclick = () => confirmDeleteRecipe(recipe.id, deleteArea);
         deleteArea.appendChild(deleteBtn);
         buttonGroup.appendChild(deleteArea);
         // --- End Button Group ---
 
-        titleRow.appendChild(buttonGroup); // Add the fully constructed button group
+        titleRow.appendChild(buttonGroup);
         body.appendChild(titleRow);
 
+        // === RESTORED/ENSURED SECTIONS BELOW ===
 
         // --- Tags and Ratings Row ---
         const tagsAndRatingRow = document.createElement('div');
@@ -1925,13 +2115,12 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
         if (recipe.tags && recipe.tags.length > 0) {
             recipe.tags.forEach(tag => {
                 const tagBadge = document.createElement('span');
-                tagBadge.className = 'badge me-1 mb-1 bg-secondary'; // Default
+                tagBadge.className = 'badge me-1 mb-1 bg-secondary';
                 let tagDisplay = tag;
-                let isTagHighlighted = false; // Flag to ensure highlight style is applied only once
+                let isTagHighlighted = false;
                 if (tagRegexes.length > 0) {
                     tagRegexes.forEach(regex => {
-                        // Extract the search term from the regex for includes() check
-                        const searchTermFromRegex = regex.source.replace(/^\(|\)$/g, ''); // Remove capturing group parentheses
+                        const searchTermFromRegex = regex.source.replace(/^\(|\)$/g, '');
                         if (tag.toLowerCase().includes(searchTermFromRegex)) {
                             tagDisplay = tag.replace(regex, '<mark>$1</mark>');
                             isTagHighlighted = true;
@@ -1971,7 +2160,6 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
         tagsAndRatingRow.appendChild(ratingContainer);
         body.appendChild(tagsAndRatingRow);
 
-
         // --- Ingredients Table ---
         const table = document.createElement('table');
         table.className = 'table table-bordered table-sm mt-2 mb-2';
@@ -1985,25 +2173,20 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
                 const nameTd = document.createElement('td');
                 const ingName = typeof ing === 'object' ? (ing.name || '') : (ing || '');
                 let ingNameDisplay = ingName;
-
                 if (ingredientRegexes.length > 0) {
                     ingredientRegexes.forEach(regex => {
-                        const searchTermFromRegex = regex.source.replace(/^\(|\)$/g, ''); // Remove capturing group parentheses
+                        const searchTermFromRegex = regex.source.replace(/^\(|\)$/g, '');
                         if (ingName.toLowerCase().includes(searchTermFromRegex)) {
                             ingNameDisplay = ingName.replace(regex, '<mark>$1</mark>');
                         }
                     });
                 }
                 nameTd.innerHTML = ingNameDisplay;
-
                 const qtyTd = document.createElement('td');
                 qtyTd.textContent = typeof ing === 'object' ? (ing.quantity || '') : '';
                 const unitTd = document.createElement('td');
                 unitTd.textContent = typeof ing === 'object' ? (ing.unit || '') : '';
-
-                tr.appendChild(nameTd);
-                tr.appendChild(qtyTd);
-                tr.appendChild(unitTd);
+                tr.appendChild(nameTd); tr.appendChild(qtyTd); tr.appendChild(unitTd);
                 tbody.appendChild(tr);
             });
         } else {
@@ -2026,22 +2209,22 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
         // --- Bottom Button Row (Mark as Made, Plan Meal) ---
         const bottomButtonRow = document.createElement('div');
         bottomButtonRow.className = 'd-flex align-items-center justify-content-start gap-2 mt-3 pt-2 border-top';
-
         const madeBtn = document.createElement('button');
         madeBtn.className = 'btn btn-outline-info btn-sm';
         madeBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Mark as Made';
-        madeBtn.onclick = (e) => markAsMade(recipe, e.target); // Pass the full recipe object
+        madeBtn.onclick = (e) => markAsMade(recipe, e.target);
         bottomButtonRow.appendChild(madeBtn);
-
         const planArea = document.createElement('div');
         planArea.className = 'plan-area';
         const planBtn = document.createElement('button');
         planBtn.className = 'btn btn-outline-success btn-sm';
         planBtn.innerHTML = '<i class="bi bi-calendar-plus"></i> Plan Meal';
-        planBtn.onclick = () => openPlanMealForm(recipe, planArea); // Pass the full recipe object
+        planBtn.onclick = () => openPlanMealForm(recipe, planArea);
         planArea.appendChild(planBtn);
         bottomButtonRow.appendChild(planArea);
         body.appendChild(bottomButtonRow);
+
+        // === END RESTORED SECTIONS ===
 
         card.appendChild(body);
         container.appendChild(card);
