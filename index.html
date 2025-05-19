@@ -24,19 +24,19 @@
 <body>
 
   <div class="d-flex flex-column vh-100">
-      <div id="menuBar" class="fixed-menu p-2">
-        <div class="d-flex justify-content-around align-items-center">
+    <!-- Menu Bar -->
+    <div id="menuBar" class="fixed-menu p-2">
+      <div class="d-flex justify-content-around">
         <button class="btn btn-outline-primary" onclick="showRecipeFilter()">Recipes</button>
         <button class="btn btn-outline-info" onclick="viewHistory()">History</button>
         <button class="btn btn-outline-success" onclick="showPlanning()">Planning</button>
-        <button class="btn btn-outline-secondary" onclick="showPantryView()">Pantry</button> 
         <button class="btn btn-outline-warning" onclick="showChatbotModal()">Chef Bot <i class="bi bi-robot"></i></button>
         <div id="userAuthArea" class="d-flex align-items-center justify-content-end p-2"></div>
       </div>
     </div>
 
     <!-- Main Viewport -->
-    <div id="mainView" class="flex-grow-1 bg-light p-3"> </div>
+    <div id="mainView" class="flex-grow-1 bg-light">
       <div id="addRecipeContainer" style="display: none;" class="p-3">
         <!-- Add Recipe Form and OCR results will go here -->
       </div>
@@ -154,7 +154,6 @@ const firebaseConfig = {
   const db = firebase.firestore();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script src="js/libs/dexie.js"></script>
 <script src="script.js"></script>
 </body>

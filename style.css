@@ -271,19 +271,3 @@
 #userAuthArea .btn.rounded-circle:focus {
     background-color: #e9ecef;
 } */
-
-/* style.css - Ensure these are suitable */
-
-#menuBar { /* Or #topBar if you renamed it for the title-only bar */
-    border-bottom: 1px solid #dee2e6; /* Standard Bootstrap border color */
-    position: sticky;
-    top: 0;
-    z-index: 1030; /* Bootstrap's sticky-top z-index */
-    background-color: white;
-    /* min-height: 56px; /* Common navbar height */
-}
-
-/* If you have an #activeViewTitle in a new top bar */
-#currentPageTitle {
-    font-weight: 500; /* Or your preference */
-}
