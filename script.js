@@ -1761,6 +1761,16 @@ function populateIngredientSelect() {
   });
 }
 
+function escapeHtml(unsafe) {
+    if (typeof unsafe !== 'string') return unsafe; // Return non-strings as is
+    return unsafe
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
+}
+
 function applyAllRecipeFilters() {
     const nameSearchTerm = document.getElementById('nameSearch') ?
                            document.getElementById('nameSearch').value.toLowerCase().trim() : "";
@@ -1842,13 +1852,13 @@ function openRecipeSpecificChatModal(recipe) {
     }
 
     let conversationHistory = [];
-    const MAX_HISTORY_TURNS_RECIPE_CHAT = 5; 
+    const MAX_HISTORY_TURNS_RECIPE_CHAT = 5;
 
     const existingChatModalElement = document.getElementById('recipeChatModal');
     if (existingChatModalElement) {
         const existingBsModal = bootstrap.Modal.getInstance(existingChatModalElement);
         if (existingBsModal) {
-            existingBsModal.hide(); 
+            existingBsModal.hide();
         } else {
             existingChatModalElement.remove();
         }
@@ -1860,21 +1870,21 @@ function openRecipeSpecificChatModal(recipe) {
     chatModal.setAttribute('tabindex', '-1');
     chatModal.setAttribute('aria-labelledby', 'recipeChatModalLabel');
     chatModal.setAttribute('aria-hidden', 'true');
-    chatModal.dataset.bsKeyboard = "false"; 
-    chatModal.dataset.bsBackdrop = "static"; 
+    chatModal.dataset.bsKeyboard = "false";
+    chatModal.dataset.bsBackdrop = "static";
 
     chatModal.innerHTML = `
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="recipeChatModalLabel">
-                        <i class="bi bi-robot"></i> Chat about: <span class="fw-semibold">${recipe.name}</span>
+                        <i class="bi bi-robot"></i> Chat about: <span class="fw-semibold">${escapeHtml(recipe.name)}</span>
                     </h5>
                     <button type="button" class="btn-close" aria-label="Close"></button>
                 </div>
                 <div class="modal-body" style="min-height: 300px; display: flex; flex-direction: column;">
                     <div id="recipeChatMessages" class="flex-grow-1 overflow-auto mb-3 p-2 border rounded bg-light-subtle" style="font-size: 0.9rem;">
-                        <p class="text-muted small text-center p-2">Ask any questions about "${recipe.name}" or request modifications (e.g., "How can I make this vegetarian?", "What's a good wine pairing?", "Can I double the servings?").</p>
+                        <p class="text-muted small text-center p-2">Ask any questions about "${escapeHtml(recipe.name)}"! For example: "How can I make this vegetarian?", "What's a good wine pairing?", "Can I double the servings?".</p>
                     </div>
                     <div class="input-group">
                         <textarea id="recipeChatInput" class="form-control" placeholder="Type your question..." rows="2" aria-label="Your question about the recipe"></textarea>
@@ -1884,7 +1894,7 @@ function openRecipeSpecificChatModal(recipe) {
                     </div>
                     <div id="recipeChatUpdateArea" class="mt-3 border p-3 rounded bg-light" style="display:none;">
                         <h6 class="mb-2"><i class="bi bi-lightbulb-fill text-warning"></i> Chef Bot Suggests an Update:</h6>
-                        <pre id="suggestedUpdateText" class="bg-white p-2 border rounded small" style="max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;"></pre>
+                        <div id="suggestedUpdateText" class="bg-white p-2 border rounded small" style="max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;"></div>
                         <div class="text-end mt-2">
                             <button id="saveAsNewRecipeBtn" class="btn btn-sm btn-outline-primary me-2" type="button">
                                 <i class="bi bi-plus-circle"></i> Save as New
@@ -1908,7 +1918,7 @@ function openRecipeSpecificChatModal(recipe) {
     const sendBtn = document.getElementById('sendRecipeChatBtn');
     const messagesContainer = document.getElementById('recipeChatMessages');
     const updateArea = document.getElementById('recipeChatUpdateArea');
-    const suggestedUpdateText = document.getElementById('suggestedUpdateText');
+    const suggestedUpdateTextElement = document.getElementById('suggestedUpdateText'); // Renamed to avoid conflict
     const applyUpdateBtn = document.getElementById('applyRecipeUpdateBtn');
     const saveAsNewBtn = document.getElementById('saveAsNewRecipeBtn');
     const dismissUpdateBtn = document.getElementById('dismissRecipeUpdateBtn');
@@ -1920,21 +1930,33 @@ function openRecipeSpecificChatModal(recipe) {
 
     const initialPlaceholderMessage = messagesContainer ? messagesContainer.querySelector('p.text-muted.small') : null;
 
-    const addChatMessage = (message, sender = 'bot', isError = false) => {
+     const addChatMessage = (message, sender = 'bot', isError = false) => {
         if (!messagesContainer) return;
         if (initialPlaceholderMessage && messagesContainer.contains(initialPlaceholderMessage) && messagesContainer.children.length === 1 && sender !== 'initial') {
              initialPlaceholderMessage.remove();
         }
         const msgDiv = document.createElement('div');
         msgDiv.classList.add('mb-2', 'chat-message-row', sender === 'user' ? 'text-end' : 'text-start');
+        
         const msgBubble = document.createElement('div');
         msgBubble.classList.add('p-2', 'rounded', 'chat-bubble');
-        msgBubble.classList.add(sender === 'user' ? 'bg-primary' : (isError ? 'bg-danger-subtle' : 'bg-light'));
-        msgBubble.classList.add(sender === 'user' ? 'text-white' : (isError ? 'text-danger-emphasis' : 'text-dark'));
         msgBubble.style.display = 'inline-block';
         msgBubble.style.maxWidth = '85%';
         msgBubble.style.textAlign = 'left';
+
+        if (sender === 'user') {
+            msgBubble.classList.add('bg-primary', 'text-white');
+        } else if (isError) {
+            msgBubble.classList.add('bg-danger-subtle', 'text-danger-emphasis');
+        } else { // Bot's normal message
+            msgBubble.classList.add('bg-body-secondary'); // CHANGED from bg-light
+            msgBubble.classList.add('text-dark'); // Ensure text color has good contrast
+            // Optionally, add a subtle border to bot messages
+            // msgBubble.style.border = "1px solid #dee2e6"; // Bootstrap's $gray-300
+        }
+        
         msgBubble.textContent = message;
+        
         msgDiv.appendChild(msgBubble);
         messagesContainer.appendChild(msgDiv);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -1964,7 +1986,7 @@ function openRecipeSpecificChatModal(recipe) {
                     body: JSON.stringify({
                         recipeContext: {
                             id: recipe.id, name: recipe.name, ingredients: recipe.ingredients,
-                            instructions: recipe.instructions, tags: recipe.tags
+                            instructions: recipe.instructions, tags: recipe.tags, isLocal: !!recipe.isLocal // Pass isLocal flag
                         },
                         question: userQuestion,
                         history: conversationHistory
@@ -1988,24 +2010,35 @@ function openRecipeSpecificChatModal(recipe) {
                 }
 
                 if (data.suggestedUpdate && Object.keys(data.suggestedUpdate).length > 0) {
-                    if (updateArea && suggestedUpdateText && applyUpdateBtn && dismissUpdateBtn && saveAsNewBtn) {
+                    if (updateArea && suggestedUpdateTextElement && applyUpdateBtn && dismissUpdateBtn && saveAsNewBtn) {
                         updateArea.style.display = 'block';
-                        let formattedUpdateDetails = "";
-                        if (data.suggestedUpdate.name) formattedUpdateDetails += `<strong>New Name:</strong> ${data.suggestedUpdate.name}\n\n`;
+                        
+                        let formattedUpdateDetailsHTML = ""; // Build as HTML string
+                        if (data.suggestedUpdate.name) {
+                            formattedUpdateDetailsHTML += `<p><strong>New Name:</strong> ${escapeHtml(data.suggestedUpdate.name)}</p>`;
+                        }
                         if (data.suggestedUpdate.ingredients && Array.isArray(data.suggestedUpdate.ingredients)) {
-                            formattedUpdateDetails += "<strong>Updated Ingredients:</strong>\n";
+                            formattedUpdateDetailsHTML += "<p><strong>Updated Ingredients:</strong></p><ul>";
                             data.suggestedUpdate.ingredients.forEach(ing => {
-                                formattedUpdateDetails += `- ${ing.quantity || ''} ${ing.unit || ''} ${ing.name}\n`;
+                                const q = escapeHtml(ing.quantity || '');
+                                const u = escapeHtml(ing.unit || '');
+                                const n = escapeHtml(ing.name || 'Unknown Ingredient');
+                                formattedUpdateDetailsHTML += `<li>${q} ${u} ${n}</li>`;
                             });
-                            formattedUpdateDetails += "\n";
+                            formattedUpdateDetailsHTML += "</ul>";
                         }
                         if (data.suggestedUpdate.instructions) {
-                            formattedUpdateDetails += `<strong>Updated Instructions:</strong>\n${data.suggestedUpdate.instructions}\n\n`;
+                            formattedUpdateDetailsHTML += `<p><strong>Updated Instructions:</strong><br>${escapeHtml(data.suggestedUpdate.instructions).replace(/\n/g, '<br>')}</p>`;
                         }
                         if (data.suggestedUpdate.tags && Array.isArray(data.suggestedUpdate.tags)) {
-                            formattedUpdateDetails += `<strong>Updated Tags:</strong> ${data.suggestedUpdate.tags.join(', ')}\n`;
+                            formattedUpdateDetailsHTML += `<p><strong>Updated Tags:</strong> ${escapeHtml(data.suggestedUpdate.tags.join(', '))}</p>`;
                         }
-                        suggestedUpdateText.textContent = formattedUpdateDetails.trim() || "No specific changes listed.";
+                        
+                        if (formattedUpdateDetailsHTML.trim() === "") {
+                            suggestedUpdateTextElement.textContent = "The AI suggested some changes. Review its answer above for details.";
+                        } else {
+                            suggestedUpdateTextElement.innerHTML = formattedUpdateDetailsHTML; // Use innerHTML
+                        }
                         
                         applyUpdateBtn.style.display = 'inline-block';
                         saveAsNewBtn.style.display = 'inline-block';
@@ -2019,17 +2052,16 @@ function openRecipeSpecificChatModal(recipe) {
                             if (data.suggestedUpdate.instructions && typeof data.suggestedUpdate.instructions === 'string') recipeToUpdate.instructions = data.suggestedUpdate.instructions;
                             if (Array.isArray(data.suggestedUpdate.tags)) recipeToUpdate.tags = data.suggestedUpdate.tags;
                             recipeToUpdate.rating = recipe.rating || data.suggestedUpdate.rating || 0;
-                            recipeToUpdate.timestamp = new Date(); 
-
+                            
                             try {
-                                if (currentUser && !recipe.isLocal) {
+                                if (currentUser && !recipe.isLocal) { 
                                     recipeToUpdate.uid = recipe.uid || currentUser.uid;
                                     recipeToUpdate.timestamp = firebase.firestore.FieldValue.serverTimestamp();
                                     await db.collection('recipes').doc(recipe.id).set(recipeToUpdate, { merge: true });
                                     showSuccessMessage("Recipe updated in your account!");
-                                } else if (localDB) {
-                                    recipeToUpdate.localId = recipe.id;
-                                    recipeToUpdate.timestamp = recipeToUpdate.timestamp.toISOString();
+                                } else if (localDB) { 
+                                    recipeToUpdate.localId = recipe.id; 
+                                    recipeToUpdate.timestamp = new Date().toISOString(); // Update local timestamp
                                     await localDB.recipes.put(recipeToUpdate);
                                     showSuccessMessage("Local recipe updated!");
                                 }
@@ -2051,9 +2083,8 @@ function openRecipeSpecificChatModal(recipe) {
                                 tags: data.suggestedUpdate.tags || recipe.tags || [],
                                 rating: 0,
                             };
-                            await saveNewRecipeToStorage(newRecipeData); // Uses your generic new recipe saver
+                            await saveNewRecipeToStorage(newRecipeData); 
                             if(bsChatModal) bsChatModal.hide();
-                            // loadInitialRecipes(); // saveNewRecipeToStorage already calls this
                             if(updateArea) updateArea.style.display = 'none';
                         };
                     }
@@ -2086,7 +2117,7 @@ function openRecipeSpecificChatModal(recipe) {
     if(dismissUpdateBtn && updateArea) {
         dismissUpdateBtn.onclick = () => {
             updateArea.style.display = 'none';
-        }
+        };
     }
     
     if(closeButtonInModalHeader) {
@@ -2101,7 +2132,6 @@ function openRecipeSpecificChatModal(recipe) {
             chatModal.remove();
         }
         console.log("Recipe chat modal hidden and removed.");
-        // Stop speech recognition if it was part of this modal and active
         if (window.recipeSpecificChatSpeechRecognition && window.recipeSpecificChatIsListening) {
             window.recipeSpecificChatSpeechRecognition.stop();
             window.recipeSpecificChatIsListening = false;
