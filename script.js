@@ -465,6 +465,8 @@ function showRecipeFilter() {
         }
         console.warn("Global 'recipes' array not defined when showRecipeFilter was called. Ensure loadInitialRecipes() has run.");
     }
+    updatePageTitle("Recipes");
+    setActiveNavButton("recipes");
 }
 
 function clearAllRecipeFilters() {
@@ -1484,6 +1486,8 @@ function showRandomRecipe() {
 
 
 function viewHistory() {
+    updatePageTitle("History"); // Assuming you want to update the title
+    setActiveNavButton("history");
     const view = document.getElementById('mainView');
     view.className = 'section-history'; // For potential specific styling
     view.innerHTML = `
@@ -3377,6 +3381,8 @@ function loadIngredientsFromFirestore() {
 }
 
 function showPlanning() {
+    updatePageTitle("Meal Plan"); // Assuming you want to update the title
+    setActiveNavButton("plan");
     const view = document.getElementById('mainView');
     view.className = 'section-planning container py-3'; // Added container and padding
     view.innerHTML = `
@@ -4387,6 +4393,7 @@ function setActiveNavButton(viewName) {
 }
 
 function handleAccountNavClick() {
+    setActiveNavButton("account");
     console.log("handleAccountNavClick called. currentUser:", currentUser); // First debug log
     
     // Set the active state for the 'account' tab
