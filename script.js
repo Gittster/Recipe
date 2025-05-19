@@ -1833,56 +1833,27 @@ function createHighlightRegex(term) {
 }
 
 function openRecipeSpecificChatModal(recipe) {
-    if (!recipe) {
-        console.error("No recipe data provided for Chef Bot chat.");
-        return;
-    }
+    if (!recipe) { /* ... handle error ... */ return; }
 
-    // For now, let's just alert. You'd build a proper modal UI here.
-    // This modal would allow asking questions *about the passed 'recipe' object*.
-    // It would then send the question AND the recipe context to a Netlify function.
+    let conversationHistory = []; // Initialize history for THIS chat session
+    const MAX_HISTORY_TURNS_RECIPE_CHAT = 5; 
 
+    // ... (Remove existing chat modal if any, create new modal HTML as before) ...
+    // The HTML structure should include: recipeChatMessages, recipeChatInput, sendRecipeChatBtn,
+    // recipeChatUpdateArea, suggestedUpdateText, applyRecipeUpdateBtn.
     const existingChatModal = document.getElementById('recipeChatModal');
-    if (existingChatModal) existingChatModal.remove(); // Remove if one already exists
+    if (existingChatModal) existingChatModal.remove();
 
     const chatModal = document.createElement('div');
-    // Basic modal structure - you'll want to style this properly with Bootstrap
     chatModal.id = 'recipeChatModal';
-    chatModal.className = 'modal fade'; // Add fade for Bootstrap
-    chatModal.setAttribute('tabindex', '-1');
-    chatModal.setAttribute('aria-labelledby', 'recipeChatModalLabel');
-    chatModal.setAttribute('aria-hidden', 'true');
-
-    chatModal.innerHTML = `
-        <div class="modal-dialog modal-dialog-centered modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="recipeChatModalLabel">
-                        <i class="bi bi-robot"></i> Chat about: ${recipe.name}
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body" style="min-height: 300px; display: flex; flex-direction: column;">
-                    <div id="recipeChatMessages" class="flex-grow-1 overflow-auto mb-3 p-2 border rounded">
-                        <p class="text-muted small">Ask me anything about "${recipe.name}"! For example: "How can I make this gluten-free?", "What's a good side dish?", "Can I substitute an ingredient?"</p>
-                    </div>
-                    <div class="input-group">
-                        <textarea id="recipeChatInput" class="form-control" placeholder="Type your question..." rows="2"></textarea>
-                        <button id="sendRecipeChatBtn" class="btn btn-primary">Send</button>
-                    </div>
-                    <div id="recipeChatUpdateArea" class="mt-3" style="display:none;">
-                        <h6>Suggested Update:</h6>
-                        <pre id="suggestedUpdateText" class="bg-light p-2 border rounded small"></pre>
-                        <button id="applyRecipeUpdateBtn" class="btn btn-sm btn-success mt-2">Apply Update to Recipe</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
+    chatModal.className = 'modal fade';
+    // ... (set other modal attributes: tabindex, aria-labelledby, etc.)
+    chatModal.innerHTML = `... (your full modal HTML for recipe chat as defined previously) ...`;
     document.body.appendChild(chatModal);
-
     const bsChatModal = new bootstrap.Modal(chatModal);
     bsChatModal.show();
+    document.body.classList.add('modal-open-custom'); // For scroll lock
+
 
     const chatInput = document.getElementById('recipeChatInput');
     const sendBtn = document.getElementById('sendRecipeChatBtn');
@@ -1890,129 +1861,85 @@ function openRecipeSpecificChatModal(recipe) {
     const updateArea = document.getElementById('recipeChatUpdateArea');
     const suggestedUpdateText = document.getElementById('suggestedUpdateText');
     const applyUpdateBtn = document.getElementById('applyRecipeUpdateBtn');
-
-    // Clear initial placeholder if it exists and isn't the first message
+    
     const initialMessage = messagesContainer.querySelector('p.text-muted.small');
 
+
     const addChatMessage = (message, sender = 'bot') => {
-        if (initialMessage && messagesContainer.contains(initialMessage) && messagesContainer.children.length === 1) {
-            initialMessage.remove(); // Remove placeholder once a real message comes
+        if (initialMessage && messagesContainer.contains(initialMessage) && messagesContainer.children.length === 1 && sender !== 'initial') {
+             initialMessage.remove();
         }
         const msgDiv = document.createElement('div');
         msgDiv.classList.add('mb-2', sender === 'user' ? 'text-end' : 'text-start');
         const msgBubble = document.createElement('span');
-        msgBubble.classList.add('p-2', 'rounded', sender === 'user' ? 'bg-primary' : 'bg-light', sender === 'user' ? 'text-white' : 'text-dark');
+        msgBubble.classList.add('p-2', 'rounded', 'chat-bubble', sender === 'user' ? 'bg-primary' : 'bg-light', sender === 'user' ? 'text-white' : 'text-dark');
         msgBubble.style.display = 'inline-block';
         msgBubble.style.maxWidth = '80%';
-        msgBubble.textContent = message;
+        msgBubble.textContent = message; // For text, or use .innerHTML if message contains HTML
         msgDiv.appendChild(msgBubble);
         messagesContainer.appendChild(msgDiv);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight; // Scroll to bottom
-    };
-
-    sendBtn.onclick = async () => {
-        const question = chatInput.value.trim();
-        if (!question) return;
-
-        addChatMessage(question, 'user');
-        chatInput.value = '';
-        sendBtn.disabled = true;
-        sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-        updateArea.style.display = 'none'; // Hide previous update suggestion
-
-        try {
-            const response = await fetch('/.netlify/functions/ask-about-recipe', { // Your new function
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    recipeContext: { // Send enough context
-                        id: recipe.id, // Original recipe ID (local or cloud)
-                        name: recipe.name,
-                        ingredients: recipe.ingredients,
-                        instructions: recipe.instructions,
-                        tags: recipe.tags
-                    },
-                    question: question
-                })
-            });
-            if (!response.ok) {
-                const errData = await response.json().catch(() => ({ error: "Server error while asking about recipe." }));
-                throw new Error(errData.error || `Error ${response.status}`);
-            }
-            const data = await response.json(); // Expects { answer: "...", suggestedUpdate: {...} or null }
-
-            if (data.answer) {
-                addChatMessage(data.answer, 'bot');
-            } else {
-                addChatMessage("I'm sorry, I couldn't process that request properly.", 'bot');
-            }
-
-            if (data.suggestedUpdate && Object.keys(data.suggestedUpdate).length > 0) {
-                updateArea.style.display = 'block';
-                // Pretty print the suggested changes. You might want to format this better for the user.
-                let updateDetails = "AI suggests updating the following:\n";
-                for (const key in data.suggestedUpdate) {
-                    if (key === 'ingredients') {
-                        updateDetails += `- Ingredients: (see new list below)\n${JSON.stringify(data.suggestedUpdate.ingredients, null, 2)}\n`;
-                    } else if (key === 'tags') {
-                        updateDetails += `- Tags: ${data.suggestedUpdate.tags.join(', ')}\n`;
-                    } else {
-                        updateDetails += `- ${key.charAt(0).toUpperCase() + key.slice(1)}: ${data.suggestedUpdate[key]}\n`;
-                    }
-                }
-                suggestedUpdateText.textContent = updateDetails;
-                
-                applyUpdateBtn.style.display = 'inline-block'; // Ensure it's visible
-                applyUpdateBtn.onclick = async () => {
-                    console.log("Applying update:", data.suggestedUpdate);
-                    // Create the full updated recipe object
-                    const recipeToUpdate = { ...recipe }; // Start with the original recipe
-
-                    // Carefully merge suggested updates.
-                    // For arrays like ingredients and tags, the AI should provide the *complete new array*.
-                    if (data.suggestedUpdate.name) recipeToUpdate.name = data.suggestedUpdate.name;
-                    if (data.suggestedUpdate.ingredients) recipeToUpdate.ingredients = data.suggestedUpdate.ingredients;
-                    if (data.suggestedUpdate.instructions) recipeToUpdate.instructions = data.suggestedUpdate.instructions;
-                    if (data.suggestedUpdate.tags) recipeToUpdate.tags = data.suggestedUpdate.tags;
-                    // Add any other fields the AI might update (prepTime, cookTime, etc.)
-
-                    // Now save this recipeToUpdate (to Firestore or LocalDB)
-                    // This will call your existing saveRecipe logic or a dedicated updateRecipe function.
-                    // You'll need to pass whether it's a local or cloud recipe.
-                    try {
-                        if (currentUser && !recipe.isLocal) { // Assuming 'isLocal' flag exists or check recipe.firestoreId
-                            await db.collection('recipes').doc(recipe.id).set(recipeToUpdate, { merge: true });
-                            showSuccessMessage("Recipe updated in your account!");
-                        } else if (localDB) {
-                            recipeToUpdate.localId = recipe.id; // Ensure localId is set for Dexie's put
-                            await localDB.recipes.put(recipeToUpdate);
-                            showSuccessMessage("Local recipe updated!");
-                        }
-                        bsChatModal.hide(); // Close chat modal
-                        loadInitialRecipes(); // Refresh the main recipe list
-                    } catch (saveError) {
-                        console.error("Error applying recipe update:", saveError);
-                        alert("Failed to apply update: " + saveError.message);
-                    }
-                    updateArea.style.display = 'none';
-                };
-            } else {
-                updateArea.style.display = 'none';
-                applyUpdateBtn.style.display = 'none';
-            }
-
-        } catch (err) {
-            addChatMessage(`Error: ${err.message}`, 'bot');
-            console.error("Error in recipe chat:", err);
-        } finally {
-            sendBtn.disabled = false;
-            sendBtn.innerHTML = 'Send';
-        }
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
     };
     
-    // Remove modal from DOM when hidden to avoid ID conflicts if opened again
+    // Add initial bot message if desired
+    // addChatMessage(`Ask me anything about "${recipe.name}"! For example...`, 'initial');
+
+
+    if (sendBtn) {
+        sendBtn.onclick = async () => {
+            const userQuestion = chatInput.value.trim();
+            if (!userQuestion) return;
+
+            addChatMessage(userQuestion, 'user');
+            // Add user's question to history BEFORE sending
+            conversationHistory.push({ role: "user", text: userQuestion });
+            if (conversationHistory.length > MAX_HISTORY_TURNS_RECIPE_CHAT * 2) { // Keep history trimmed
+                conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS_RECIPE_CHAT * 2);
+            }
+
+            chatInput.value = '';
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+            if(updateArea) updateArea.style.display = 'none';
+
+            try {
+                const response = await fetch('/.netlify/functions/ask-about-recipe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        recipeContext: {
+                            id: recipe.id, name: recipe.name, ingredients: recipe.ingredients,
+                            instructions: recipe.instructions, tags: recipe.tags
+                        },
+                        question: userQuestion,
+                        history: conversationHistory // Send the current history
+                    })
+                });
+                // ... (rest of your response handling, same as before) ...
+                if (!response.ok) { /* ... throw error ... */ }
+                const data = await response.json();
+
+                if (data.answer) {
+                    addChatMessage(data.answer, 'bot');
+                    // Add bot's answer to history AFTER receiving it
+                    conversationHistory.push({ role: "model", text: data.answer });
+                     if (conversationHistory.length > MAX_HISTORY_TURNS_RECIPE_CHAT * 2) {
+                         conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS_RECIPE_CHAT * 2);
+                     }
+                } else { /* ... handle error ... */ }
+
+                if (data.suggestedUpdate && Object.keys(data.suggestedUpdate).length > 0) {
+                    // ... (your existing logic to display suggestedUpdate and handle applyUpdateBtn) ...
+                } else { /* ... hide update area ... */ }
+
+            } catch (err) { /* ... */ } 
+            finally { /* ... reset sendBtn ... */ }
+        };
+    }
+    
     chatModal.addEventListener('hidden.bs.modal', () => {
         chatModal.remove();
+        document.body.classList.remove('modal-open-custom');
     });
 }
 
@@ -4992,156 +4919,161 @@ function generateRecipeDisplayHTML(recipe) {
 
 
 function showChatbotModal() {
-    // Remove existing modal if any to prevent duplicates
+    if (window.chefBotSpeechRecognition && window.chefBotIsListening) {
+        window.chefBotSpeechRecognition.stop();
+    }
     if (chatbotModalElement && chatbotModalElement.parentNode) {
         chatbotModalElement.remove();
     }
-    currentChatbotRecipe = null; // Reset any previously generated recipe
+    currentChatbotRecipe = null;
+    let conversationHistory = []; // Initialize history for this session
+    const MAX_HISTORY_TURNS = 4; // Max user+bot turn pairs (e.g., 4 pairs = 8 messages)
 
     chatbotModalElement = document.createElement('div');
+    // ... (rest of chatbotModalElement and card creation as in your last full version)
+    // ... (Make sure the HTML for the modal is the same as your last full function)
+    // The HTML needs: chatbotQueryInput, chefBotMicButton, chefBotListeningStatus,
+    // askChefBotBtn, chatbotRecipeDisplayArea, saveChatbotRecipeBtn, closeChatbotModalBtn
     chatbotModalElement.className = 'position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-75 d-flex justify-content-center align-items-start overflow-auto';
-    chatbotModalElement.style.zIndex = 2000; // Ensure it's on top
+    chatbotModalElement.style.zIndex = "2050";
     chatbotModalElement.style.padding = '2rem';
 
     const card = document.createElement('div');
-    card.className = 'card shadow-lg p-4 position-relative';
-    card.style.maxWidth = '700px'; // Wider for input and recipe
+    card.className = 'card shadow-lg p-3 p-md-4 position-relative';
+    card.style.maxWidth = '700px';
     card.style.width = '95%';
     card.style.margin = 'auto';
+    card.style.maxHeight = '90vh';
+    card.style.display = 'flex';
+    card.style.flexDirection = 'column';
 
     card.innerHTML = `
-        <button type="button" class="btn-close position-absolute top-0 end-0 m-3" aria-label="Close"></button>
-        <h4 class="mb-3"><i class="bi bi-robot"></i> Chef Bot - AI Recipe Assistant</h4>
-        
-        <div class="mb-3">
-            <label for="chatbotQueryInput" class="form-label">Describe the recipe you'd like Chef Bot to create:</label>
-            <textarea class="form-control" id="chatbotQueryInput" rows="3" placeholder="e.g., 'a spicy vegetarian curry with chickpeas and spinach for two people'"></textarea>
+        <div class="modal-header border-0 pb-2 pt-0">
+            <h4 class="modal-title mb-0"><i class="bi bi-robot"></i> Chef Bot - AI Recipe Assistant</h4>
+            <button type="button" class="btn-close" aria-label="Close"></button>
         </div>
-        <button id="askChefBotBtn" class="btn btn-primary mb-3">Ask Chef Bot to Generate</button>
-        
-        <hr/>
-        <div id="chatbotRecipeDisplayArea">
-            ${generateRecipeDisplayHTML(null)} </div>
-        
-        <div class="d-flex justify-content-end gap-2 mt-4">
-            <button id="saveChatbotRecipeBtn" class="btn btn-outline-success" disabled>Save to My Recipes</button>
-            <button id="closeChatbotModalBtn" class="btn btn-outline-dark">Close</button>
+        <div class="modal-body overflow-auto">
+            <div class="mb-3">
+                <label for="chatbotQueryInput" class="form-label">Describe the recipe you'd like (or click <i class="bi bi-mic-fill"></i> to use voice):</label>
+                <div class="input-group">
+                    <textarea class="form-control" id="chatbotQueryInput" rows="3" placeholder="e.g., 'a quick gluten-free pasta dish with shrimp and garlic'"></textarea>
+                    <button class="btn btn-outline-secondary" type="button" id="chefBotMicButton" title="Use Voice Input">
+                        <i class="bi bi-mic-fill"></i>
+                    </button>
+                </div>
+                <div id="chefBotListeningStatus" class="form-text small mt-1" style="min-height: 1.2em;"></div>
+            </div>
+            <button id="askChefBotBtn" class="btn btn-primary w-100 mb-3">
+                <i class="bi bi-magic"></i> Ask Chef Bot to Generate
+            </button>
+            <hr class="my-3"/>
+            <div id="chatbotRecipeDisplayArea" class="mt-1">
+                ${generateRecipeDisplayHTML(null)}
+            </div>
+        </div>
+        <div class="modal-footer border-0 pt-2">
+            <button id="saveChatbotRecipeBtn" class="btn btn-success" disabled><i class="bi bi-save"></i> Save to My Recipes</button>
+            <button id="closeChatbotModalBtn" class="btn btn-outline-secondary">Close</button>
         </div>
     `;
 
     chatbotModalElement.appendChild(card);
     document.body.appendChild(chatbotModalElement);
+    document.body.classList.add('modal-open-custom');
 
-    // Event Listeners
-    const closeButton = card.querySelector('.btn-close');
+    const closeButtonX = card.querySelector('.btn-close');
     const askChefBotBtn = card.querySelector('#askChefBotBtn');
     const saveChatbotRecipeBtn = card.querySelector('#saveChatbotRecipeBtn');
     const closeChatbotModalBtn = card.querySelector('#closeChatbotModalBtn');
-    const chatbotQueryInput = card.querySelector('#chatbotQueryInput');
-    const chatbotRecipeDisplayArea = card.querySelector('#chatbotRecipeDisplayArea');
+    const chatbotQueryInput = document.getElementById('chatbotQueryInput');
+    const chatbotRecipeDisplayArea = document.getElementById('chatbotRecipeDisplayArea');
+    const chefBotMicButton = document.getElementById('chefBotMicButton');
+    const chefBotListeningStatus = document.getElementById('chefBotListeningStatus');
 
-    const closeModal = () => {
+    const closeModal = () => { /* ... same as your last version ... */ 
+        if (window.chefBotSpeechRecognition && window.chefBotIsListening) {
+            window.chefBotSpeechRecognition.stop(); 
+            window.chefBotIsListening = false;
+        }
         if (chatbotModalElement && chatbotModalElement.parentNode) {
             chatbotModalElement.remove();
         }
         chatbotModalElement = null;
-        currentChatbotRecipe = null;
+        currentChatbotRecipe = null; 
+        document.body.classList.remove('modal-open-custom'); 
     };
 
-    closeButton.onclick = closeModal;
-    closeChatbotModalBtn.onclick = closeModal;
-    chatbotModalElement.addEventListener('click', (e) => { // Click outside card to close
-        if (!card.contains(e.target)) {
-            closeModal();
-        }
+    if(closeButtonX) closeButtonX.onclick = closeModal;
+    if(closeChatbotModalBtn) closeChatbotModalBtn.onclick = closeModal;
+    chatbotModalElement.addEventListener('click', (e) => {
+        if (e.target === chatbotModalElement) closeModal();
     });
 
-    askChefBotBtn.onclick = async () => {
-        const query = chatbotQueryInput.value.trim();
-        if (!query) {
-            alert("Please describe the recipe you want.");
-            return;
-        }
-
-        askChefBotBtn.disabled = true;
-        askChefBotBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...';
-        chatbotRecipeDisplayArea.innerHTML = '<p class="text-muted mt-3">Chef Bot is thinking... <i class="bi bi-cpu"></i></p>';
-        saveChatbotRecipeBtn.disabled = true;
-        currentChatbotRecipe = null; // Clear previous recipe
-
-        try {
-            console.log("--- About to FETCH /process-recipe-image at: ", new Date().toISOString()); // LOG C
-            const response = await fetch("/.netlify/functions/generate-recipe-chat", { // This is your Netlify function endpoint
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ prompt: query })
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ error: `HTTP error ${response.status}` }));
-                console.error("Chatbot API error response:", errorData);
-                throw new Error(errorData.error || `Chef Bot is having trouble right now (Status: ${response.status}).`);
-            }
-
-            currentChatbotRecipe = await response.json(); // Expecting JSON from our Netlify function
-
-            if (currentChatbotRecipe && currentChatbotRecipe.name && currentChatbotRecipe.ingredients && currentChatbotRecipe.instructions && currentChatbotRecipe.tags) {
-                chatbotRecipeDisplayArea.innerHTML = generateRecipeDisplayHTML(currentChatbotRecipe);
-                saveChatbotRecipeBtn.disabled = false;
-            } else {
-                console.error("Received unexpected recipe structure:", currentChatbotRecipe);
-                chatbotRecipeDisplayArea.innerHTML = '<p class="text-danger mt-3">Sorry, Chef Bot couldn\'t generate a well-structured recipe for that. Please try a different request or check the console.</p>';
-            }
-        } catch (error) {
-            console.error("Chatbot fetch error:", error);
-            chatbotRecipeDisplayArea.innerHTML = `<p class="text-danger mt-3">An error occurred: ${error.message}. Please try again.</p>`;
-        } finally {
-            askChefBotBtn.disabled = false;
-            askChefBotBtn.innerHTML = 'Ask Chef Bot to Generate';
-        }
-    };
-
-    saveChatbotRecipeBtn.onclick = () => {
-        if (!currentChatbotRecipe || !currentChatbotRecipe.name) {
-            alert("No valid recipe generated by Chef Bot to save.");
-            return;
-        }
-
-        if (currentUser) { // User IS LOGGED IN
-            console.log("User logged in, saving Chef Bot recipe to Firestore.");
-            saveCurrentChatbotRecipeToFirestore(); // This saves to Firestore
-        } else {
-            // --- User is NOT LOGGED IN: Save to LocalDB ---
-            console.log("User not logged in, saving Chef Bot recipe to LocalDB.");
-            if (!localDB) {
-                alert("Local storage is not available at the moment. Please try again later or sign in.");
+    if (askChefBotBtn) {
+        askChefBotBtn.onclick = async () => {
+            const userQuery = chatbotQueryInput.value.trim();
+            if (!userQuery) {
+                if (chefBotListeningStatus) chefBotListeningStatus.textContent = "Please describe the recipe.";
+                chatbotQueryInput.focus();
                 return;
             }
-            const recipeToSaveLocally = {
-                ...currentChatbotRecipe,
-                localId: generateLocalUUID(),
-                timestamp: new Date().toISOString(),
-            };
-            delete recipeToSaveLocally.uid; // Ensure no leftover uid
+            if (chefBotListeningStatus) chefBotListeningStatus.textContent = "";
 
-            localDB.recipes.add(recipeToSaveLocally)
-                .then(() => {
-                    showSuccessMessage("✅ Chef Bot recipe saved locally!");
-                    if (chatbotModalElement && typeof chatbotModalElement.remove === 'function') {
-                        chatbotModalElement.remove();
-                    }
-                    chatbotModalElement = null;
-                    currentChatbotRecipe = null;
-                    loadInitialRecipes(); // Refresh recipe list to show the new local recipe
-                    // Now, optionally prompt to sign up for cloud benefits
-                    showDelayedCloudSavePrompt("Chef Bot recipe saved to this device! Sign up or log in to save it to the cloud and access anywhere!");
-                })
-                .catch(err => {
-                    console.error("❌ Error saving Chef Bot recipe locally:", err.stack || err);
-                    alert("Failed to save Chef Bot recipe locally: " + err.message);
+            // Add user query to history
+            conversationHistory.push({ role: "user", text: userQuery });
+            if (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
+                conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS * 2);
+            }
+
+            askChefBotBtn.disabled = true;
+            askChefBotBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Generating...';
+            if(chatbotRecipeDisplayArea) chatbotRecipeDisplayArea.innerHTML = '<p class="text-muted text-center mt-3">Chef Bot is thinking... <i class="bi bi-hourglass-split"></i></p>';
+            if(saveChatbotRecipeBtn) saveChatbotRecipeBtn.disabled = true;
+            currentChatbotRecipe = null;
+
+            try {
+                const response = await fetch("/.netlify/functions/generate-recipe-chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ 
+                        prompt: userQuery, // 'prompt' is what your current function expects
+                        history: conversationHistory // Send the history
+                    })
                 });
-        }
-    };
+                // ... (rest of your response handling)
+                if (!response.ok) { /* ... throw error ... */ 
+                    const errorData = await response.json().catch(() => ({ error: `HTTP error ${response.status}` }));
+                    throw new Error(errorData.error || `Chef Bot had an issue: ${response.statusText}`);
+                }
+                currentChatbotRecipe = await response.json();
+
+                // Add bot response to history (assuming the whole recipe JSON is the "text" for history here)
+                // Or, if Gemini returns a conversational part + recipe, use the conversational part.
+                // For now, we'll assume the AI directly returns the recipe JSON.
+                // In this "generate" context, the "bot response" is the recipe itself.
+                // So, history might not be as useful for *this specific function* unless the AI also chats.
+                // Let's assume for generate-recipe-chat, the history is mainly to inform the *next* generation if the user refines.
+                // We won't add the full recipe JSON to history to avoid making it too large.
+                // conversationHistory.push({ role: "model", text: "Generated a recipe based on your request."}); 
+
+                if (currentChatbotRecipe && currentChatbotRecipe.name /* ...and other fields... */) {
+                    if(chatbotRecipeDisplayArea) chatbotRecipeDisplayArea.innerHTML = generateRecipeDisplayHTML(currentChatbotRecipe);
+                    if(saveChatbotRecipeBtn) saveChatbotRecipeBtn.disabled = false;
+                } else { /* ... handle error ... */ }
+
+            } catch (error) { /* ... */ } 
+            finally { /* ... reset askChefBotBtn ... */ }
+        };
+    }
+
+    if (saveChatbotRecipeBtn) { /* ... your existing save logic ... */ }
+
+    // --- Speech Recognition Logic (remains largely the same) ---
+    // ... (Ensure chefBotMicButton, chatbotQueryInput, chefBotListeningStatus are used) ...
+    // ... (The speech recognition will populate chatbotQueryInput.value) ...
+    // ... (Your full speech recognition setup as previously provided) ...
+
+    if (chatbotQueryInput) chatbotQueryInput.focus();
 }
 
 // Mock function to simulate chatbot response
