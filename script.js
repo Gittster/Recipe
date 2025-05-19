@@ -1834,24 +1834,27 @@ function createHighlightRegex(term) {
 
 // script.js
 
+
+
 function openRecipeSpecificChatModal(recipe) {
-    if (!recipe) {
-        console.error("No recipe data provided for Chef Bot chat.");
+    if (!recipe || !recipe.id || !recipe.name) {
+        console.error("Invalid or incomplete recipe data provided for Chef Bot chat.", recipe);
+        alert("Cannot open chat: recipe data is missing.");
         return;
     }
 
-    let conversationHistory = [];
-    const MAX_HISTORY_TURNS_RECIPE_CHAT = 5;
+    let conversationHistory = []; // Initialize history for THIS chat session
+    const MAX_HISTORY_TURNS_RECIPE_CHAT = 5; // Max user+bot turn pairs (e.g., 5 pairs = 10 messages)
 
     // Remove existing chat modal if any to prevent ID conflicts and ensure clean state
     const existingChatModalElement = document.getElementById('recipeChatModal');
     if (existingChatModalElement) {
-        // If a Bootstrap modal instance was associated, dispose of it
         const existingBsModal = bootstrap.Modal.getInstance(existingChatModalElement);
         if (existingBsModal) {
-            existingBsModal.hide(); // Hide it first to trigger 'hidden.bs.modal' if needed
+            existingBsModal.hide(); // Hide it first, 'hidden.bs.modal' listener below will remove it
+        } else {
+            existingChatModalElement.remove(); // Fallback removal
         }
-        existingChatModalElement.remove(); // Then remove from DOM
     }
 
     const chatModal = document.createElement('div');
@@ -1860,89 +1863,218 @@ function openRecipeSpecificChatModal(recipe) {
     chatModal.setAttribute('tabindex', '-1');
     chatModal.setAttribute('aria-labelledby', 'recipeChatModalLabel');
     chatModal.setAttribute('aria-hidden', 'true');
+    chatModal.dataset.bsKeyboard = "false"; // Prevent closing with Escape key if chat is active
+    chatModal.dataset.bsBackdrop = "static"; // Prevent closing on backdrop click during chat
 
     chatModal.innerHTML = `
-        <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="recipeChatModalLabel">
-                        <i class="bi bi-robot"></i> Chat about: ${recipe.name}
+                        <i class="bi bi-robot"></i> Chat about: <span class="fw-semibold">${recipe.name}</span>
                     </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <button type="button" class="btn-close" aria-label="Close"></button>
                 </div>
                 <div class="modal-body" style="min-height: 300px; display: flex; flex-direction: column;">
-                    <div id="recipeChatMessages" class="flex-grow-1 overflow-auto mb-3 p-2 border rounded">
-                        <p class="text-muted small">Ask me anything about "${recipe.name}"! For example: "How can I make this gluten-free?", "What's a good side dish?", "Can I substitute an ingredient?"</p>
+                    <div id="recipeChatMessages" class="flex-grow-1 overflow-auto mb-3 p-2 border rounded bg-light-subtle" style="font-size: 0.9rem;">
+                        <p class="text-muted small text-center p-2">Ask any questions about "${recipe.name}" or request modifications (e.g., "How can I make this vegetarian?", "What's a good wine pairing?", "Can I double the servings?").</p>
                     </div>
                     <div class="input-group">
-                        <textarea id="recipeChatInput" class="form-control" placeholder="Type your question..." rows="2"></textarea>
-                        <button id="sendRecipeChatBtn" class="btn btn-primary">Send</button>
+                        <textarea id="recipeChatInput" class="form-control" placeholder="Type your question..." rows="2" aria-label="Your question about the recipe"></textarea>
+                        <button id="sendRecipeChatBtn" class="btn btn-primary" type="button">
+                            <i class="bi bi-send-fill"></i> Send
+                        </button>
                     </div>
-                    <div id="recipeChatUpdateArea" class="mt-3" style="display:none;">
-                        <h6>Suggested Update:</h6>
-                        <pre id="suggestedUpdateText" class="bg-light p-2 border rounded small"></pre>
-                        <button id="applyRecipeUpdateBtn" class="btn btn-sm btn-success mt-2">Apply Update to Recipe</button>
+                    <div id="recipeChatUpdateArea" class="mt-3 border p-3 rounded bg-light" style="display:none;">
+                        <h6 class="mb-2"><i class="bi bi-lightbulb-fill text-warning"></i> Chef Bot Suggests an Update:</h6>
+                        <pre id="suggestedUpdateText" class="bg-white p-2 border rounded small" style="max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;"></pre>
+                        <div class="text-end mt-2">
+                            <button id="applyRecipeUpdateBtn" class="btn btn-sm btn-success" type="button"><i class="bi bi-check-circle"></i> Apply This Update</button>
+                            <button id="dismissRecipeUpdateBtn" class="btn btn-sm btn-outline-secondary ms-2" type="button"><i class="bi bi-x-circle"></i> Dismiss</button>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     `;
     document.body.appendChild(chatModal);
-    document.body.classList.add('modal-open-custom'); // For scroll lock
+    document.body.classList.add('modal-open-custom');
 
-    // --- Get DOM Elements AFTER the modal is in the document.body ---
     const chatInput = document.getElementById('recipeChatInput');
     const sendBtn = document.getElementById('sendRecipeChatBtn');
-    const messagesContainer = document.getElementById('recipeChatMessages'); // Now this should be found
+    const messagesContainer = document.getElementById('recipeChatMessages');
     const updateArea = document.getElementById('recipeChatUpdateArea');
     const suggestedUpdateText = document.getElementById('suggestedUpdateText');
     const applyUpdateBtn = document.getElementById('applyRecipeUpdateBtn');
-    const closeButtonInModal = chatModal.querySelector('.btn-close'); // Query within chatModal
+    const dismissUpdateBtn = document.getElementById('dismissRecipeUpdateBtn');
+    const closeButtonInModalHeader = chatModal.querySelector('.modal-header .btn-close');
 
-    // It's safer to initialize Bootstrap modal AFTER its element is in the DOM
     const bsChatModal = new bootstrap.Modal(chatModal);
     bsChatModal.show();
+    if(chatInput) chatInput.focus();
 
-    // Now that messagesContainer is guaranteed to be found (or log an error if ID is wrong):
-    const initialMessage = messagesContainer ? messagesContainer.querySelector('p.text-muted.small') : null;
 
-    const addChatMessage = (message, sender = 'bot') => {
-        if (!messagesContainer) return; // Guard clause
-        if (initialMessage && messagesContainer.contains(initialMessage) && messagesContainer.children.length === 1 && sender !== 'initial') {
-             initialMessage.remove();
+    const initialPlaceholderMessage = messagesContainer ? messagesContainer.querySelector('p.text-muted.small') : null;
+
+    const addChatMessage = (message, sender = 'bot', isError = false) => {
+        if (!messagesContainer) return;
+        if (initialPlaceholderMessage && messagesContainer.contains(initialPlaceholderMessage) && messagesContainer.children.length === 1 && sender !== 'initial') {
+             initialPlaceholderMessage.remove();
         }
-        // ... (rest of addChatMessage logic)
         const msgDiv = document.createElement('div');
-        msgDiv.classList.add('mb-2', sender === 'user' ? 'text-end' : 'text-start');
-        const msgBubble = document.createElement('span');
-        msgBubble.classList.add('p-2', 'rounded', 'chat-bubble', sender === 'user' ? 'bg-primary' : 'bg-light', sender === 'user' ? 'text-white' : 'text-dark');
+        msgDiv.classList.add('mb-2', 'chat-message-row', sender === 'user' ? 'text-end' : 'text-start');
+        
+        const msgBubble = document.createElement('div'); // Changed to div for better padding/margin control
+        msgBubble.classList.add('p-2', 'rounded', 'chat-bubble');
+        msgBubble.classList.add(sender === 'user' ? 'bg-primary' : (isError ? 'bg-danger-subtle' : 'bg-light'));
+        msgBubble.classList.add(sender === 'user' ? 'text-white' : (isError ? 'text-danger-emphasis' : 'text-dark'));
         msgBubble.style.display = 'inline-block';
-        msgBubble.style.maxWidth = '80%';
-        msgBubble.textContent = message; 
+        msgBubble.style.maxWidth = '85%';
+        msgBubble.style.textAlign = 'left'; // Ensure text within bubble is left-aligned
+        msgBubble.textContent = message;
+        
         msgDiv.appendChild(msgBubble);
         messagesContainer.appendChild(msgDiv);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     };
 
-    if (sendBtn) {
-        sendBtn.onclick = async () => {
-            // ... (your existing sendBtn.onclick async logic for fetching from Netlify function)
-            // ... (remember to call addChatMessage and manage conversationHistory)
+    if (sendBtn && chatInput) {
+        const handleSend = async () => {
+            const userQuestion = chatInput.value.trim();
+            if (!userQuestion) return;
+
+            addChatMessage(userQuestion, 'user');
+            conversationHistory.push({ role: "user", text: userQuestion });
+            if (conversationHistory.length > MAX_HISTORY_TURNS_RECIPE_CHAT * 2) {
+                conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS_RECIPE_CHAT * 2);
+            }
+
+            chatInput.value = '';
+            chatInput.disabled = true; // Disable input while processing
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Sending...';
+            if(updateArea) updateArea.style.display = 'none';
+
+            try {
+                const response = await fetch('/.netlify/functions/ask-about-recipe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        recipeContext: {
+                            id: recipe.id, name: recipe.name, ingredients: recipe.ingredients,
+                            instructions: recipe.instructions, tags: recipe.tags
+                        },
+                        question: userQuestion,
+                        history: conversationHistory
+                    })
+                });
+                
+                const data = await response.json(); // Try to parse JSON regardless of ok status for custom errors
+
+                if (!response.ok) {
+                    throw new Error(data.error || `Error ${response.status} from server.`);
+                }
+
+                if (data.answer) {
+                    addChatMessage(data.answer, 'bot');
+                    conversationHistory.push({ role: "model", text: data.answer });
+                    if (conversationHistory.length > MAX_HISTORY_TURNS_RECIPE_CHAT * 2) {
+                        conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS_RECIPE_CHAT * 2);
+                    }
+                } else {
+                    throw new Error("AI response was missing an answer.");
+                }
+
+                if (data.suggestedUpdate && Object.keys(data.suggestedUpdate).length > 0) {
+                    if(updateArea) updateArea.style.display = 'block';
+                    if(suggestedUpdateText) {
+                        let updateDetails = "Chef Bot suggests these changes:\n";
+                        for (const key in data.suggestedUpdate) {
+                            if (key === 'ingredients') {
+                                updateDetails += `\nIngredients:\n${JSON.stringify(data.suggestedUpdate.ingredients, null, 2)}\n`;
+                            } else if (key === 'tags') {
+                                updateDetails += `\nTags: ${data.suggestedUpdate.tags.join(', ')}\n`;
+                            } else if (data.suggestedUpdate[key] !== null && data.suggestedUpdate[key] !== undefined) {
+                                updateDetails += `\n${key.charAt(0).toUpperCase() + key.slice(1)}:\n${data.suggestedUpdate[key]}\n`;
+                            }
+                        }
+                        suggestedUpdateText.textContent = updateDetails.trim();
+                    }
+                    if(applyUpdateBtn) applyUpdateBtn.style.display = 'inline-block';
+                    if(dismissUpdateBtn) dismissUpdateBtn.style.display = 'inline-block';
+
+                    if(applyUpdateBtn) applyUpdateBtn.onclick = async () => {
+                        console.log("Applying update:", data.suggestedUpdate);
+                        const recipeToUpdate = { ...recipe }; 
+
+                        if (data.suggestedUpdate.name && typeof data.suggestedUpdate.name === 'string') recipeToUpdate.name = data.suggestedUpdate.name;
+                        if (Array.isArray(data.suggestedUpdate.ingredients)) recipeToUpdate.ingredients = data.suggestedUpdate.ingredients;
+                        if (data.suggestedUpdate.instructions && typeof data.suggestedUpdate.instructions === 'string') recipeToUpdate.instructions = data.suggestedUpdate.instructions;
+                        if (Array.isArray(data.suggestedUpdate.tags)) recipeToUpdate.tags = data.suggestedUpdate.tags;
+                        
+                        recipeToUpdate.timestamp = new Date(); // Update timestamp on modification
+
+                        try {
+                            if (currentUser && !recipe.isLocal) { // Check if it's a cloud recipe
+                                recipeToUpdate.uid = recipe.uid || currentUser.uid;
+                                recipeToUpdate.timestamp = firebase.firestore.FieldValue.serverTimestamp();
+                                await db.collection('recipes').doc(recipe.id).set(recipeToUpdate, { merge: true });
+                                showSuccessMessage("Recipe updated in your account!");
+                            } else if (localDB) { // It's a local recipe or user is anonymous
+                                recipeToUpdate.localId = recipe.id; // Original localId
+                                recipeToUpdate.timestamp = recipeToUpdate.timestamp.toISOString();
+                                await localDB.recipes.put(recipeToUpdate);
+                                showSuccessMessage("Local recipe updated!");
+                            }
+                            bsChatModal.hide();
+                            loadInitialRecipes();
+                        } catch (saveError) {
+                            console.error("Error applying recipe update:", saveError);
+                            addChatMessage("Failed to apply update: " + saveError.message, 'bot', true);
+                        }
+                        if(updateArea) updateArea.style.display = 'none';
+                    };
+                } else {
+                    if(updateArea) updateArea.style.display = 'none';
+                }
+
+            } catch (err) {
+                addChatMessage(`Error: ${err.message}`, 'bot', true);
+                console.error("Error in recipe chat send:", err);
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.innerHTML = '<i class="bi bi-send-fill"></i> Send';
+                chatInput.disabled = false;
+                chatInput.focus();
+            }
         };
+        sendBtn.onclick = handleSend;
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { // Send on Enter, allow Shift+Enter for newline
+                e.preventDefault();
+                handleSend();
+            }
+        });
+
     } else {
-        console.error("Send button for recipe chat not found!");
+        console.error("Send button or chat input not found in recipe chat modal!");
+    }
+
+    if(dismissUpdateBtn && updateArea) {
+        dismissUpdateBtn.onclick = () => {
+            updateArea.style.display = 'none';
+        }
     }
     
-    if (closeButtonInModal) { // For the 'x' button in the modal header
-        closeButtonInModal.onclick = () => {
-            bsChatModal.hide(); // Use Bootstrap's hide method
+    if(closeButtonInModalHeader) {
+        closeButtonInModalHeader.onclick = () => {
+            bsChatModal.hide();
         };
     }
 
     chatModal.addEventListener('hidden.bs.modal', () => {
-        // This event is triggered by Bootstrap after the modal is hidden
         document.body.classList.remove('modal-open-custom');
-        if (chatModal.parentNode) { // Ensure it's still in DOM before trying to remove
+        if (chatModal.parentNode) {
             chatModal.remove();
         }
         console.log("Recipe chat modal hidden and removed.");
@@ -2674,7 +2806,60 @@ async function openInlineEditor(recipeId, cardElement) {
     };
 }
 
+function addChatMessage(message, sender = 'bot') {
+    console.log(`--- addChatMessage START. Sender: ${sender}, Message: "${message}" ---`); // Log 1
 
+    // 'messagesContainer' and 'initialMessage' should be defined in the outer scope 
+    // of openRecipeSpecificChatModal where addChatMessage is also defined.
+    // If not, they will be undefined here.
+
+    if (!messagesContainer) {
+        console.error("addChatMessage: CRITICAL ERROR - messagesContainer is null or undefined!");
+        return;
+    }
+    console.log("addChatMessage: messagesContainer found:", messagesContainer); // Log 2
+
+    // Check for initialMessage and remove it
+    // Note: initialMessage might be null if it was already removed or never existed.
+    if (initialMessage && messagesContainer.contains(initialMessage) && sender !== 'initial') {
+        console.log("addChatMessage: initialMessage found, attempting to remove."); // Log 3
+        try {
+            initialMessage.remove();
+            // Set initialMessage to null after removal to prevent trying to remove it again
+            // This requires initialMessage to be a variable accessible in this scope that can be reassigned.
+            // If initialMessage was a 'const' in the outer scope, you can't reassign it.
+            // A better way might be to re-query for it or just let this logic run once.
+            // For now, let's assume it's okay to try removing.
+            console.log("addChatMessage: initialMessage removed."); // Log 4
+        } catch (e) {
+            console.error("addChatMessage: Error removing initialMessage:", e); // Log 4b
+        }
+    } else if (sender !== 'initial') {
+        console.log("addChatMessage: initialMessage not found or already removed, or sender is 'initial'."); // Log 3b
+    }
+
+
+    console.log("addChatMessage: Creating message elements."); // Log 5
+    const msgDiv = document.createElement('div');
+    msgDiv.classList.add('mb-2', sender === 'user' ? 'text-end' : 'text-start');
+
+    const msgBubble = document.createElement('span');
+    msgBubble.classList.add('p-2', 'rounded', 'chat-bubble'); // Added 'chat-bubble' for potential common styling
+    msgBubble.classList.add(sender === 'user' ? 'bg-primary' : 'bg-light');
+    msgBubble.classList.add(sender === 'user' ? 'text-white' : 'text-dark');
+    msgBubble.style.display = 'inline-block';
+    msgBubble.style.maxWidth = '80%';
+    msgBubble.textContent = message; // Safest for plain text messages
+
+    msgDiv.appendChild(msgBubble);
+    console.log("addChatMessage: Message elements created, about to append to messagesContainer."); // Log 6
+
+    messagesContainer.appendChild(msgDiv);
+    console.log("addChatMessage: Message appended to messagesContainer."); // Log 7
+
+    messagesContainer.scrollTop = messagesContainer.scrollHeight; // Scroll to bottom
+    console.log("--- addChatMessage FINISHED successfully. ---"); // Log 8
+}
 
 
 function addIngredientRowToEditor(tbodyId, name = '', quantity = '', unit = '') {
