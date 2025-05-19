@@ -4304,13 +4304,23 @@ function getInitials(name) {
 }
 
 function handleAccountNavClick() {
-    setActiveNavButton("account"); // Ensure setActiveNavButton is also defined
+    console.log("handleAccountNavClick called. currentUser:", currentUser); // First debug log
+    
+    // Set the active state for the 'account' tab
+    // Make sure setActiveNavButton is defined and works correctly.
+    if (typeof setActiveNavButton === "function") {
+        setActiveNavButton("account");
+    } else {
+        console.warn("setActiveNavButton function is not defined.");
+    }
+
     if (currentUser) {
-        // For now, using the infoConfirmModal for logged-in account options
+        // User is logged in - show account options (e.g., a modal with logout)
+        console.log("User is logged in. Showing account options.");
         const userEmail = currentUser.email || "your account";
-        showInfoConfirmModal(
+        showInfoConfirmModal( // Ensure this function and its modal instance are working
             "Account Options",
-            `<p>You are signed in as ${escapeHtml(userEmail)}.</p><p class="mt-3">More account options and settings will be available here soon!</p>`,
+            `<p>You are signed in as ${escapeHtml(userEmail)}.</p><p class="mt-3">Manage your account or view preferences here (details coming soon!).</p>`,
             [
                 { 
                     text: 'Log Out', 
@@ -4319,13 +4329,20 @@ function handleAccountNavClick() {
                         if(infoConfirmModalInstance) infoConfirmModalInstance.hide(); 
                         signOut(); 
                     },
-                    dismissOnClick: false // Prevent modal from closing before signOut logic might want to do something
+                    dismissOnClick: false 
                 },
                 { text: 'Close', class: 'btn-secondary btn-sm', dismiss: true }
             ]
         );
     } else {
-        showLoginModal(); // Your existing function to show the login modal
+        // User is not logged in - show the login modal
+        console.log("User is not logged in. Calling showLoginModal().");
+        if (typeof showLoginModal === "function") {
+            showLoginModal();
+        } else {
+            console.error("showLoginModal function is not defined!");
+            alert("Login functionality is currently unavailable.");
+        }
     }
 }
 
@@ -4436,17 +4453,12 @@ function updateAuthUI(user) {
                 <i class="bi bi-person-circle fs-4"></i>
                 <span class="nav-label d-block small">Log In</span>`;
         }
-        // The onclick for authNavButtonMobile (to call handleAccountNavClick)
-        // should already be set in your index.html or when the nav bar is created.
-        // If not, set it here:
-        if (typeof handleAccountNavClick === "function") { // Ensure handleAccountNavClick is defined
-             authNavButtonMobile.onclick = handleAccountNavClick;
-        } else {
-            console.warn("handleAccountNavClick function not defined for mobile auth button.");
-        }
-
+        // The onclick is already set in the HTML: onclick="handleAccountNavClick()"
+        // So, we don't need to re-assign it here unless the HTML attribute is removed.
+        // If you were assigning it here, it would look like:
+        // authNavButtonMobile.onclick = handleAccountNavClick; 
     } else {
-        console.warn("updateAuthUI: #userAuthNavButton element not found in DOM for mobile.");
+        console.warn("updateAuthUI: #userAuthNavButton element not found for mobile.");
     }
 }
 
