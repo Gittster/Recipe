@@ -1762,7 +1762,7 @@ function populateIngredientSelect() {
 }
 
 function escapeHtml(unsafe) {
-    if (typeof unsafe !== 'string') return unsafe; // Return non-strings as is
+    if (typeof unsafe !== 'string') return unsafe;
     return unsafe
          .replace(/&/g, "&amp;")
          .replace(/</g, "&lt;")
@@ -4294,8 +4294,6 @@ function updateClearCheckedButton(ingredients) {
   }
 }
 
-const auth = firebase.auth();
-
 // Utility to get initials
 function getInitials(name) {
   if (!name) return '?';
@@ -4305,125 +4303,150 @@ function getInitials(name) {
   return first + last;
 }
 
+function handleAccountNavClick() {
+    setActiveNavButton("account"); // Ensure setActiveNavButton is also defined
+    if (currentUser) {
+        // For now, using the infoConfirmModal for logged-in account options
+        const userEmail = currentUser.email || "your account";
+        showInfoConfirmModal(
+            "Account Options",
+            `<p>You are signed in as ${escapeHtml(userEmail)}.</p><p class="mt-3">More account options and settings will be available here soon!</p>`,
+            [
+                { 
+                    text: 'Log Out', 
+                    class: 'btn-danger btn-sm', 
+                    onClick: () => { 
+                        if(infoConfirmModalInstance) infoConfirmModalInstance.hide(); 
+                        signOut(); 
+                    },
+                    dismissOnClick: false // Prevent modal from closing before signOut logic might want to do something
+                },
+                { text: 'Close', class: 'btn-secondary btn-sm', dismiss: true }
+            ]
+        );
+    } else {
+        showLoginModal(); // Your existing function to show the login modal
+    }
+}
+
 // Update auth UI
 function updateAuthUI(user) {
-    const authArea = document.getElementById('userAuthArea');
-    authArea.innerHTML = '';
+    const authAreaDesktop = document.getElementById('userAuthAreaDesktop');
+    const authNavButtonMobile = document.getElementById('userAuthNavButton'); // For the mobile bottom nav "Account" button
 
-    if (user) {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'position-relative';
+    // --- 1. Update Desktop Authentication Area ---
+    if (authAreaDesktop) {
+        authAreaDesktop.innerHTML = ''; // Clear previous content
+        if (user) {
+            // User is signed in - Create the desktop dropdown
+            const wrapper = document.createElement('div');
+            wrapper.className = 'position-relative';
 
-        const avatarBtn = document.createElement('button');
-        // ... (avatarBtn setup remains the same as before) ...
-        avatarBtn.className = 'btn btn-outline-dark rounded-circle fw-bold d-flex align-items-center justify-content-center';
-        avatarBtn.style.width = '45px';
-        avatarBtn.style.height = '45px';
-        avatarBtn.style.fontSize = '1rem';
-        avatarBtn.style.padding = '0';
-        avatarBtn.title = user.displayName || user.email || 'Account';
-        avatarBtn.textContent = getInitials(user.displayName || user.email);
-        avatarBtn.setAttribute('aria-expanded', 'false');
+            const avatarBtn = document.createElement('button');
+            avatarBtn.className = 'btn btn-outline-dark rounded-circle fw-bold d-flex align-items-center justify-content-center';
+            avatarBtn.style.width = '40px'; // Slightly smaller for a top bar
+            avatarBtn.style.height = '40px';
+            avatarBtn.style.fontSize = '0.9rem';
+            avatarBtn.style.padding = '0';
+            avatarBtn.title = user.displayName || user.email || 'Account';
+            avatarBtn.textContent = getInitials(user.displayName || user.email); // Ensure getInitials is defined
+            avatarBtn.setAttribute('aria-expanded', 'false');
+            avatarBtn.setAttribute('data-bs-toggle', 'dropdown'); // For Bootstrap dropdown behavior (optional)
 
+            const dropdownMenu = document.createElement('div');
+            dropdownMenu.className = 'user-info-dropdown shadow rounded dropdown-menu dropdown-menu-end'; // Added Bootstrap classes
+            // Removed inline styles for display, position, z-index, width, bg-color, padding, border as Bootstrap + CSS should handle it.
+            // CSS will target .user-info-dropdown
 
-        const dropdownMenu = document.createElement('div');
-        dropdownMenu.className = 'user-info-dropdown shadow rounded'; // Using Bootstrap's `rounded` and `shadow`
-        dropdownMenu.style.display = 'none';
-        dropdownMenu.style.position = 'absolute';
-        dropdownMenu.style.top = '55px'; 
-        dropdownMenu.style.right = '0';
-        dropdownMenu.style.width = '280px'; // Slightly narrower or adjust as you like
-        dropdownMenu.style.backgroundColor = 'white';
-        // Removed border: '1px solid #ddd'; as shadow and padding will define edges
-        dropdownMenu.style.zIndex = '1050';
-        dropdownMenu.style.padding = '0.5rem 0'; // Add padding top/bottom for the whole menu
-
-        // -- Dropdown Header: "Signed in as" (Optional, can be removed for more sleekness if email is prominent) --
-        const dropdownHeader = document.createElement('div');
-        dropdownHeader.className = 'px-3 pt-2 pb-1 text-muted small'; // Adjusted padding
-        dropdownHeader.textContent = 'Signed in as:';
-        dropdownMenu.appendChild(dropdownHeader);
-
-        // -- User Info Area (Icon + Email) --
-        const userInfoDiv = document.createElement('div');
-        userInfoDiv.className = 'px-3 pb-2 pt-1 d-flex align-items-center'; // Adjusted padding
-
-        let providerIconHtml = '<i class="bi bi-person-circle me-2 fs-4 text-secondary"></i>'; // Default, larger icon
-        if (user.providerData && user.providerData.length > 0) {
-            const mainProviderId = user.providerData[0].providerId;
-            if (mainProviderId === 'google.com') {
-                providerIconHtml = '<i class="bi bi-google me-2 fs-4" style="color: #DB4437;"></i>';
-            } else if (mainProviderId === 'password') {
-                providerIconHtml = '<i class="bi bi-envelope-fill me-2 fs-4" style="color: #0d6efd;"></i>'; // Bootstrap primary
-            } else if (mainProviderId === 'apple.com') {
-                providerIconHtml = '<i class="bi bi-apple me-2 fs-4" style="color: #000;"></i>';
-            } else if (mainProviderId === 'microsoft.com') {
-                providerIconHtml = '<i class="bi bi-microsoft me-2 fs-4" style="color: #0078D4;"></i>';
+            let providerIconHtml = '<i class="bi bi-person-circle me-2 fs-5 text-secondary"></i>'; // Default icon
+            if (user.providerData && user.providerData.length > 0) {
+                const mainProviderId = user.providerData[0].providerId;
+                if (mainProviderId === 'google.com') {
+                    providerIconHtml = '<i class="bi bi-google me-2 fs-5" style="color: #DB4437;"></i>';
+                } else if (mainProviderId === 'password') {
+                    providerIconHtml = '<i class="bi bi-envelope-fill me-2 fs-5" style="color: #0d6efd;"></i>';
+                } // Add more providers as needed (Apple, Microsoft)
             }
+
+            dropdownMenu.innerHTML = `
+                <div class="px-3 pt-2 pb-1 text-muted small">Signed in as:</div>
+                <div class="px-3 pb-2 pt-1 d-flex align-items-center">
+                    ${providerIconHtml}
+                    <span class="text-truncate fw-medium" style="font-size: 0.9rem;">${escapeHtml(user.email || "User")}</span>
+                </div>
+                <div><hr class="dropdown-divider my-1"></div>
+                <a class="dropdown-item d-flex align-items-center user-info-logout-link" href="#" style="color: #dc3545;">
+                    <i class="bi bi-box-arrow-right me-2 fs-5"></i> Log out
+                </a>
+            `;
+            
+            const signOutLink = dropdownMenu.querySelector('.user-info-logout-link');
+            if (signOutLink) {
+                signOutLink.onclick = (e) => {
+                    e.preventDefault();
+                    signOut();
+                    // Bootstrap dropdown should close automatically, but can force if needed
+                    // const ddInstance = bootstrap.Dropdown.getInstance(avatarBtn);
+                    // if (ddInstance) ddInstance.hide();
+                };
+            }
+
+            // Bootstrap 5 dropdown initialization (if not using data-bs-toggle on button)
+            // For simplicity, if using data-bs-toggle="dropdown" on avatarBtn, this might not be needed explicitly
+            // but good to be aware of if issues arise with dropdown not showing.
+            // Ensure avatarBtn has `data-bs-toggle="dropdown"` and dropdownMenu has `aria-labelledby` pointing to avatarBtn's ID.
+            // If avatarBtn itself is the toggle, it needs an ID, e.g., id="userAvatarDropdownToggle"
+            // and dropdownMenu would have aria-labelledby="userAvatarDropdownToggle"
+
+            avatarBtn.id = `userAvatarToggle-${Date.now()}`; // Ensure unique ID for aria
+            dropdownMenu.setAttribute('aria-labelledby', avatarBtn.id);
+
+
+            wrapper.appendChild(avatarBtn);
+            wrapper.appendChild(dropdownMenu);
+            authAreaDesktop.appendChild(wrapper);
+
+            // Initialize Bootstrap dropdown for the newly created elements
+             new bootstrap.Dropdown(avatarBtn); // Initialize the dropdown behavior
+
+            // The global click listener to close the dropdown when clicking outside
+            // should be managed carefully to avoid adding multiple listeners.
+            // It's often better to have one persistent global listener.
+            // For now, let's assume the Bootstrap Dropdown handles outside clicks.
+
+        } else { // User is not logged in - Desktop
+            const signInBtnDesktop = document.createElement('button');
+            signInBtnDesktop.className = 'btn btn-outline-dark btn-sm';
+            signInBtnDesktop.innerHTML = `<i class="bi bi-person-circle me-1"></i> Sign in`;
+            signInBtnDesktop.onclick = showLoginModal;
+            authAreaDesktop.appendChild(signInBtnDesktop);
         }
-        const iconWrapper = document.createElement('span'); // Wrapper for icon styling if needed
-        iconWrapper.innerHTML = providerIconHtml;
-        userInfoDiv.appendChild(iconWrapper);
+    } else {
+        console.warn("updateAuthUI: #userAuthAreaDesktop element not found in DOM.");
+    }
 
-        const userEmailSpan = document.createElement('span');
-        userEmailSpan.className = 'text-truncate fw-medium'; // Changed to fw-medium for slightly less boldness
-        userEmailSpan.style.fontSize = '0.95rem';
-        userEmailSpan.textContent = user.email || 'No email provided';
-        userInfoDiv.appendChild(userEmailSpan);
-        dropdownMenu.appendChild(userInfoDiv);
-
-        // -- Subtle Divider (Optional - can use margin/padding instead) --
-        // If you want a very subtle divider that doesn't go all the way across:
-        const dividerDiv = document.createElement('div');
-        dividerDiv.style.height = '1px';
-        dividerDiv.style.backgroundColor = '#e9ecef'; // Bootstrap's $gray-200
-        dividerDiv.style.margin = '0.5rem 1rem'; // Margin on left/right to not span full width
-        dropdownMenu.appendChild(dividerDiv);
-        // OR, for no visible line, just rely on padding of the logout item.
-        // If you remove the dividerDiv, adjust padding on logoutMenuItem below.
-
-        // -- Log Out Button Area (as a menu item) --
-        const logoutMenuItem = document.createElement('a'); // Changed to <a> for semantic menu item
-        logoutMenuItem.href = '#'; // Prevent page jump
-        logoutMenuItem.className = 'dropdown-item d-flex align-items-center px-3 py-2'; // Bootstrap's dropdown-item class for styling
-        logoutMenuItem.style.color = '#dc3545'; // Bootstrap's text-danger color
-
-        logoutMenuItem.innerHTML = '<i class="bi bi-box-arrow-right me-2 fs-5"></i> Log out';
-        
-        logoutMenuItem.onclick = (e) => {
-            e.preventDefault(); // Prevent default anchor action
-            signOut(); 
-            dropdownMenu.style.display = 'none';
-        };
-        dropdownMenu.appendChild(logoutMenuItem);
-
-        // Toggle dropdown display
-        avatarBtn.onclick = (e) => {
-            e.stopPropagation();
-            const isShown = dropdownMenu.style.display === 'block';
-            dropdownMenu.style.display = isShown ? 'none' : 'block';
-            avatarBtn.setAttribute('aria-expanded', String(!isShown));
-        };
-
-        wrapper.appendChild(avatarBtn);
-        wrapper.appendChild(dropdownMenu);
-        authArea.appendChild(wrapper);
-
-        // Global click listener (same as before, ensure it's managed if this function is called often)
-        document.addEventListener('click', function closeDropdownOnClickOutside(event) {
-            if (dropdownMenu && !wrapper.contains(event.target) && dropdownMenu.style.display === 'block') {
-                dropdownMenu.style.display = 'none';
-                if(avatarBtn) avatarBtn.setAttribute('aria-expanded', 'false');
-            }
-        }, { capture: true }); // Use capture phase for this type of global listener to avoid issues with e.stopPropagation()
+    // --- 2. Update Mobile Bottom Navigation "Account" Button ---
+    if (authNavButtonMobile) {
+        if (user) {
+            authNavButtonMobile.innerHTML = `
+                <i class="bi bi-person-check-fill fs-4"></i>
+                <span class="nav-label d-block small">Account</span>`;
+        } else {
+            authNavButtonMobile.innerHTML = `
+                <i class="bi bi-person-circle fs-4"></i>
+                <span class="nav-label d-block small">Log In</span>`;
+        }
+        // The onclick for authNavButtonMobile (to call handleAccountNavClick)
+        // should already be set in your index.html or when the nav bar is created.
+        // If not, set it here:
+        if (typeof handleAccountNavClick === "function") { // Ensure handleAccountNavClick is defined
+             authNavButtonMobile.onclick = handleAccountNavClick;
+        } else {
+            console.warn("handleAccountNavClick function not defined for mobile auth button.");
+        }
 
     } else {
-        // ... (Sign In button code remains the same) ...
-        const signInBtn = document.createElement('button');
-        signInBtn.className = 'btn btn-outline-dark d-flex align-items-center gap-2';
-        signInBtn.innerHTML = `<i class="bi bi-person"></i> Sign in`;
-        signInBtn.onclick = showLoginModal; 
-        authArea.appendChild(signInBtn);
+        console.warn("updateAuthUI: #userAuthNavButton element not found in DOM for mobile.");
     }
 }
 
