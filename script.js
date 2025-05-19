@@ -469,6 +469,19 @@ function showRecipeFilter() {
     setActiveNavButton("recipes");
 }
 
+/**
+ * Updates the text content of the #currentPageTitle element in the #topBar.
+ * @param {string} title - The new title to display.
+ */
+function updatePageTitle(title) {
+    const titleElement = document.getElementById('currentPageTitle');
+    if (titleElement) {
+        titleElement.textContent = title;
+    } else {
+        console.warn("Element with ID 'currentPageTitle' not found in the DOM.");
+    }
+}
+
 function clearAllRecipeFilters() {
     const nameSearch = document.getElementById('nameSearch');
     const ingredientSearch = document.getElementById('recipeSearch'); // ID for ingredient search
