@@ -346,132 +346,171 @@ async function loadRecipes() {
 }
 
 function showRecipeFilter() {
-  const view = document.getElementById('mainView');
-  view.className = 'section-recipes';
-  view.innerHTML = `
-  <h5 class="mb-3">📚 Recipes</h5>
+    const view = document.getElementById('mainView');
+    if (!view) {
+        console.error("mainView element not found for showRecipeFilter");
+        return;
+    }
+    view.className = 'section-recipes container py-3';
 
-  <input type="text" class="form-control mb-2" id="recipeSearch" placeholder="Filter by ingredient..." oninput="filterRecipesByText()" />
-  <input type="text" class="form-control mb-2" id="tagSearch" placeholder="Filter by tag..." oninput="filterRecipesByTag()" />
-
-
-  <button class="btn btn-outline-primary mb-3" onclick="toggleRecipeForm()">Add Recipe</button>
-
-  <div id="recipeForm" class="collapsible-form mb-4">
-    <div class="card card-body">
-
-      <!-- Manual Entry -->
-      <label class="form-label fw-semibold">📛 Recipe Name</label>
-      <input class="form-control mb-3" id="recipeNameInput" placeholder="Recipe name" />
-
-
-      <div class="mb-3">
-        <label class="form-label fw-semibold mt-3">🧂 Ingredients</label>
-        <div id="ingredientsTable"></div>
-      </div>
-
-      <label class="form-label fw-semibold mt-3">📝 Instructions</label>
-      <textarea class="form-control mb-3" id="recipeInstructionsInput" rows="4" placeholder="Instructions"></textarea>
-
-
-      <label class="form-label fw-semibold mt-3">🏷️ Tags</label>
-      <div class="mb-3">
-        <div id="tagsContainer" class="form-control d-flex flex-wrap align-items-center gap-2 p-2 position-relative" style="min-height: 45px; background-color: #f8f9fa; border: 1px dashed #ced4da;">
-          <span id="tagsPlaceholder" class="text-muted position-absolute" style="left: 10px; top: 8px; pointer-events: none;">Add some tags...</span>
-        </div>
-        <div class="d-flex flex-nowrap gap-2 mt-2">
-          <input type="text" id="tagInput" class="form-control" placeholder="Type a tag" style="flex: 1; min-width: 0;" />
-          <button type="button" id="tagAddButton" class="btn btn-outline-dark btn-sm flex-shrink-0" style="min-width: 90px;">Add Tag</button>
-        </div>
-      </div>
-
-
-      <hr class="my-3" style="border-top: 2px solid #ccc;" />
-
-      <div class="d-flex gap-2 mb-4">
-        <button class="btn btn-outline-primary" onclick="saveRecipe()">Add Recipe</button>
-        <button class="btn btn-outline-dark" onclick="toggleRecipeForm()">Cancel</button>
-      </div>
-
-      <!-- ➕ OCR + Paste Cards -->
-      <div class="accordion" id="addRecipeOptionsAccordion">
-
-        <!-- 📸 OCR Section -->
-        <div class="accordion-item">
-          <h2 class="accordion-header" id="headingOCR">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOCR" aria-expanded="false" aria-controls="collapseOCR">
-              📸 Add Recipe by Photo
-            </button>
-          </h2>
-          <div id="collapseOCR" class="accordion-collapse collapse" aria-labelledby="headingOCR" data-bs-parent="#addRecipeOptionsAccordion">
-            <div class="accordion-body">
-              <label for="recipePhotoInput" class="form-label">Upload or Take a Recipe Photo</label>
-              <input
-                type="file"
-                id="recipePhotoInput"
-                accept="image/*"
-                capture="environment"
-                class="form-control mb-3"
-                onchange="handleRecipePhoto(event)"
-              />
-              <div id="photoPreviewContainer" class="mb-3"></div>
+    view.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4 class="mb-0"><i class="bi bi-journal-richtext me-2"></i>Recipes</h4>
+            <div> <button class="btn btn-outline-secondary btn-sm me-2" type="button" onclick="clearAllRecipeFilters()" title="Clear all filters">
+                    <i class="bi bi-x-lg"></i> Clear Filters
+                </button>
+                <button class="btn btn-primary btn-sm" onclick="toggleRecipeForm()">
+                    <i class="bi bi-plus-circle-fill me-1"></i>Add Recipe
+                </button>
             </div>
-          </div>
         </div>
 
-        <!-- ⌨️ Paste Text Section -->
-        <div class="accordion-item">
-          <h2 class="accordion-header" id="headingPaste">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePaste" aria-expanded="false" aria-controls="collapsePaste">
-              ⌨️ Add Recipe by Pasting Text
-            </button>
-          </h2>
-          <div id="collapsePaste" class="accordion-collapse collapse" aria-labelledby="headingPaste" data-bs-parent="#addRecipeOptionsAccordion">
-            <div class="accordion-body">
-              <label for="ocrTextPaste" class="form-label">Paste your recipe name, ingredients, and instructions below the dashed lines.</label>
-              <textarea id="ocrTextPaste" class="form-control mb-2" rows="10">
+        <div class="filter-section card card-body bg-light-subtle mb-3">
+             <div class="row g-2 align-items-end">
+                <div class="col-lg-4 col-md-12">
+                    <label for="nameSearch" class="form-label small mb-1">By Name:</label>
+                    <input type="text" class="form-control form-control-sm" id="nameSearch" placeholder="Filter by name..." oninput="applyAllRecipeFilters()" />
+                </div>
+                <div class="col-lg-4 col-md-6">
+                    <label for="recipeSearch" class="form-label small mb-1">By Ingredient(s):</label>
+                    <input type="text" class="form-control form-control-sm" id="recipeSearch" placeholder="Filter by ingredient..." oninput="applyAllRecipeFilters()" />
+                </div>
+                <div class="col-lg-4 col-md-6">
+                    <label for="tagSearch" class="form-label small mb-1">By Tag(s):</label>
+                    <input type="text" class="form-control form-control-sm" id="tagSearch" placeholder="Filter by tag..." oninput="applyAllRecipeFilters()" />
+                </div>
+            </div>
+        </div>
+
+        <div id="recipeForm" class="collapsible-form mb-4">
+            <div class="card card-body">
+
+                <label class="form-label fw-semibold">📛 Recipe Name</label>
+                <input class="form-control mb-3" id="recipeNameInput" placeholder="Recipe name" />
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold mt-3">🧂 Ingredients</label>
+                    <div id="ingredientsTable"></div> </div>
+
+                <label class="form-label fw-semibold mt-3">📝 Instructions</label>
+                <textarea class="form-control mb-3" id="recipeInstructionsInput" rows="4" placeholder="Instructions"></textarea>
+
+                <label class="form-label fw-semibold mt-3">🏷️ Tags</label>
+                <div class="mb-3">
+                    <div id="tagsContainer" class="form-control d-flex flex-wrap align-items-center gap-1 p-2 position-relative" style="min-height: 38px; background-color: #f8f9fa; border: 1px dashed #ced4da;">
+                        <span id="tagsPlaceholder" class="text-muted position-absolute small" style="left: 10px; top: 50%; transform: translateY(-50%); pointer-events: none;">Add some tags...</span>
+                    </div>
+                    <div class="input-group input-group-sm mt-2">
+                        <input type="text" id="tagInput" class="form-control" placeholder="Type a tag & press Enter" />
+                        <button type="button" id="tagAddButton" class="btn btn-outline-secondary"><i class="bi bi-plus"></i> Add</button>
+                    </div>
+                </div>
+
+                <hr class="my-3" style="border-top: 1px solid #ccc;" />
+
+                <div class="d-flex gap-2 mb-3 justify-content-end">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleRecipeForm()">Cancel</button>
+                    <button type="button" class="btn btn-success btn-sm" onclick="saveRecipe()">Save Recipe</button>
+                </div>
+
+                <div class="accordion" id="addRecipeOptionsAccordion">
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingOCR">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOCR" aria-expanded="false" aria-controls="collapseOCR">
+                                📸 Add Recipe by Photo
+                            </button>
+                        </h2>
+                        <div id="collapseOCR" class="accordion-collapse collapse" aria-labelledby="headingOCR" data-bs-parent="#addRecipeOptionsAccordion">
+                            <div class="accordion-body">
+                                <label for="recipePhotoInput" class="form-label">Upload or Take a Recipe Photo</label>
+                                <input type="file" id="recipePhotoInput" accept="image/*" capture="environment" class="form-control mb-3" onchange="handleRecipePhoto(event)" />
+                                <div id="photoPreviewContainer" class="mb-3"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingPaste">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePaste" aria-expanded="false" aria-controls="collapsePaste">
+                                ⌨️ Add Recipe by Pasting Text
+                            </button>
+                        </h2>
+                        <div id="collapsePaste" class="accordion-collapse collapse" aria-labelledby="headingPaste" data-bs-parent="#addRecipeOptionsAccordion">
+                            <div class="accordion-body">
+                                <label for="ocrTextPaste" class="form-label">Paste your recipe text below:</label>
+                                <textarea id="ocrTextPaste" class="form-control mb-2" rows="10">
 📛 RECIPE NAME
 ====================
-
 
 🧂 INGREDIENTS
 ====================
 
-
 📝 INSTRUCTIONS
 ====================
+                                </textarea>
+                                <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="handlePastedRecipeText()">✨ Parse Text to Fill Form</button>
+                            </div>
+                        </div>
+                    </div>
+                </div> </div> </div> <div id="recipeResults"></div>
+    `;
 
+    initializeMainRecipeFormTagInput();
 
-</textarea>
-
-              <button class="btn btn-sm btn-outline-primary" onclick="handlePastedRecipeText()">✨ Parse Text to Fill Form</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-
-  <div id="recipeResults"></div>
-`;
-
-  displayRecipes(recipes, 'recipeResults');
-
-  // Attach event handler to the Add Tag button
-const tagInput = document.getElementById('tagInput');
-const tagAddButton = document.getElementById('tagAddButton');
-if (tagAddButton) {
-  tagAddButton.onclick = () => {
-    const value = tagInput.value.trim().toLowerCase();
-    if (value && !currentTags.includes(value)) {
-      currentTags.push(value);
-      renderTags();
+    if (typeof recipes !== 'undefined') {
+        applyAllRecipeFilters();
+    } else {
+        const recipeResultsContainer = document.getElementById('recipeResults');
+        if (recipeResultsContainer) {
+            recipeResultsContainer.innerHTML = '<p class="text-center text-muted">Loading recipes or no recipes found...</p>';
+        }
+        console.warn("Global 'recipes' array not defined when showRecipeFilter was called. Ensure loadInitialRecipes() has run.");
     }
-    tagInput.value = '';
-  };
 }
 
+function clearAllRecipeFilters() {
+    const nameSearch = document.getElementById('nameSearch');
+    const ingredientSearch = document.getElementById('recipeSearch'); // ID for ingredient search
+    const tagSearch = document.getElementById('tagSearch');
+
+    if (nameSearch) nameSearch.value = '';
+    if (ingredientSearch) ingredientSearch.value = '';
+    if (tagSearch) tagSearch.value = '';
+
+    applyAllRecipeFilters(); // Re-apply with empty filters to show all recipes
+}
+
+function initializeMainRecipeFormTagInput() {
+    const tagInput = document.getElementById('tagInput');
+    const tagAddButton = document.getElementById('tagAddButton');
+    
+    // currentTags should be reset when a new recipe form is opened/cleared by toggleRecipeForm
+    if (tagInput && tagAddButton) {
+        // To avoid multiple listeners if this is called many times without DOM replacement,
+        // consider using a flag or removing old listeners.
+        // For now, assuming simple re-assignment if DOM is stable or re-rendered.
+        const addTagFromMainForm = () => {
+            const value = tagInput.value.trim().toLowerCase();
+            if (value && !currentTags.includes(value)) {
+                currentTags.push(value);
+                renderTags(); // This updates #tagsContainer in the Add Recipe form
+            }
+            tagInput.value = '';
+            tagInput.focus();
+        };
+        
+        tagAddButton.onclick = addTagFromMainForm;
+        // Remove previous listener before adding a new one to prevent duplication if this func is called multiple times on same elements
+        tagInput.removeEventListener('keypress', handleTagInputKeypress); // Named function for removal
+        tagInput.addEventListener('keypress', handleTagInputKeypress);
+
+    }
+}
+
+function handleTagInputKeypress(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        document.getElementById('tagAddButton').click(); // Trigger the button's click
+    }
 }
 
 function handlePastedRecipeText() {
@@ -573,6 +612,123 @@ function createIngredientRow(name = '', qty = '', unit = '') {
   });
 }
 
+// script.js
+
+// Assume 'recipes' is your globally accessible array of all loaded recipe objects
+// let recipes = [];
+
+function filterRecipesByName() {
+    const nameSearchTerm = document.getElementById('nameSearch') ? 
+                           document.getElementById('nameSearch').value.toLowerCase().trim() : "";
+    
+    let filteredByName = [...recipes]; // Start with all recipes
+
+    if (nameSearchTerm) {
+        filteredByName = recipes.filter(recipe =>
+            recipe.name && recipe.name.toLowerCase().includes(nameSearchTerm)
+        );
+    }
+
+    // To make this new name filter work *with* your existing independent filters,
+    // you have a few choices for how they interact:
+    // Option A: Name filter overrides others temporarily (simplest for now if you want ONLY name filter active when typing in it)
+    // Option B: Try to combine filter results (more complex if they are triggered by separate oninput)
+    //
+    // For now, let's assume typing in "Filter by name" shows results *only* based on name,
+    // and typing in "Filter by ingredient" shows results *only* based on ingredients, etc.
+    // If you want them to be additive (e.g., name AND ingredient), we'll need a single `applyAllFilters()` function.
+
+    // For this request (just make filter by name work without changing other filters' current behavior):
+    // We will re-filter based on ALL current filter inputs every time any filter changes.
+    // This is the most robust way to make them work together.
+
+    // Get values from other filters as well
+    const ingredientSearchTerm = document.getElementById('recipeSearch') ?
+                                 document.getElementById('recipeSearch').value.toLowerCase().trim() : "";
+    const tagSearchTerm = document.getElementById('tagSearch') ?
+                          document.getElementById('tagSearch').value.toLowerCase().trim() : "";
+
+    applyAllRecipeFilters(); // We will create this new function
+}
+
+// It's better to have ONE function that applies ALL active filters.
+// Let's rename your existing filterByText and filterByTag to be part of a combined filter.
+
+function filterRecipesByText() { // This will now be triggered by ingredient search input
+    applyAllRecipeFilters();
+}
+
+function filterRecipesByTag() { // This will now be triggered by tag search input
+    applyAllRecipeFilters();
+}
+
+
+// script.js
+
+function applyAllRecipeFilters() {
+    const nameSearchInput = document.getElementById('recipeNameSearch');
+    const ingredientSearchInput = document.getElementById('recipeIngredientSearch');
+    const tagSearchInput = document.getElementById('recipeTagSearch');
+
+    const nameSearchTerm = nameSearchInput ? nameSearchInput.value.toLowerCase().trim() : "";
+    
+    const ingredientSearchValue = ingredientSearchInput ? ingredientSearchInput.value.toLowerCase().trim() : "";
+    const ingredientSearchTermsArray = ingredientSearchValue.split(',') // Keep as array for highlighting
+                                     .map(term => term.trim().toLowerCase())
+                                     .filter(Boolean);
+
+    const tagSearchValue = tagSearchInput ? tagSearchInput.value.toLowerCase().trim() : "";
+    const tagTermsArray = tagSearchValue.split(',') // Keep as array for highlighting
+                        .map(t => t.trim().toLowerCase())
+                        .filter(Boolean);
+
+    let filteredList = [...recipes]; 
+
+    // Filter by Recipe Name
+    if (nameSearchTerm) {
+        filteredList = filteredList.filter(recipe =>
+            recipe.name && recipe.name.toLowerCase().includes(nameSearchTerm)
+        );
+    }
+
+    // Filter by Ingredients
+    if (ingredientSearchTermsArray.length > 0) {
+        filteredList = filteredList.filter(recipe => {
+            if (!recipe.ingredients || recipe.ingredients.length === 0) return false;
+            const ingredientNamesLower = recipe.ingredients.map(ing => {
+                const name = (typeof ing === 'object' && ing.name) ? ing.name : (typeof ing === 'string' ? ing : '');
+                return name.toLowerCase();
+            });
+            return ingredientSearchTermsArray.every(term =>
+                ingredientNamesLower.some(ingName => ingName.includes(term))
+            );
+        });
+    }
+
+    // Filter by Tags
+    if (tagTermsArray.length > 0) {
+        filteredList = filteredList.filter(recipe => {
+            if (!recipe.tags || recipe.tags.length === 0) return false;
+            const recipeTagsLower = recipe.tags.map(tag => tag.toLowerCase());
+            return tagTermsArray.every(term =>
+                recipeTagsLower.some(tag => tag.includes(term)) // Using 'includes' for more flexible tag matching
+            );
+        });
+    }
+    
+    const displayOptions = {};
+    if (nameSearchTerm) {
+        displayOptions.highlightNameTerm = nameSearchTerm; // Single string for name
+    }
+    if (ingredientSearchTermsArray.length > 0) {
+        displayOptions.highlightIngredients = ingredientSearchTermsArray; // Array of strings
+    }
+    if (tagTermsArray.length > 0) {
+        displayOptions.highlightTags = tagTermsArray; // Array of strings
+    }
+
+    displayRecipes(filteredList, 'recipeResults', displayOptions);
+}
 
 function filterRecipesByTag() {
   const search = document.getElementById('tagSearch').value.trim().toLowerCase();
@@ -597,7 +753,11 @@ function filterRecipesByTag() {
   displayRecipes(filtered, 'recipeResults', { highlightTags: tagTerms });
 }
 
-
+function createHighlightRegex(term) {
+    if (!term) return null;
+    const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(${escapedTerm})`, 'gi');
+}
 
 async function handleRecipePhoto(event) {
     console.log("--- handleRecipePhoto called at: ", new Date().toISOString(), "Event type:", event.type); // LOG A
@@ -1601,50 +1761,95 @@ function populateIngredientSelect() {
   });
 }
 
-function filterRecipesByText() {
-  const search = document.getElementById('recipeSearch').value.trim().toLowerCase();
-  const searchTerms = search.split(',').map(s => s.trim()).filter(Boolean);
+function applyAllRecipeFilters() {
+    const nameSearchTerm = document.getElementById('nameSearch') ?
+                           document.getElementById('nameSearch').value.toLowerCase().trim() : "";
+    const ingredientSearchTerm = document.getElementById('recipeSearch') ?
+                                 document.getElementById('recipeSearch').value.toLowerCase().trim() : "";
+    const tagSearchTerm = document.getElementById('tagSearch') ?
+                          document.getElementById('tagSearch').value.toLowerCase().trim() : "";
 
-  if (searchTerms.length === 0) {
-    displayRecipes(recipes);
-    return;
-  }
+    let currentFilteredRecipes = [...recipes]; // Start with a fresh copy of all recipes
 
-  const filtered = recipes.filter(recipe => {
-    if (!recipe.ingredients) return false;
+    // Filter by Name
+    if (nameSearchTerm) {
+        currentFilteredRecipes = currentFilteredRecipes.filter(recipe =>
+            recipe.name && recipe.name.toLowerCase().includes(nameSearchTerm)
+        );
+    }
 
-    const ingredientNames = recipe.ingredients.map(ing => 
-      typeof ing === 'object' ? ing.name.toLowerCase() : ing.toLowerCase()
-    );
+    // Filter by Ingredient(s) - using your existing logic style
+    if (ingredientSearchTerm) {
+        const ingredientSearchTerms = ingredientSearchTerm.split(',').map(s => s.trim()).filter(Boolean);
+        if (ingredientSearchTerms.length > 0) {
+            currentFilteredRecipes = currentFilteredRecipes.filter(recipe => {
+                if (!recipe.ingredients) return false;
+                const ingredientNames = recipe.ingredients.map(ing =>
+                    typeof ing === 'object' ? (ing.name || '').toLowerCase() : (ing || '').toLowerCase()
+                );
+                return ingredientSearchTerms.every(term => // All search terms must match at least one ingredient
+                    ingredientNames.some(ingName => ingName.includes(term))
+                );
+            });
+        }
+    }
 
-    // ✅ ALL search terms must match at least once
-    return searchTerms.every(term =>
-      ingredientNames.some(ingName => ingName.includes(term))
-    );
-  });
+    // Filter by Tag(s) - using your existing logic style
+    if (tagSearchTerm) {
+        const tagTerms = tagSearchTerm.split(',').map(t => t.trim()).filter(Boolean);
+        if (tagTerms.length > 0) {
+            currentFilteredRecipes = currentFilteredRecipes.filter(recipe => {
+                if (!recipe.tags) return false;
+                const recipeTags = recipe.tags.map(tag => tag.toLowerCase());
+                return tagTerms.every(term => // All search tags must match at least one recipe tag
+                    recipeTags.some(tag => tag.startsWith(term)) // Your original was startsWith, can change to includes
+                );
+            });
+        }
+    }
 
-  displayRecipes(filtered, 'recipeResults', { highlightIngredients: searchTerms });
+    const displayOptions = {};
+    if (nameSearchTerm) displayOptions.highlightNameTerm = nameSearchTerm;
+    if (ingredientSearchTerm) displayOptions.highlightIngredients = ingredientSearchTerm.split(',').map(s => s.trim()).filter(Boolean);
+    if (tagSearchTerm) displayOptions.highlightTags = tagSearchTerm.split(',').map(t => t.trim()).filter(Boolean);
+
+    displayRecipes(currentFilteredRecipes, 'recipeResults', displayOptions);
+}
+
+function filterRecipesByText() { // This will now be triggered by ingredient search input
+    applyAllRecipeFilters();
 }
 
 
 
-function displayRecipes(list, containerId = 'recipeResults', options = {}) {
+// script.js
+
+// Helper function to escape special regex characters and create a highlighting regex
+function createHighlightRegex(term) {
+    if (!term) return null;
+    // Escape special characters in the search term for regex safety
+    const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(${escapedTerm})`, 'gi'); // 'g' for global, 'i' for case-insensitive
+}
+
+function displayRecipes(listToDisplay, containerId = 'recipeResults', options = {}) {
     const container = document.getElementById(containerId);
     if (!container) {
         console.error("Recipe container not found:", containerId);
         return;
     }
-    container.innerHTML = ''; // Clear previous results
+    container.innerHTML = '';
 
-    const highlightIngredients = options.highlightIngredients || [];
-    const highlightTags = options.highlightTags || [];
-
-    if (!list || list.length === 0) {
-        container.innerHTML = '<p class="text-muted text-center mt-3">No matching recipes found. Try adding some or adjusting your filters!</p>';
+    if (!listToDisplay || listToDisplay.length === 0) {
+        container.innerHTML = '<p class="text-muted text-center mt-3">No matching recipes found.</p>';
         return;
     }
 
-    list.forEach(recipe => {
+    const nameRegex = options.highlightNameTerm ? createHighlightRegex(options.highlightNameTerm) : null;
+    const ingredientRegexes = options.highlightIngredients ? options.highlightIngredients.map(term => createHighlightRegex(term)).filter(r => r) : [];
+    const tagRegexes = options.highlightTags ? options.highlightTags.map(term => createHighlightRegex(term)).filter(r => r) : [];
+
+    listToDisplay.forEach(recipe => {
         const card = document.createElement('div');
         card.className = 'card mb-3 shadow-sm recipe-card';
         card.dataset.recipeId = recipe.id;
@@ -1652,17 +1857,25 @@ function displayRecipes(list, containerId = 'recipeResults', options = {}) {
         const body = document.createElement('div');
         body.className = 'card-body p-3';
 
-        // --- Title Row with Action Buttons ---
+        // --- Title Row ---
         const titleRow = document.createElement('div');
         titleRow.className = 'd-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2 mb-2';
 
-        const title = document.createElement('h5'); // Keeping new title formatting
-        title.className = 'recipe-title mb-0 text-primary';
-        title.textContent = recipe.name;
+        const titleElement = document.createElement('h5');
+        titleElement.className = 'recipe-title mb-0 text-primary';
+        let recipeName = recipe.name || "Untitled Recipe";
+        if (nameRegex && options.highlightNameTerm && recipeName.toLowerCase().includes(options.highlightNameTerm.toLowerCase())) { // Added options.highlightNameTerm check
+            titleElement.innerHTML = recipeName.replace(nameRegex, '<mark>$1</mark>');
+        } else {
+            titleElement.textContent = recipeName;
+        }
+        titleRow.appendChild(titleElement);
 
+        // --- Button Group (Share, Edit, Delete) ---
         const buttonGroup = document.createElement('div');
         buttonGroup.className = 'd-flex gap-2 align-items-center mt-2 mt-sm-0 recipe-card-actions flex-shrink-0';
 
+        // Share Button
         const shareBtn = document.createElement('button');
         shareBtn.className = 'btn btn-outline-secondary btn-sm btn-share';
         if (!currentUser) {
@@ -1674,54 +1887,67 @@ function displayRecipes(list, containerId = 'recipeResults', options = {}) {
                 showLoginModal();
             };
         } else {
-            shareBtn.innerHTML = '<i class="bi bi-share-fill"></i>'; // Keeping new share icon
+            shareBtn.innerHTML = '<i class="bi bi-share-fill"></i>';
             shareBtn.title = 'Share recipe link';
-            shareBtn.onclick = () => shareRecipe(recipe.id);
+            shareBtn.onclick = () => shareRecipe(recipe.id); // recipe.id is Firestore ID here
         }
         buttonGroup.appendChild(shareBtn);
 
+        // Edit Button
         const editBtn = document.createElement('button');
         editBtn.className = 'btn btn-outline-primary btn-sm';
-        editBtn.innerHTML = '<i class="bi bi-pencil-fill"></i>'; // Keeping new edit icon
+        editBtn.innerHTML = '<i class="bi bi-pencil-fill"></i>';
         editBtn.title = "Edit recipe";
-        editBtn.onclick = () => openInlineEditor(recipe.id, card);
+        editBtn.onclick = () => openInlineEditor(recipe.id, card); // recipe.id is localId or FirestoreId
         buttonGroup.appendChild(editBtn);
 
+        // Delete Button Area
         const deleteArea = document.createElement('div');
         deleteArea.className = 'delete-area position-relative d-inline-block';
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'btn btn-outline-danger btn-sm';
-        deleteBtn.innerHTML = '<i class="bi bi-trash-fill"></i>'; // Keeping new delete icon
+        deleteBtn.innerHTML = '<i class="bi bi-trash-fill"></i>';
         deleteBtn.title = "Delete recipe";
-        deleteBtn.onclick = () => confirmDeleteRecipe(recipe.id, deleteArea);
+        deleteBtn.onclick = () => confirmDeleteRecipe(recipe.id, deleteArea); // Pass deleteArea for confirm UI
         deleteArea.appendChild(deleteBtn);
         buttonGroup.appendChild(deleteArea);
+        // --- End Button Group ---
 
-        titleRow.appendChild(title);
-        titleRow.appendChild(buttonGroup);
+        titleRow.appendChild(buttonGroup); // Add the fully constructed button group
         body.appendChild(titleRow);
 
-        // --- Tags and Ratings Row (Keeping this as you liked tag display) ---
+
+        // --- Tags and Ratings Row ---
         const tagsAndRatingRow = document.createElement('div');
         tagsAndRatingRow.className = 'd-flex flex-wrap justify-content-between align-items-center mb-2 gap-2';
-
         const tagsDiv = document.createElement('div');
         tagsDiv.className = 'recipe-tags';
         if (recipe.tags && recipe.tags.length > 0) {
             recipe.tags.forEach(tag => {
                 const tagBadge = document.createElement('span');
-                tagBadge.className = 'badge me-1 mb-1 ';
-                if (highlightTags.some(term => tag.toLowerCase().includes(term.toLowerCase()))) {
-                    tagBadge.classList.add('bg-warning', 'text-dark');
-                } else {
-                    tagBadge.classList.add('bg-secondary');
+                tagBadge.className = 'badge me-1 mb-1 bg-secondary'; // Default
+                let tagDisplay = tag;
+                let isTagHighlighted = false; // Flag to ensure highlight style is applied only once
+                if (tagRegexes.length > 0) {
+                    tagRegexes.forEach(regex => {
+                        // Extract the search term from the regex for includes() check
+                        const searchTermFromRegex = regex.source.replace(/^\(|\)$/g, ''); // Remove capturing group parentheses
+                        if (tag.toLowerCase().includes(searchTermFromRegex)) {
+                            tagDisplay = tag.replace(regex, '<mark>$1</mark>');
+                            isTagHighlighted = true;
+                        }
+                    });
                 }
-                tagBadge.textContent = tag;
+                if (isTagHighlighted) {
+                    tagBadge.classList.remove('bg-secondary');
+                    tagBadge.classList.add('bg-warning', 'text-dark');
+                }
+                tagBadge.innerHTML = tagDisplay;
                 tagsDiv.appendChild(tagBadge);
             });
         }
         tagsAndRatingRow.appendChild(tagsDiv);
-
+        
         const ratingContainer = document.createElement('div');
         ratingContainer.className = 'rating-stars d-flex gap-1 align-items-center';
         if (currentUser) {
@@ -1745,35 +1971,33 @@ function displayRecipes(list, containerId = 'recipeResults', options = {}) {
         tagsAndRatingRow.appendChild(ratingContainer);
         body.appendChild(tagsAndRatingRow);
 
+
+        // --- Ingredients Table ---
         const table = document.createElement('table');
-        // Using your previous classes for table structure if they worked well for the grid
-        table.className = 'table table-bordered table-sm mt-3 mb-2';
-
-        const thead = document.createElement('thead'); // ADDED THEAD BACK
-        thead.innerHTML = `
-            <tr>
-                <th>Ingredient</th>
-                <th>Qty</th>
-                <th>Unit</th>
-            </tr>
-        `;
+        table.className = 'table table-bordered table-sm mt-2 mb-2';
+        const thead = document.createElement('thead');
+        thead.innerHTML = `<tr><th>Ingredient</th><th>Qty</th><th>Unit</th></tr>`;
         table.appendChild(thead);
-
         const tbody = document.createElement('tbody');
         if (Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0) {
             recipe.ingredients.forEach(ing => {
                 const tr = document.createElement('tr');
                 const nameTd = document.createElement('td');
                 const ingName = typeof ing === 'object' ? (ing.name || '') : (ing || '');
-                if (highlightIngredients.some(term => ingName.toLowerCase().includes(term.toLowerCase()))) {
-                    nameTd.innerHTML = `<mark>${ingName}</mark>`;
-                } else {
-                    nameTd.textContent = ingName;
+                let ingNameDisplay = ingName;
+
+                if (ingredientRegexes.length > 0) {
+                    ingredientRegexes.forEach(regex => {
+                        const searchTermFromRegex = regex.source.replace(/^\(|\)$/g, ''); // Remove capturing group parentheses
+                        if (ingName.toLowerCase().includes(searchTermFromRegex)) {
+                            ingNameDisplay = ingName.replace(regex, '<mark>$1</mark>');
+                        }
+                    });
                 }
+                nameTd.innerHTML = ingNameDisplay;
 
                 const qtyTd = document.createElement('td');
                 qtyTd.textContent = typeof ing === 'object' ? (ing.quantity || '') : '';
-
                 const unitTd = document.createElement('td');
                 unitTd.textContent = typeof ing === 'object' ? (ing.unit || '') : '';
 
@@ -1788,25 +2012,25 @@ function displayRecipes(list, containerId = 'recipeResults', options = {}) {
         table.appendChild(tbody);
         body.appendChild(table);
 
-        // --- Instructions (Keeping your preferred text formatting) ---
+        // --- Instructions ---
         const instructionsTitle = document.createElement('h6');
         instructionsTitle.className = 'mt-3 mb-1 fw-semibold';
-        instructionsTitle.textContent = 'Instructions'; // REMOVED ICON
+        instructionsTitle.textContent = 'Instructions';
         body.appendChild(instructionsTitle);
         const instructionsP = document.createElement('p');
-        instructionsP.className = 'card-text recipe-instructions'; // Removed 'small' class for now, you can add back if preferred
-        instructionsP.style.whiteSpace = 'pre-wrap'; 
+        instructionsP.className = 'card-text recipe-instructions';
+        instructionsP.style.whiteSpace = 'pre-wrap';
         instructionsP.textContent = recipe.instructions || 'No instructions provided.';
         body.appendChild(instructionsP);
 
-        // --- Bottom Button Row: Mark as Made + Plan Meal (Keeping structure) ---
+        // --- Bottom Button Row (Mark as Made, Plan Meal) ---
         const bottomButtonRow = document.createElement('div');
         bottomButtonRow.className = 'd-flex align-items-center justify-content-start gap-2 mt-3 pt-2 border-top';
 
         const madeBtn = document.createElement('button');
         madeBtn.className = 'btn btn-outline-info btn-sm';
         madeBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Mark as Made';
-        madeBtn.onclick = (e) => markAsMade(recipe.name, e.target);
+        madeBtn.onclick = (e) => markAsMade(recipe, e.target); // Pass the full recipe object
         bottomButtonRow.appendChild(madeBtn);
 
         const planArea = document.createElement('div');
@@ -1814,10 +2038,9 @@ function displayRecipes(list, containerId = 'recipeResults', options = {}) {
         const planBtn = document.createElement('button');
         planBtn.className = 'btn btn-outline-success btn-sm';
         planBtn.innerHTML = '<i class="bi bi-calendar-plus"></i> Plan Meal';
-        planBtn.onclick = () => openPlanMealForm(recipe, planArea);
+        planBtn.onclick = () => openPlanMealForm(recipe, planArea); // Pass the full recipe object
         planArea.appendChild(planBtn);
         bottomButtonRow.appendChild(planArea);
-
         body.appendChild(bottomButtonRow);
 
         card.appendChild(body);
@@ -2455,94 +2678,83 @@ function deleteRecipe(id) {
 }
 }
 
-function confirmDeleteRecipe(id, buttonElement) {
-    const container = buttonElement.closest('.delete-area');
+function confirmDeleteRecipe(id, deleteAreaContainer) { // Renamed 'container' to 'deleteAreaContainer' for clarity
+    if (!deleteAreaContainer || deleteAreaContainer.querySelector('.confirm-delete-controls')) {
+        // If confirmation is already showing, or container is bad, do nothing
+        return;
+    }
 
-    if (!container || container.querySelector('.confirm-delete')) return;
+    const originalDeleteButton = deleteAreaContainer.querySelector('.btn-outline-danger'); // Assuming this is your trash icon button
 
-    // Hide the original delete button
-    buttonElement.style.display = 'none';
+    if (originalDeleteButton) {
+        originalDeleteButton.style.display = 'none'; // HIDE THE ORIGINAL TRASH CAN BUTTON
+    }
 
-    // Inline confirm bar
-    const confirmBar = document.createElement('div');
-    confirmBar.className = 'confirm-delete d-inline-flex align-items-center gap-2';
+    const confirmControls = document.createElement('div');
+    confirmControls.className = 'confirm-delete-controls d-inline-flex align-items-center gap-2'; // Keep this class unique if needed
 
     const text = document.createElement('span');
-    text.className = 'text-danger fw-semibold';
-    text.textContent = 'Confirm?';
+    text.className = 'text-danger fw-semibold small'; // Made text small for compactness
+    text.textContent = 'Confirm Delete?';
 
-    const confirmBtn = document.createElement('button');
-    confirmBtn.className = 'btn btn-sm btn-outline-success';
-    confirmBtn.innerHTML = '✅';
+    const yesBtn = document.createElement('button');
+    yesBtn.className = 'btn btn-sm btn-danger py-0 px-1'; // Smaller buttons
+    yesBtn.innerHTML = '<i class="bi bi-check-lg"></i> Yes';
 
-    confirmBtn.onclick = () => {
-        console.log("Delete confirmation clicked. ID:", id, "currentUser:", currentUser);
+    const noBtn = document.createElement('button');
+    noBtn.className = 'btn btn-sm btn-secondary py-0 px-1'; // Smaller buttons
+    noBtn.innerHTML = '<i class="bi bi-x-lg"></i> No';
 
-        // Restore button and remove confirm bar regardless of outcome,
-        // or do it specifically in .then() and .catch()
-        const cleanupUI = () => {
-            if (confirmBar.parentNode) { // Check if confirmBar is still in DOM
-                confirmBar.remove();
-            }
-            buttonElement.style.display = ''; // Restore original icon
-        };
-
-        if (currentUser) {
-            // --- User is LOGGED IN: Delete from Firestore ---
-            console.log("Attempting to delete Firestore recipe ID:", id, "by user UID:", currentUser.uid);
-            db.collection("recipes").doc(id).delete()
-                .then(() => {
-                    console.log("Recipe successfully deleted from Firestore.");
-                    showSuccessMessage("Recipe deleted from your account.");
-                    loadInitialRecipes(); // This will call loadRecipesFromFirestore()
-                    cleanupUI();
-                })
-                .catch(err => {
-                    console.error("❌ Error deleting recipe from Firestore:", err);
-                    alert("Failed to delete recipe: " + err.message);
-                    cleanupUI(); // Restore UI on failure
-                });
-        } else {
-            // --- User is NOT LOGGED IN: Delete from LocalDB ---
-            console.log("Attempting to delete local recipe with localId:", id);
-            if (!localDB) {
-                console.error("LocalDB not initialized. Cannot delete local recipe.");
-                alert("Local storage not available.");
-                cleanupUI();
-                return;
-            }
-
-            // 'id' here is the localId because loadRecipesFromLocal maps localId to id
-            localDB.recipes.delete(id)
-                .then(() => {
-                    console.log("Recipe deleted from LocalDB:", id);
-                    showSuccessMessage("Recipe deleted locally.");
-                    loadInitialRecipes(); // This will call loadRecipesFromLocal()
-                    cleanupUI();
-                })
-                .catch(err => {
-                    console.error("❌ Error deleting recipe from LocalDB:", err.stack || err);
-                    alert("Failed to delete local recipe: " + err.message);
-                    cleanupUI(); // Restore UI on failure
-                });
+    const cleanupAndRestore = () => {
+        confirmControls.remove();
+        if (originalDeleteButton) {
+            originalDeleteButton.style.display = 'inline-block'; // RESTORE THE TRASH CAN BUTTON
         }
     };
 
-    const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'btn btn-sm btn-outline-danger';
-    cancelBtn.innerHTML = '❌';
-    cancelBtn.onclick = () => {
-        if (confirmBar.parentNode) {
-            confirmBar.remove();
+    yesBtn.onclick = async () => { // Made async for consistency with other delete functions
+        // Show some loading state on the yes button if the delete is slow
+        yesBtn.disabled = true;
+        yesBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Deleting...';
+        noBtn.disabled = true;
+
+        try {
+            if (currentUser) {
+                await db.collection("recipes").doc(id).delete();
+                showSuccessMessage("Recipe deleted from your account.");
+            } else if (localDB) {
+                await localDB.recipes.delete(id); // id here is localId
+                showSuccessMessage("Recipe deleted locally.");
+            }
+            // Instead of full loadInitialRecipes(), which re-renders everything,
+            // find the parent card and remove it for a smoother experience.
+            const cardToRemove = deleteAreaContainer.closest('.recipe-card');
+            if (cardToRemove) {
+                cardToRemove.remove();
+            } else {
+                loadInitialRecipes(); // Fallback to full reload if card isn't found
+            }
+            // Check if the list is now empty
+            const recipeResultsContainer = document.getElementById('recipeResults');
+            if (recipeResultsContainer && recipeResultsContainer.childElementCount === 0) {
+                displayRecipes([], 'recipeResults'); // Call with empty array to show "empty" message
+            }
+
+        } catch (err) {
+            console.error("❌ Error deleting recipe:", err.stack || err);
+            alert("Failed to delete recipe: " + err.message);
+            cleanupAndRestore(); // Restore UI on failure
         }
-        buttonElement.style.display = ''; // Restore original icon
+        // No need to call cleanupUI explicitly here if the card is removed or page reloaded
+        // but if an error occurs before card removal, cleanupUI in catch is good.
     };
 
-    confirmBar.appendChild(text);
-    confirmBar.appendChild(confirmBtn);
-    confirmBar.appendChild(cancelBtn);
+    noBtn.onclick = cleanupAndRestore;
 
-    container.appendChild(confirmBar);
+    confirmControls.appendChild(text);
+    confirmControls.appendChild(yesBtn);
+    confirmControls.appendChild(noBtn);
+    deleteAreaContainer.appendChild(confirmControls);
 }
 
 

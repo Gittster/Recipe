@@ -271,3 +271,14 @@
 #userAuthArea .btn.rounded-circle:focus {
     background-color: #e9ecef;
 } */
+
+mark {
+    padding: 0.1em 0; /* Adjust vertical padding, remove horizontal if it's an issue */
+    margin: 0;        /* Reset any default margins */
+    background-color: #FFD700; /* Or your preferred highlight yellow/color */
+    color: inherit;   /* Ensure text color remains consistent with surrounding text */
+    line-height: inherit; /* Helps maintain consistent line height */
+    /* letter-spacing: normal; */ /* Usually not needed, but can explicitly set if there's an issue */
+    /* display: inline; */ /* Default, but ensures it doesn't try to be a block */
+    border-radius: 2px; /* Optional: slightly rounded corners can look nice */
+}
