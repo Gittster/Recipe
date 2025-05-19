@@ -4303,6 +4303,89 @@ function getInitials(name) {
   return first + last;
 }
 
+/**
+ * Sets the 'active' class on the correct navigation button for both mobile and desktop
+ * and removes it from others.
+ * @param {string} viewName - The name of the view to activate (e.g., 'recipes', 'history', 'pantry', 'plan', 'account').
+ */
+function setActiveNavButton(viewName) {
+    if (!viewName) {
+        console.warn("setActiveNavButton called with no viewName.");
+        return;
+    }
+    currentActiveView = viewName.toLowerCase(); // Standardize to lowercase
+
+    // --- Handle Mobile Bottom Navigation Bar ---
+    const bottomNavButtons = document.querySelectorAll('#bottomNavBar .btn-nav');
+    if (bottomNavButtons.length > 0) {
+        bottomNavButtons.forEach(btn => {
+            btn.classList.remove('active'); // Remove 'active' from all
+            if (btn.dataset.view === currentActiveView) {
+                btn.classList.add('active'); // Add 'active' to the matching button
+            }
+        });
+    } else {
+        // This might log if on desktop where bottomNavBar is display:none, which is fine.
+        // console.warn("#bottomNavBar .btn-nav elements not found.");
+    }
+
+    // --- Handle Desktop Top Menu Bar ---
+    // Assumes buttons in #menuBar have data-view attributes matching viewName
+    // and that active state means changing from btn-outline-* to btn-* (solid)
+    const desktopNavButtons = document.querySelectorAll('#menuBar button.btn');
+    if (desktopNavButtons.length > 0) {
+        desktopNavButtons.forEach(btn => {
+            // Reset all desktop buttons to their default outline style
+            // This requires knowing their original outline style or having a common one
+            // For simplicity, we'll remove 'active' and a generic 'btn-primary' (if used for active)
+            // and ensure their specific outline class is present.
+            btn.classList.remove('active', 'btn-primary', 'btn-info', 'btn-success', 'btn-secondary', 'btn-warning'); // Remove common solid styles and active
+
+            // Re-apply original outline style based on its data-view or a default
+            const originalOutlineStyle = {
+                'recipes': 'btn-outline-primary',
+                'history': 'btn-outline-info',
+                'plan': 'btn-outline-success',
+                'pantry': 'btn-outline-secondary',
+                // 'chefbot' doesn't have a data-view for active state typically
+            };
+            
+            if (btn.dataset.view && originalOutlineStyle[btn.dataset.view]) {
+                if (!btn.classList.contains(originalOutlineStyle[btn.dataset.view])) {
+                    // Remove other outlines before adding the correct one
+                    Object.values(originalOutlineStyle).forEach(cls => btn.classList.remove(cls));
+                    btn.classList.add(originalOutlineStyle[btn.dataset.view]);
+                }
+            } else if (!btn.getAttribute('onclick')?.includes('showChatbotModal')) { 
+                // Default for any other buttons that aren't the Chef Bot button
+                // and don't have a specific mapping (unlikely if data-view is used consistently)
+                if (!btn.classList.contains('btn-outline-dark')) { // Assuming a default outline
+                     Object.values(originalOutlineStyle).forEach(cls => btn.classList.remove(cls)); // remove specific outlines
+                     btn.classList.add('btn-outline-dark'); // a generic fallback
+                }
+            }
+
+
+            // Set the active desktop button
+            if (btn.dataset.view === currentActiveView) {
+                btn.classList.add('active');
+                // Change from outline to solid for active state
+                if (originalOutlineStyle[btn.dataset.view]) {
+                    btn.classList.remove(originalOutlineStyle[btn.dataset.view]); // Remove e.g., btn-outline-primary
+                    btn.classList.add(originalOutlineStyle[btn.dataset.view].replace('outline-', '')); // Add e.g., btn-primary
+                } else {
+                    btn.classList.remove('btn-outline-dark');
+                    btn.classList.add('btn-dark'); // Fallback solid style
+                }
+            }
+        });
+    } else {
+        // console.warn("#menuBar button.btn elements not found.");
+    }
+
+    console.log(`Active navigation set to: ${currentActiveView}`);
+}
+
 function handleAccountNavClick() {
     console.log("handleAccountNavClick called. currentUser:", currentUser); // First debug log
     

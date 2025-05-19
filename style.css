@@ -282,3 +282,26 @@ mark {
     /* display: inline; */ /* Default, but ensures it doesn't try to be a block */
     border-radius: 2px; /* Optional: slightly rounded corners can look nice */
 }
+
+.btn-nav.active {
+    color: #0d6efd; /* Bootstrap primary color - makes icon and text colored */
+    /* Optional: Add a top border or a background indication */
+    /* border-top: 3px solid #0d6efd; */
+    /* background-color: rgba(13, 110, 253, 0.08); */ /* Very subtle background */
+}
+
+.btn-nav .nav-label {
+    font-size: 0.65rem; 
+    margin-top: -2px;   
+    line-height: 1.2;
+    font-weight: 600; /* Or bolder */
+}
+
+#menuBar button.btn.active {
+    /* Example: Make it look like a solid button or just bolder */
+    /* This will be applied if the JS adds btn-primary, btn-info etc. */
+    /* If you want a custom active style distinct from solid buttons: */
+    font-weight: bold;
+    /* background-color: #e9ecef; */ /* A subtle highlight */
+    /* color: #000; */
+}
