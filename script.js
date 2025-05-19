@@ -1834,8 +1834,6 @@ function createHighlightRegex(term) {
 
 // script.js
 
-
-
 function openRecipeSpecificChatModal(recipe) {
     if (!recipe || !recipe.id || !recipe.name) {
         console.error("Invalid or incomplete recipe data provided for Chef Bot chat.", recipe);
@@ -1843,17 +1841,16 @@ function openRecipeSpecificChatModal(recipe) {
         return;
     }
 
-    let conversationHistory = []; // Initialize history for THIS chat session
-    const MAX_HISTORY_TURNS_RECIPE_CHAT = 5; // Max user+bot turn pairs (e.g., 5 pairs = 10 messages)
+    let conversationHistory = [];
+    const MAX_HISTORY_TURNS_RECIPE_CHAT = 5; 
 
-    // Remove existing chat modal if any to prevent ID conflicts and ensure clean state
     const existingChatModalElement = document.getElementById('recipeChatModal');
     if (existingChatModalElement) {
         const existingBsModal = bootstrap.Modal.getInstance(existingChatModalElement);
         if (existingBsModal) {
-            existingBsModal.hide(); // Hide it first, 'hidden.bs.modal' listener below will remove it
+            existingBsModal.hide(); 
         } else {
-            existingChatModalElement.remove(); // Fallback removal
+            existingChatModalElement.remove();
         }
     }
 
@@ -1863,8 +1860,8 @@ function openRecipeSpecificChatModal(recipe) {
     chatModal.setAttribute('tabindex', '-1');
     chatModal.setAttribute('aria-labelledby', 'recipeChatModalLabel');
     chatModal.setAttribute('aria-hidden', 'true');
-    chatModal.dataset.bsKeyboard = "false"; // Prevent closing with Escape key if chat is active
-    chatModal.dataset.bsBackdrop = "static"; // Prevent closing on backdrop click during chat
+    chatModal.dataset.bsKeyboard = "false"; 
+    chatModal.dataset.bsBackdrop = "static"; 
 
     chatModal.innerHTML = `
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
@@ -1889,8 +1886,15 @@ function openRecipeSpecificChatModal(recipe) {
                         <h6 class="mb-2"><i class="bi bi-lightbulb-fill text-warning"></i> Chef Bot Suggests an Update:</h6>
                         <pre id="suggestedUpdateText" class="bg-white p-2 border rounded small" style="max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;"></pre>
                         <div class="text-end mt-2">
-                            <button id="applyRecipeUpdateBtn" class="btn btn-sm btn-success" type="button"><i class="bi bi-check-circle"></i> Apply This Update</button>
-                            <button id="dismissRecipeUpdateBtn" class="btn btn-sm btn-outline-secondary ms-2" type="button"><i class="bi bi-x-circle"></i> Dismiss</button>
+                            <button id="saveAsNewRecipeBtn" class="btn btn-sm btn-outline-primary me-2" type="button">
+                                <i class="bi bi-plus-circle"></i> Save as New
+                            </button>
+                            <button id="applyRecipeUpdateBtn" class="btn btn-sm btn-success" type="button">
+                                <i class="bi bi-check-circle"></i> Apply This Update
+                            </button>
+                            <button id="dismissRecipeUpdateBtn" class="btn btn-sm btn-outline-secondary ms-2" type="button">
+                                <i class="bi bi-x-circle"></i> Dismiss
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1906,13 +1910,13 @@ function openRecipeSpecificChatModal(recipe) {
     const updateArea = document.getElementById('recipeChatUpdateArea');
     const suggestedUpdateText = document.getElementById('suggestedUpdateText');
     const applyUpdateBtn = document.getElementById('applyRecipeUpdateBtn');
+    const saveAsNewBtn = document.getElementById('saveAsNewRecipeBtn');
     const dismissUpdateBtn = document.getElementById('dismissRecipeUpdateBtn');
     const closeButtonInModalHeader = chatModal.querySelector('.modal-header .btn-close');
 
     const bsChatModal = new bootstrap.Modal(chatModal);
-    bsChatModal.show();
+    if (bsChatModal) bsChatModal.show();
     if(chatInput) chatInput.focus();
-
 
     const initialPlaceholderMessage = messagesContainer ? messagesContainer.querySelector('p.text-muted.small') : null;
 
@@ -1923,16 +1927,14 @@ function openRecipeSpecificChatModal(recipe) {
         }
         const msgDiv = document.createElement('div');
         msgDiv.classList.add('mb-2', 'chat-message-row', sender === 'user' ? 'text-end' : 'text-start');
-        
-        const msgBubble = document.createElement('div'); // Changed to div for better padding/margin control
+        const msgBubble = document.createElement('div');
         msgBubble.classList.add('p-2', 'rounded', 'chat-bubble');
         msgBubble.classList.add(sender === 'user' ? 'bg-primary' : (isError ? 'bg-danger-subtle' : 'bg-light'));
         msgBubble.classList.add(sender === 'user' ? 'text-white' : (isError ? 'text-danger-emphasis' : 'text-dark'));
         msgBubble.style.display = 'inline-block';
         msgBubble.style.maxWidth = '85%';
-        msgBubble.style.textAlign = 'left'; // Ensure text within bubble is left-aligned
+        msgBubble.style.textAlign = 'left';
         msgBubble.textContent = message;
-        
         msgDiv.appendChild(msgBubble);
         messagesContainer.appendChild(msgDiv);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -1950,10 +1952,10 @@ function openRecipeSpecificChatModal(recipe) {
             }
 
             chatInput.value = '';
-            chatInput.disabled = true; // Disable input while processing
+            chatInput.disabled = true;
             sendBtn.disabled = true;
             sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Sending...';
-            if(updateArea) updateArea.style.display = 'none';
+            if (updateArea) updateArea.style.display = 'none';
 
             try {
                 const response = await fetch('/.netlify/functions/ask-about-recipe', {
@@ -1969,7 +1971,7 @@ function openRecipeSpecificChatModal(recipe) {
                     })
                 });
                 
-                const data = await response.json(); // Try to parse JSON regardless of ok status for custom errors
+                const data = await response.json();
 
                 if (!response.ok) {
                     throw new Error(data.error || `Error ${response.status} from server.`);
@@ -1986,76 +1988,97 @@ function openRecipeSpecificChatModal(recipe) {
                 }
 
                 if (data.suggestedUpdate && Object.keys(data.suggestedUpdate).length > 0) {
-                    if(updateArea) updateArea.style.display = 'block';
-                    if(suggestedUpdateText) {
-                        let updateDetails = "Chef Bot suggests these changes:\n";
-                        for (const key in data.suggestedUpdate) {
-                            if (key === 'ingredients') {
-                                updateDetails += `\nIngredients:\n${JSON.stringify(data.suggestedUpdate.ingredients, null, 2)}\n`;
-                            } else if (key === 'tags') {
-                                updateDetails += `\nTags: ${data.suggestedUpdate.tags.join(', ')}\n`;
-                            } else if (data.suggestedUpdate[key] !== null && data.suggestedUpdate[key] !== undefined) {
-                                updateDetails += `\n${key.charAt(0).toUpperCase() + key.slice(1)}:\n${data.suggestedUpdate[key]}\n`;
-                            }
+                    if (updateArea && suggestedUpdateText && applyUpdateBtn && dismissUpdateBtn && saveAsNewBtn) {
+                        updateArea.style.display = 'block';
+                        let formattedUpdateDetails = "";
+                        if (data.suggestedUpdate.name) formattedUpdateDetails += `<strong>New Name:</strong> ${data.suggestedUpdate.name}\n\n`;
+                        if (data.suggestedUpdate.ingredients && Array.isArray(data.suggestedUpdate.ingredients)) {
+                            formattedUpdateDetails += "<strong>Updated Ingredients:</strong>\n";
+                            data.suggestedUpdate.ingredients.forEach(ing => {
+                                formattedUpdateDetails += `- ${ing.quantity || ''} ${ing.unit || ''} ${ing.name}\n`;
+                            });
+                            formattedUpdateDetails += "\n";
                         }
-                        suggestedUpdateText.textContent = updateDetails.trim();
-                    }
-                    if(applyUpdateBtn) applyUpdateBtn.style.display = 'inline-block';
-                    if(dismissUpdateBtn) dismissUpdateBtn.style.display = 'inline-block';
-
-                    if(applyUpdateBtn) applyUpdateBtn.onclick = async () => {
-                        console.log("Applying update:", data.suggestedUpdate);
-                        const recipeToUpdate = { ...recipe }; 
-
-                        if (data.suggestedUpdate.name && typeof data.suggestedUpdate.name === 'string') recipeToUpdate.name = data.suggestedUpdate.name;
-                        if (Array.isArray(data.suggestedUpdate.ingredients)) recipeToUpdate.ingredients = data.suggestedUpdate.ingredients;
-                        if (data.suggestedUpdate.instructions && typeof data.suggestedUpdate.instructions === 'string') recipeToUpdate.instructions = data.suggestedUpdate.instructions;
-                        if (Array.isArray(data.suggestedUpdate.tags)) recipeToUpdate.tags = data.suggestedUpdate.tags;
+                        if (data.suggestedUpdate.instructions) {
+                            formattedUpdateDetails += `<strong>Updated Instructions:</strong>\n${data.suggestedUpdate.instructions}\n\n`;
+                        }
+                        if (data.suggestedUpdate.tags && Array.isArray(data.suggestedUpdate.tags)) {
+                            formattedUpdateDetails += `<strong>Updated Tags:</strong> ${data.suggestedUpdate.tags.join(', ')}\n`;
+                        }
+                        suggestedUpdateText.textContent = formattedUpdateDetails.trim() || "No specific changes listed.";
                         
-                        recipeToUpdate.timestamp = new Date(); // Update timestamp on modification
+                        applyUpdateBtn.style.display = 'inline-block';
+                        saveAsNewBtn.style.display = 'inline-block';
+                        dismissUpdateBtn.style.display = 'inline-block';
 
-                        try {
-                            if (currentUser && !recipe.isLocal) { // Check if it's a cloud recipe
-                                recipeToUpdate.uid = recipe.uid || currentUser.uid;
-                                recipeToUpdate.timestamp = firebase.firestore.FieldValue.serverTimestamp();
-                                await db.collection('recipes').doc(recipe.id).set(recipeToUpdate, { merge: true });
-                                showSuccessMessage("Recipe updated in your account!");
-                            } else if (localDB) { // It's a local recipe or user is anonymous
-                                recipeToUpdate.localId = recipe.id; // Original localId
-                                recipeToUpdate.timestamp = recipeToUpdate.timestamp.toISOString();
-                                await localDB.recipes.put(recipeToUpdate);
-                                showSuccessMessage("Local recipe updated!");
+                        applyUpdateBtn.onclick = async () => {
+                            console.log("Applying update to current recipe:", data.suggestedUpdate);
+                            const recipeToUpdate = { ...recipe }; 
+                            if (data.suggestedUpdate.name && typeof data.suggestedUpdate.name === 'string') recipeToUpdate.name = data.suggestedUpdate.name;
+                            if (Array.isArray(data.suggestedUpdate.ingredients)) recipeToUpdate.ingredients = data.suggestedUpdate.ingredients;
+                            if (data.suggestedUpdate.instructions && typeof data.suggestedUpdate.instructions === 'string') recipeToUpdate.instructions = data.suggestedUpdate.instructions;
+                            if (Array.isArray(data.suggestedUpdate.tags)) recipeToUpdate.tags = data.suggestedUpdate.tags;
+                            recipeToUpdate.rating = recipe.rating || data.suggestedUpdate.rating || 0;
+                            recipeToUpdate.timestamp = new Date(); 
+
+                            try {
+                                if (currentUser && !recipe.isLocal) {
+                                    recipeToUpdate.uid = recipe.uid || currentUser.uid;
+                                    recipeToUpdate.timestamp = firebase.firestore.FieldValue.serverTimestamp();
+                                    await db.collection('recipes').doc(recipe.id).set(recipeToUpdate, { merge: true });
+                                    showSuccessMessage("Recipe updated in your account!");
+                                } else if (localDB) {
+                                    recipeToUpdate.localId = recipe.id;
+                                    recipeToUpdate.timestamp = recipeToUpdate.timestamp.toISOString();
+                                    await localDB.recipes.put(recipeToUpdate);
+                                    showSuccessMessage("Local recipe updated!");
+                                }
+                                if(bsChatModal) bsChatModal.hide();
+                                loadInitialRecipes();
+                            } catch (saveError) {
+                                console.error("Error applying recipe update:", saveError);
+                                addChatMessage("Failed to apply update: " + saveError.message, 'bot', true);
                             }
-                            bsChatModal.hide();
-                            loadInitialRecipes();
-                        } catch (saveError) {
-                            console.error("Error applying recipe update:", saveError);
-                            addChatMessage("Failed to apply update: " + saveError.message, 'bot', true);
-                        }
-                        if(updateArea) updateArea.style.display = 'none';
-                    };
-                } else {
-                    if(updateArea) updateArea.style.display = 'none';
-                }
+                            if(updateArea) updateArea.style.display = 'none';
+                        };
 
+                        saveAsNewBtn.onclick = async () => {
+                            console.log("Saving AI suggested update as a new recipe:", data.suggestedUpdate);
+                            const newRecipeData = {
+                                name: data.suggestedUpdate.name || `${recipe.name} (AI Modified)`,
+                                ingredients: data.suggestedUpdate.ingredients || recipe.ingredients,
+                                instructions: data.suggestedUpdate.instructions || recipe.instructions,
+                                tags: data.suggestedUpdate.tags || recipe.tags || [],
+                                rating: 0,
+                            };
+                            await saveNewRecipeToStorage(newRecipeData); // Uses your generic new recipe saver
+                            if(bsChatModal) bsChatModal.hide();
+                            // loadInitialRecipes(); // saveNewRecipeToStorage already calls this
+                            if(updateArea) updateArea.style.display = 'none';
+                        };
+                    }
+                } else {
+                    if (updateArea) updateArea.style.display = 'none';
+                }
             } catch (err) {
                 addChatMessage(`Error: ${err.message}`, 'bot', true);
                 console.error("Error in recipe chat send:", err);
             } finally {
-                sendBtn.disabled = false;
-                sendBtn.innerHTML = '<i class="bi bi-send-fill"></i> Send';
-                chatInput.disabled = false;
-                chatInput.focus();
+                if(sendBtn) sendBtn.disabled = false;
+                if(sendBtn) sendBtn.innerHTML = '<i class="bi bi-send-fill"></i> Send';
+                if(chatInput) {
+                    chatInput.disabled = false;
+                    chatInput.focus();
+                }
             }
         };
         sendBtn.onclick = handleSend;
         chatInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) { // Send on Enter, allow Shift+Enter for newline
+            if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 handleSend();
             }
         });
-
     } else {
         console.error("Send button or chat input not found in recipe chat modal!");
     }
@@ -2068,7 +2091,7 @@ function openRecipeSpecificChatModal(recipe) {
     
     if(closeButtonInModalHeader) {
         closeButtonInModalHeader.onclick = () => {
-            bsChatModal.hide();
+            if(bsChatModal) bsChatModal.hide();
         };
     }
 
@@ -2078,7 +2101,61 @@ function openRecipeSpecificChatModal(recipe) {
             chatModal.remove();
         }
         console.log("Recipe chat modal hidden and removed.");
+        // Stop speech recognition if it was part of this modal and active
+        if (window.recipeSpecificChatSpeechRecognition && window.recipeSpecificChatIsListening) {
+            window.recipeSpecificChatSpeechRecognition.stop();
+            window.recipeSpecificChatIsListening = false;
+        }
     });
+}
+
+// You'll need a generic function to save a NEW recipe object
+// This is similar to your existing `saveRecipe` but takes data as an argument
+async function saveNewRecipeToStorage(recipeDataObject) {
+    console.log("saveNewRecipeToStorage called with:", recipeDataObject);
+    let success = false;
+
+    const dataToSave = {
+        name: recipeDataObject.name || "Untitled Recipe",
+        ingredients: recipeDataObject.ingredients || [],
+        instructions: recipeDataObject.instructions || "",
+        tags: recipeDataObject.tags || [],
+        rating: recipeDataObject.rating || 0,
+    };
+
+    if (currentUser) {
+        dataToSave.uid = currentUser.uid;
+        dataToSave.timestamp = firebase.firestore.FieldValue.serverTimestamp();
+        try {
+            const docRef = await db.collection('recipes').add(dataToSave);
+            console.log("✅ New recipe from AI saved to Firestore with ID:", docRef.id);
+            showSuccessMessage(`Recipe "${dataToSave.name}" saved to your account!`);
+            success = true;
+        } catch (error) {
+            console.error("❌ Error saving new recipe to Firestore:", error);
+            alert("Error saving new recipe: " + error.message);
+        }
+    } else {
+        if (!localDB) {
+            alert("Local storage not available. Please sign in to save recipes.");
+            return false;
+        }
+        dataToSave.localId = generateLocalUUID();
+        dataToSave.timestamp = new Date().toISOString();
+        try {
+            await localDB.recipes.add(dataToSave);
+            console.log("✅ New recipe from AI saved to LocalDB with localId:", dataToSave.localId);
+            showSuccessMessage(`Recipe "${dataToSave.name}" saved locally!`);
+            success = true;
+        } catch (error) {
+            console.error("❌ Error saving new recipe to LocalDB:", error.stack || error);
+            alert("Error saving new recipe locally: " + error.message);
+        }
+    }
+    if (success) {
+        loadInitialRecipes(); // Refresh the main list
+    }
+    return success;
 }
 
 function displayRecipes(listToDisplay, containerId = 'recipeResults', options = {}) {
@@ -2294,6 +2371,54 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
         card.appendChild(body);
         container.appendChild(card);
     });
+}
+
+async function saveNewRecipeToStorage(recipeDataObject) {
+    console.log("saveNewRecipeToStorage called with:", recipeDataObject);
+    let success = false;
+
+    const dataToSave = {
+        name: recipeDataObject.name || "Untitled Recipe",
+        ingredients: recipeDataObject.ingredients || [],
+        instructions: recipeDataObject.instructions || "",
+        tags: recipeDataObject.tags || [],
+        rating: recipeDataObject.rating || 0,
+        // Timestamp and UID/localId will be added below
+    };
+
+    if (currentUser) {
+        dataToSave.uid = currentUser.uid;
+        dataToSave.timestamp = firebase.firestore.FieldValue.serverTimestamp();
+        try {
+            const docRef = await db.collection('recipes').add(dataToSave);
+            console.log("✅ New recipe from AI saved to Firestore with ID:", docRef.id);
+            showSuccessMessage(`Recipe "${dataToSave.name}" saved to your account!`);
+            success = true;
+        } catch (error) {
+            console.error("❌ Error saving new recipe to Firestore:", error);
+            alert("Error saving new recipe: " + error.message);
+        }
+    } else {
+        if (!localDB) {
+            alert("Local storage not available. Please sign in to save recipes.");
+            return false;
+        }
+        dataToSave.localId = generateLocalUUID();
+        dataToSave.timestamp = new Date().toISOString();
+        try {
+            await localDB.recipes.add(dataToSave);
+            console.log("✅ New recipe from AI saved to LocalDB with localId:", dataToSave.localId);
+            showSuccessMessage(`Recipe "${dataToSave.name}" saved locally!`);
+            success = true;
+        } catch (error) {
+            console.error("❌ Error saving new recipe to LocalDB:", error.stack || error);
+            alert("Error saving new recipe locally: " + error.message);
+        }
+    }
+    if (success) {
+        loadInitialRecipes(); // Refresh the main list
+    }
+    return success;
 }
 
 function hashRecipe(recipe) {
