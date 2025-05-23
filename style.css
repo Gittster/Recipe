@@ -29,10 +29,11 @@
   
   #mainView {
     width: 100%;
-    max-width: 100%;
     margin: 0 auto;
-    padding: 1rem;
-  }
+    padding: 1rem; /* Your default padding for content inside */
+    padding-bottom: 80px; /* EXAMPLE: If bottom nav is 65px, add ~15px extra */
+    /* overflow-auto is already set in your HTML via JS, which is good */
+}
   
   @media screen and (orientation: landscape) and (min-width: 768px) {
     #mainView {
@@ -45,6 +46,18 @@
       background: #fff;
     }
   }
+
+  @media (min-width: 768px) { /* Corresponds to Bootstrap's 'md' breakpoint */
+    #mainView {
+        /* Your desktop-specific styles: max-width, margin, border, shadow etc. */
+        max-width: 750px; 
+        margin: 1.5rem auto;
+        padding: 1.5rem; /* Reset padding to desktop default */
+        /* padding-bottom is implicitly reset by the above if not specified,
+           or you can explicitly set it: */
+        padding-bottom: 1.5rem; 
+    }
+}
   
   /* ===============================
      Tables, Forms, and Animations
