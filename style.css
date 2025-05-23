@@ -341,3 +341,136 @@ mark {
     /* background-color: #e9ecef; */ /* A subtle highlight */
     /* color: #000; */
 }
+
+#addRecipeMethodModal .list-group-item {
+    cursor: pointer;
+    padding: 1rem 1.25rem;
+}
+
+#addRecipeMethodModal .list-group-item i {
+    color: #0d6efd; /* Bootstrap primary color for icons */
+}
+
+#addRecipeMethodModal .list-group-item:hover {
+    background-color: #f8f9fa; /* Light hover */
+}
+
+/* style.css */
+
+/* Shopping List Specifics */
+.shopping-list-header .d-flex {
+    /* On extra-small screens, allow buttons to stack if needed */
+}
+
+@media (max-width: 575.98px) { /* xs screens */
+    .shopping-list-header .d-flex.justify-content-between {
+        flex-direction: column;
+        align-items: stretch !important; /* Override align-items-sm-center */
+    }
+    .shopping-list-header .d-flex.gap-2 { /* The div wrapping the buttons */
+        flex-direction: column; /* Stack buttons vertically */
+        width: 100%;
+    }
+    .shopping-list-header .d-flex.gap-2 .btn {
+        width: 100%; /* Make buttons full width when stacked */
+        margin-bottom: 0.5rem; /* Add space between stacked buttons */
+    }
+    .shopping-list-header .d-flex.gap-2 .btn:last-child {
+        margin-bottom: 0;
+    }
+    .shopping-list-header h5 {
+        text-align: center; /* Center title on mobile */
+        margin-bottom: 0.75rem !important; /* Ensure space below title */
+    }
+}
+
+#shoppingListResults .list-group-item {
+    padding: 0.75rem 1rem; /* Adjust padding for touch targets */
+    align-items: flex-start; /* Align items to top if text wraps */
+}
+
+#shoppingListResults .form-check-input {
+    width: 1.25em; /* Slightly larger checkbox */
+    height: 1.25em;
+    margin-top: 0.2em; /* Adjust vertical alignment with text */
+}
+
+#shoppingListResults .shopping-item-label {
+    font-size: 0.95rem; /* Slightly larger item text */
+    word-break: break-word; /* Allow long item names to wrap */
+}
+
+#shoppingListResults .shopping-item-label[style*="line-through"] {
+    color: #6c757d; /* Muted color for checked items */
+}
+
+#shoppingListResults .shopping-item-delete-btn {
+    padding: 0.25rem 0.5rem; /* Ensure delete button is easy to tap */
+}
+
+.shopping-list-header h5 {
+    /* Ensure title is well-spaced, especially if buttons stack below it on very small screens */
+}
+
+/* Styling for the action buttons in the shopping list header */
+.shopping-list-actions .btn-group .btn {
+    /* If you want more control over how buttons in the group behave on xs screens */
+    /* For example, to ensure they don't get too squished or wrap awkwardly */
+    white-space: nowrap; /* Prevents text inside button from wrapping */
+}
+@media (max-width: 380px) { /* Very small screens */
+    .shopping-list-actions .btn-group {
+        /* flex-direction: column; */ /* Uncomment to stack buttons vertically */
+    }
+    /* .shopping-list-actions .btn-group .btn { */
+        /* width: 100%; */ /* Make buttons full width if stacked */
+        /* margin-bottom: 0.5rem; */
+    /* } */
+    /* .shopping-list-actions .btn-group .btn:last-child { */
+        /* margin-bottom: 0; */
+    /* } */
+}
+
+
+#shoppingListResults .list-group-item.shopping-list-item {
+    padding: 0.75rem 1rem;        /* Good touch padding */
+    align-items: center;          /* Vertically align checkbox/text with delete button */
+    border-radius: 0.375rem;      /* Rounded corners for items */
+    margin-bottom: 0.5rem;        /* Space between items */
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05); /* Subtle shadow for item separation */
+}
+
+#shoppingListResults .form-check-input {
+    width: 1.3em; /* Make checkbox a bit larger for easier tapping */
+    height: 1.3em;
+    margin-top: 0.1em; /* Fine-tune vertical alignment if needed */
+    flex-shrink: 0; /* Prevent checkbox from shrinking */
+}
+
+#shoppingListResults .shopping-item-label {
+    font-size: 0.95rem;
+    word-break: break-word; /* Allow long item names to wrap nicely */
+    margin-left: 0.5rem; /* Space between checkbox and label */
+    line-height: 1.4;
+}
+
+#shoppingListResults .shopping-item-label[style*="line-through"] {
+    color: #6c757d; /* Muted color for checked items */
+    opacity: 0.7;   /* Slightly more opacity than before */
+}
+
+#shoppingListResults .shopping-item-delete-btn {
+    padding: 0.25rem 0.6rem; /* Slightly larger padding for easier tap */
+    line-height: 1; /* Ensure icon is centered in button */
+    flex-shrink: 0; /* Prevent delete button from shrinking */
+}
+#shoppingListResults .shopping-item-delete-btn i {
+    vertical-align: middle;
+}
+
+/* Empty state for shopping list */
+#shoppingListResults .list-group-item.text-muted {
+    border: none;
+    box-shadow: none;
+    background-color: transparent;
+}

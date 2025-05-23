@@ -7,6 +7,8 @@ let chatbotModalElement = null; // To keep a reference to the modal DOM element
 let loginModalInstance = null; // To store the Bootstrap modal instance
 let localDB = null; // Initialize localDB as null
 let infoConfirmModalInstance = null; // To store the Bootstrap modal instance
+let addRecipeMethodModalInstance = null;
+let currentAddRecipeMethod = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     const loginModalElement = document.getElementById('loginModal');
@@ -17,7 +19,89 @@ document.addEventListener('DOMContentLoaded', () => {
     if (infoModalElement) {
         infoConfirmModalInstance = new bootstrap.Modal(infoModalElement);
     }
+    const addMethodModalElement = document.getElementById('addRecipeMethodModal');
+    if (addMethodModalElement) {
+        addRecipeMethodModalInstance = new bootstrap.Modal(addMethodModalElement);
+    }
 });
+
+function openAddRecipeMethodChoiceModal() {
+    currentAddRecipeMethod = null; // Reset
+    const previewArea = document.getElementById('addRecipeMethodPreview');
+    if (previewArea) previewArea.style.display = 'none'; // Hide preview
+
+    if (addRecipeMethodModalInstance) {
+        addRecipeMethodModalInstance.show();
+    } else {
+        console.error("Add Recipe Method Modal not initialized.");
+    }
+}
+
+function selectAddRecipeMethod(method) {
+    currentAddRecipeMethod = method;
+    console.log("Selected add recipe method:", method);
+
+    if (addRecipeMethodModalInstance) {
+        addRecipeMethodModalInstance.hide(); // Hide the choice modal
+    }
+
+    // Now, open the specialized UI for the chosen method
+    // This will replace your old toggleRecipeForm() and direct showChatbotModal() calls for *new* recipes.
+    switch (method) {
+        case 'manual':
+            // Open your existing manual recipe form, perhaps in a new dedicated modal or by revealing it.
+            // For now, let's assume toggleRecipeForm() still shows the main manual form.
+            // We need to ensure toggleRecipeForm() now presents *just* the manual form fields,
+            // and the accordion for Photo/Paste might be removed from it or handled differently.
+            toggleRecipeForm(true); // Pass true to indicate it's being opened for manual entry
+            // Ensure the form is scrolled into view and focused
+            document.getElementById('recipeNameInput')?.focus();
+            break;
+        case 'photo':
+            // Trigger the UI for photo upload. This might mean opening the
+            // #recipeForm and then programmatically opening the "Add by Photo" accordion item,
+            // or having a dedicated modal for photo upload.
+            toggleRecipeForm(true); // Open the main form container
+            // Ensure the accordion is set up after innerHTML is done in showRecipeFilter
+            setTimeout(() => { // Delay to ensure DOM is ready
+                const collapseOCR = document.getElementById('collapseOCR');
+                const accordionButtonOCR = document.querySelector('button[data-bs-target="#collapseOCR"]');
+                if (collapseOCR && accordionButtonOCR) {
+                    const bsCollapse = bootstrap.Collapse.getOrCreateInstance(collapseOCR);
+                    bsCollapse.show();
+                    accordionButtonOCR.setAttribute('aria-expanded', 'true');
+                    accordionButtonOCR.classList.remove('collapsed');
+                    document.getElementById('recipePhotoInput')?.focus();
+                } else {
+                    console.warn("Could not find OCR accordion elements to auto-open.");
+                }
+            }, 100); // Small delay
+            break;
+        case 'paste':
+            // Similar to photo, open the #recipeForm and the "Paste Text" accordion.
+            toggleRecipeForm(true);
+            setTimeout(() => {
+                const collapsePaste = document.getElementById('collapsePaste');
+                const accordionButtonPaste = document.querySelector('button[data-bs-target="#collapsePaste"]');
+                if (collapsePaste && accordionButtonPaste) {
+                    const bsCollapse = bootstrap.Collapse.getOrCreateInstance(collapsePaste);
+                    bsCollapse.show();
+                    accordionButtonPaste.setAttribute('aria-expanded', 'true');
+                    accordionButtonPaste.classList.remove('collapsed');
+                    document.getElementById('ocrTextPaste')?.focus();
+                } else {
+                    console.warn("Could not find Paste Text accordion elements to auto-open.");
+                }
+            }, 100);
+            break;
+        case 'chefbot':
+            // This calls your existing function that opens the Chef Bot modal for new recipes
+            showChatbotModal();
+            break;
+        default:
+            console.error("Unknown recipe add method:", method);
+    }
+}
 
 /**
  * Shows a generic modal for information or confirmation.
@@ -355,13 +439,10 @@ function showRecipeFilter() {
         console.error("mainView element not found for showRecipeFilter");
         return;
     }
-    // Setting a general class for the view, and Bootstrap container + padding
     view.className = 'section-recipes container py-3';
 
-    // HTML structure for the Recipes view
     view.innerHTML = `
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h4 class="mb-0"><i class="bi bi-journal-richtext me-2"></i>Recipes</h4>
             <div> 
                 <button class="btn btn-outline-warning btn-sm me-2" type="button" onclick="showChatbotModal()" title="Ask Chef Bot to create a new recipe">
                     <i class="bi bi-robot"></i> Chef Bot
@@ -369,7 +450,7 @@ function showRecipeFilter() {
                 <button class="btn btn-outline-info btn-sm me-2" type="button" data-bs-toggle="collapse" data-bs-target="#recipeFiltersCollapse" aria-expanded="false" aria-controls="recipeFiltersCollapse" title="Toggle filters">
                     <i class="bi bi-funnel-fill"></i> Filters
                 </button>
-                <button class="btn btn-primary btn-sm" onclick="toggleRecipeForm()">
+                <button class="btn btn-primary btn-sm" onclick="openAddRecipeMethodChoiceModal()">
                     <i class="bi bi-plus-circle-fill me-1"></i>Add Recipe
                 </button>
             </div>
@@ -401,95 +482,21 @@ function showRecipeFilter() {
         </div>
 
         <div id="recipeForm" class="collapsible-form mb-4">
-            <div class="card card-body">
-                <label class="form-label fw-semibold">📛 Recipe Name</label>
-                <input class="form-control mb-3" id="recipeNameInput" placeholder="Recipe name" />
-
-                <div class="mb-3">
-                    <label class="form-label fw-semibold mt-3">🧂 Ingredients</label>
-                    <div id="ingredientsTable"></div> </div>
-
-                <label class="form-label fw-semibold mt-3">📝 Instructions</label>
-                <textarea class="form-control mb-3" id="recipeInstructionsInput" rows="4" placeholder="Instructions"></textarea>
-
-                <label class="form-label fw-semibold mt-3">🏷️ Tags</label>
-                <div class="mb-3">
-                    <div id="tagsContainer" class="form-control d-flex flex-wrap align-items-center gap-1 p-2 position-relative" style="min-height: 38px; background-color: #f8f9fa; border: 1px dashed #ced4da;">
-                        <span id="tagsPlaceholder" class="text-muted position-absolute small" style="left: 10px; top: 50%; transform: translateY(-50%); pointer-events: none;">Add some tags...</span>
-                    </div>
-                    <div class="input-group input-group-sm mt-2">
-                        <input type="text" id="tagInput" class="form-control" placeholder="Type a tag & press Enter" />
-                        <button type="button" id="tagAddButton" class="btn btn-outline-secondary"><i class="bi bi-plus"></i> Add</button>
-                    </div>
-                </div>
-
-                <hr class="my-3" style="border-top: 1px solid #ccc;" />
-
-                <div class="d-flex gap-2 mb-3 justify-content-end">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleRecipeForm()">Cancel</button>
-                    <button type="button" class="btn btn-success btn-sm" onclick="saveRecipe()">Save Recipe</button>
-                </div>
-
-                <div class="accordion" id="addRecipeOptionsAccordion">
-                    <div class="accordion-item">
-                        <h2 class="accordion-header" id="headingOCR">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOCR" aria-expanded="false" aria-controls="collapseOCR">
-                                📸 Add Recipe by Photo
-                            </button>
-                        </h2>
-                        <div id="collapseOCR" class="accordion-collapse collapse" aria-labelledby="headingOCR" data-bs-parent="#addRecipeOptionsAccordion">
-                            <div class="accordion-body">
-                                <label for="recipePhotoInput" class="form-label">Upload or Take a Recipe Photo</label>
-                                <input type="file" id="recipePhotoInput" accept="image/*" capture="environment" class="form-control mb-3" onchange="handleRecipePhoto(event)" />
-                                <div id="photoPreviewContainer" class="mb-3"></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="accordion-item">
-                        <h2 class="accordion-header" id="headingPaste">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePaste" aria-expanded="false" aria-controls="collapsePaste">
-                                ⌨️ Add Recipe by Pasting Text
-                            </button>
-                        </h2>
-                        <div id="collapsePaste" class="accordion-collapse collapse" aria-labelledby="headingPaste" data-bs-parent="#addRecipeOptionsAccordion">
-                            <div class="accordion-body">
-                                <label for="ocrTextPaste" class="form-label">Paste your recipe text below:</label>
-                                <textarea id="ocrTextPaste" class="form-control mb-2" rows="10">
-📛 RECIPE NAME
-====================
-
-🧂 INGREDIENTS
-====================
-
-📝 INSTRUCTIONS
-====================
-                                </textarea>
-                                <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="handlePastedRecipeText()">✨ Parse Text to Fill Form</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            ${getAddRecipeFormHTML()}
         </div>
 
-        <div id="recipeResults">
-            </div>
+        <div id="recipeResults"></div>
     `;
 
-    // Initialize tag input for the main "Add Recipe" form whenever this view is shown
-    // This ensures event listeners are fresh if the DOM is being re-rendered by innerHTML.
     initializeMainRecipeFormTagInput();
 
-    // Apply filters to display recipes.
-    // This assumes the global `recipes` array is populated (e.g., by loadInitialRecipes).
     if (typeof recipes !== 'undefined' && typeof applyAllRecipeFilters === "function") {
-        applyAllRecipeFilters(); // This will read current filter values and display
+        applyAllRecipeFilters();
     } else {
         const recipeResultsContainer = document.getElementById('recipeResults');
         if (recipeResultsContainer) {
             recipeResultsContainer.innerHTML = '<p class="text-center text-muted">Loading recipes or no recipes found...</p>';
         }
-        // Log warnings if critical parts are missing
         if (typeof recipes === 'undefined') {
             console.warn("Global 'recipes' array not defined when showRecipeFilter was called. Ensure loadInitialRecipes() has run or will run.");
         }
@@ -1506,54 +1513,172 @@ function showSuccessMessage(message) {
 
 
 
-function toggleRecipeForm() {
-  const form = document.getElementById('recipeForm');
-  if (!form) return;
-
-  const isNowOpen = form.classList.toggle('open');
-
-  const nameInput = document.getElementById('recipeNameInput');
-  const ingredientsTable = document.getElementById('ingredientsTable');
-  const instructionsInput = document.getElementById('recipeInstructionsInput');
-
-  if (isNowOpen) {
-    // ✅ When opening, clear old values and set up grid
-    if (nameInput) nameInput.value = '';
-    if (instructionsInput) instructionsInput.value = '';
-    if (ingredientsTable) {
-      ingredientsTable.innerHTML = '';
-      createIngredientRow();
-    }
-
+// --- Updated toggleRecipeForm Function ---
+/**
+ * Toggles the main recipe form visibility and resets it if opening for a new manual entry.
+ * @param {boolean} [forceOpen=false] - If true, ensures the form is opened. If false, it toggles.
+ * @param {boolean} [isManualEntrySetup=false] - If true (and opening), sets up for blank manual entry.
+ */
+function toggleRecipeForm(forceOpen = false, isManualEntrySetup = false) {
+    const form = document.getElementById('recipeForm');
+    const recipeNameInput = document.getElementById('recipeNameInput');
+    const ingredientsTable = document.getElementById('ingredientsTable');
+    const instructionsInput = document.getElementById('recipeInstructionsInput');
     const tagInput = document.getElementById('tagInput');
-    const tagsContainer = document.getElementById('tagsContainer');
+    const photoPreviewContainer = document.getElementById('photoPreviewContainer');
+    const ocrTextPasteArea = document.getElementById('ocrTextPaste');
 
-    if (tagInput && tagsContainer) {
-      tagInput.value = '';
-      tagsContainer.innerHTML = '';
-
-      tagInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ',') {
-          e.preventDefault();
-          const value = tagInput.value.trim().toLowerCase();
-          if (value && !currentTags.includes(value)) {
-            currentTags.push(value);
-            renderTags();
-          }
-          tagInput.value = '';
-        }
-      });
+    if (!form) {
+        console.error("Recipe form with ID 'recipeForm' not found.");
+        return;
     }
 
-    const preview = document.getElementById('photoPreviewContainer');
-    if (preview) preview.innerHTML = '';
-  } else {
-    // Optional cleanup when hiding
-    if (ingredientsTable) ingredientsTable.innerHTML = '';
-  }
+    const isCurrentlyOpen = form.classList.contains('open');
+
+    if (forceOpen) {
+        if (!isCurrentlyOpen) {
+            form.classList.add('open');
+        }
+        // When forcing open (e.g., for 'manual' or to show AI results),
+        // reset only if it's specifically for a new manual entry.
+        if (isManualEntrySetup) {
+            console.log("toggleRecipeForm: Opening and resetting for new manual entry.");
+            if (recipeNameInput) recipeNameInput.value = '';
+            if (instructionsInput) instructionsInput.value = '';
+            if (ingredientsTable) {
+                ingredientsTable.innerHTML = '';
+                if (typeof createIngredientRow === "function") createIngredientRow();
+            }
+            currentTags = []; // Reset global/scoped tags for the form
+            if (typeof renderTags === "function") renderTags();
+            if (tagInput) tagInput.value = '';
+            
+            if (photoPreviewContainer) photoPreviewContainer.innerHTML = '';
+            if (ocrTextPasteArea) {
+                ocrTextPasteArea.value = `📛 RECIPE NAME\n====================\n\n🧂 INGREDIENTS\n====================\n\n📝 INSTRUCTIONS\n====================`;
+            }
+            // Ensure accordion sections for photo/paste are collapsed for a fresh manual entry
+            const collapseOCR = document.getElementById('collapseOCR');
+            const collapsePaste = document.getElementById('collapsePaste');
+            if (collapseOCR) {
+                const bsCollapseOCR = bootstrap.Collapse.getInstance(collapseOCR) || new bootstrap.Collapse(collapseOCR, {toggle: false});
+                bsCollapseOCR.hide();
+            }
+            if (collapsePaste) {
+                const bsCollapsePaste = bootstrap.Collapse.getInstance(collapsePaste) || new bootstrap.Collapse(collapsePaste, {toggle: false});
+                bsCollapsePaste.hide();
+            }
+            if (recipeNameInput) recipeNameInput.focus();
+        }
+    } else { // Standard toggle
+        form.classList.toggle('open');
+        if (form.classList.contains('open') && !isCurrentlyOpen) { // If just toggled to open
+            // Reset for new manual entry if toggled open (old behavior)
+            console.log("toggleRecipeForm: Toggled open, resetting for new manual entry.");
+            if (recipeNameInput) recipeNameInput.value = '';
+            if (instructionsInput) instructionsInput.value = '';
+            if (ingredientsTable) {
+                ingredientsTable.innerHTML = '';
+                if (typeof createIngredientRow === "function") createIngredientRow();
+            }
+            currentTags = [];
+            if (typeof renderTags === "function") renderTags();
+            if (tagInput) tagInput.value = '';
+            if (photoPreviewContainer) photoPreviewContainer.innerHTML = '';
+            if (ocrTextPasteArea) {
+                 ocrTextPasteArea.value = `📛 RECIPE NAME\n====================\n\n🧂 INGREDIENTS\n====================\n\n📝 INSTRUCTIONS\n====================`;
+            }
+            if (recipeNameInput) recipeNameInput.focus();
+        }
+    }
+
+    if (form.classList.contains('open')) {
+        if (typeof initializeMainRecipeFormTagInput === "function") {
+            initializeMainRecipeFormTagInput();
+        }
+        // Scroll the form into view if it's opened
+        form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
 }
 
+function getAddRecipeFormHTML() {
+    // This MUST return the full HTML string for the content of <div id="recipeForm">...</div>
+    // including the manual fields AND the accordion for Photo/Paste.
+    // Example:
+    return `
+        <div class="card card-body">
+            <label class="form-label fw-semibold">📛 Recipe Name</label>
+            <input class="form-control mb-3" id="recipeNameInput" placeholder="Recipe name" />
 
+            <div class="mb-3">
+                <label class="form-label fw-semibold mt-3">🧂 Ingredients</label>
+                <div id="ingredientsTable"></div>
+                 <button type="button" class="btn btn-outline-secondary btn-sm mt-2" onclick="createIngredientRow('', '', '')"><i class="bi bi-plus-circle"></i> Add Ingredient Row</button>
+            </div>
+
+            <label class="form-label fw-semibold mt-3">📝 Instructions</label>
+            <textarea class="form-control mb-3" id="recipeInstructionsInput" rows="4" placeholder="Instructions"></textarea>
+
+            <label class="form-label fw-semibold mt-3">🏷️ Tags</label>
+            <div class="mb-3">
+                <div id="tagsContainer" class="form-control d-flex flex-wrap align-items-center gap-1 p-2 position-relative" style="min-height: 38px; background-color: #f8f9fa; border: 1px dashed #ced4da;">
+                    <span id="tagsPlaceholder" class="text-muted position-absolute small" style="left: 10px; top: 50%; transform: translateY(-50%); pointer-events: none;">Add some tags...</span>
+                </div>
+                <div class="input-group input-group-sm mt-2">
+                    <input type="text" id="tagInput" class="form-control" placeholder="Type a tag & press Enter" />
+                    <button type="button" id="tagAddButton" class="btn btn-outline-secondary"><i class="bi bi-plus"></i> Add</button>
+                </div>
+            </div>
+
+            <hr class="my-3" style="border-top: 1px solid #ccc;" />
+
+            <div class="d-flex gap-2 mb-3 justify-content-end">
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleRecipeForm()">Cancel</button>
+                <button type="button" class="btn btn-success btn-sm" onclick="saveRecipe()">Save Recipe</button>
+            </div>
+
+            <div class="accordion" id="addRecipeOptionsAccordion">
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="headingOCR">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOCR" aria-expanded="false" aria-controls="collapseOCR">
+                            📸 Add Recipe by Photo
+                        </button>
+                    </h2>
+                    <div id="collapseOCR" class="accordion-collapse collapse" aria-labelledby="headingOCR" data-bs-parent="#addRecipeOptionsAccordion">
+                        <div class="accordion-body">
+                            <label for="recipePhotoInput" class="form-label">Upload or Take a Recipe Photo</label>
+                            <input type="file" id="recipePhotoInput" accept="image/*" capture="environment" class="form-control mb-3" onchange="handleRecipePhoto(event)" />
+                            <div id="photoPreviewContainer" class="mb-3"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="headingPaste">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePaste" aria-expanded="false" aria-controls="collapsePaste">
+                            ⌨️ Add Recipe by Pasting Text
+                        </button>
+                    </h2>
+                    <div id="collapsePaste" class="accordion-collapse collapse" aria-labelledby="headingPaste" data-bs-parent="#addRecipeOptionsAccordion">
+                        <div class="accordion-body">
+                            <label for="ocrTextPaste" class="form-label">Paste your recipe text below:</label>
+                            <textarea id="ocrTextPaste" class="form-control mb-2" rows="10">
+📛 RECIPE NAME
+====================
+
+🧂 INGREDIENTS
+====================
+
+📝 INSTRUCTIONS
+====================
+                            </textarea>
+                            <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="handlePastedRecipeText()">✨ Parse Text to Fill Form</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
 
 function showRandomRecipe() {
   const view = document.getElementById('mainView');
@@ -1598,7 +1723,6 @@ function viewHistory() {
 
     view.innerHTML = `
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h4 class="mb-0"><i class="bi bi-clock-history me-2"></i>Recipe History</h4>
             <button class="btn btn-outline-info btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#historyFiltersCollapse" aria-expanded="false" aria-controls="historyFiltersCollapse" title="Toggle history filters">
                 <i class="bi bi-funnel-fill"></i> Filters
             </button>
@@ -3502,57 +3626,223 @@ function loadIngredientsFromFirestore() {
 }
 
 function showPlanning() {
-    updatePageTitle("Meal Plan"); // Assuming you want to update the title
+    updatePageTitle("Meal Plan & Shopping");
     setActiveNavButton("plan");
+
     const view = document.getElementById('mainView');
-    view.className = 'section-planning container py-3'; // Added container and padding
+    if (!view) {
+        console.error("mainView element not found for showPlanning");
+        return;
+    }
+    view.className = 'section-planning container py-3';
+
     view.innerHTML = `
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="mb-0"><i class="bi bi-calendar-week"></i> Planned Meals</h5>
-            <button id="clearAllPlanningBtn" class="btn btn-outline-danger btn-sm" onclick="confirmClearAllPlanning(this)">
-                <i class="bi bi-trash3"></i> Clear All Planned
-            </button>
+        <div class="planned-meals-header mb-3">
+            <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center">
+                <h4 class="mb-2 mb-sm-0"><i class="bi bi-calendar-week me-2"></i>Planned Meals</h4>
+                
+                <div class="btn-toolbar" role="toolbar" aria-label="Planned meals actions">
+                    <div class="btn-group btn-group-sm w-100" role="group">
+                        <button class="btn btn-outline-info" style="flex-basis: 50%;" type="button" data-bs-toggle="collapse" data-bs-target="#planningFiltersCollapse" aria-expanded="false" aria-controls="planningFiltersCollapse" title="Toggle filters for planned meals">
+                            <i class="bi bi-funnel-fill"></i> Filters
+                        </button>
+                        <button id="clearAllPlanningBtn" class="btn btn-outline-danger" style="flex-basis: 50%;" onclick="confirmClearAllPlanning(this)" title="Clear all planned meals">
+                            <i class="bi bi-trash3"></i> Clear All
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div id="plannedMealsList" class="mb-4 list-group"></div> <hr class="my-4" />
+
+        <div class="collapse mb-3" id="planningFiltersCollapse">
+            <div class="filter-section card card-body bg-light-subtle">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0">Filter Planned Meals</h6>
+                    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearPlanningFilters()" title="Clear all planning filters">
+                        <i class="bi bi-x-lg"></i> Clear Filters
+                    </button>
+                </div>
+                <div class="row g-2">
+                    <div class="col-md-6 col-lg-4">
+                        <label for="planDateRangeStart" class="form-label small mb-1">From Date:</label>
+                        <input type="date" class="form-control form-control-sm" id="planDateRangeStart" oninput="applyPlanningFilters()">
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <label for="planDateRangeEnd" class="form-label small mb-1">To Date:</label>
+                        <input type="date" class="form-control form-control-sm" id="planDateRangeEnd" oninput="applyPlanningFilters()">
+                    </div>
+                    <div class="col-lg-4 col-12">
+                        <label for="planRecipeNameSearch" class="form-label small mb-1">Search Recipe Name in Plan:</label>
+                        <input type="text" class="form-control form-control-sm" id="planRecipeNameSearch" placeholder="Enter recipe name..." oninput="applyPlanningFilters()">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="plannedMealsList" class="mb-4 list-group">
+            </div>
+
+        <hr class="my-4" />
 
         <h5 class="mb-3"><i class="bi bi-calendar-plus"></i> Plan a New Meal</h5>
-        <div class="card card-body bg-light-subtle mb-4"> <div class="row g-3">
+        <div class="card card-body bg-light-subtle mb-4">
+            <div class="row g-3">
                 <div class="col-md-6">
                     <label for="planDate" class="form-label fw-semibold">Select Date:</label>
-                    <input type="date" class="form-control" id="planDate" value="${new Date().toISOString().split('T')[0]}">
+                    <input type="date" class="form-control form-control-sm" id="planDate" value="${new Date().toISOString().split('T')[0]}">
                 </div>
                 <div class="col-md-6">
                     <label for="planRecipe" class="form-label fw-semibold">Select Recipe:</label>
-                    <select id="planRecipe" class="form-select">
+                    <select id="planRecipe" class="form-select form-select-sm">
                         <option value="">-- Choose a recipe --</option>
                     </select>
                 </div>
             </div>
+            <div id="planMealError" class="alert alert-danger small p-2 mt-3" style="display:none;"></div>
             <div class="mt-3 text-end">
-                <button class="btn btn-success" onclick="addPlannedMeal()">
-                    <i class="bi bi-plus-circle"></i> Add to Plan
-                </button>
+                <button class="btn btn-success btn-sm" onclick="addPlannedMeal()"><i class="bi bi-plus-circle"></i> Add to Plan</button>
             </div>
         </div>
 
         <hr class="my-4" />
         
-        <div class="d-flex justify-content-between align-items-center mb-3">
-             <h5 class="mb-0"><i class="bi bi-cart3"></i> Shopping List</h5>
-             <div> <button class="btn btn-primary me-2" onclick="generateShoppingList()">
-                    <i class="bi bi-list-check"></i> Generate Ingredient Checklist
-                </button>
-                <button id="clearShoppingListBtn" class="btn btn-outline-danger btn-sm" onclick="confirmClearShoppingList()" disabled>
-                    <i class="bi bi-trash2"></i> Clear Shopping List
-                </button>
+        <div class="shopping-list-header mb-3">
+            <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center">
+                <h5 class="mb-2 mb-sm-0"><i class="bi bi-cart3"></i> Shopping List</h5>
+                <div class="btn-toolbar" role="toolbar" aria-label="Shopping list actions">
+                    <div class="btn-group btn-group-sm w-100" role="group">
+                        <button class="btn btn-primary" style="flex-basis: 40%;" onclick="generateShoppingList()" title="Generate list from current plans">
+                            <i class="bi bi-list-check"></i> Generate
+                        </button>
+                        <button id="clearCheckedShoppingListBtn" class="btn btn-outline-success" style="flex-basis: 30%; display: none;" onclick="confirmClearCheckedShoppingListItems()" title="Clear checked items from list">
+                            <i class="bi bi-check2-square"></i> Checked
+                        </button>
+                        <button id="clearShoppingListBtn" class="btn btn-outline-danger" style="flex-basis: 30%;" onclick="confirmClearShoppingList()" disabled title="Clear entire shopping list">
+                            <i class="bi bi-trash2"></i> Clear All
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
-        <div id="shoppingListResults" class="mb-4"></div>
+        <div id="shoppingListResults" class="mb-4">
+            <div class="list-group-item text-muted text-center">Generate a list from your planned meals.</div>
+        </div>
     `;
 
-    populateRecipeDropdownForPlanning(); // Renamed for clarity
-    loadPlannedMeals();
-    loadShoppingList(); // This will be adapted in the next phase
+    if (typeof populateRecipeDropdownForPlanning === "function") {
+        populateRecipeDropdownForPlanning();
+    } else {
+        console.error("populateRecipeDropdownForPlanning function is not defined.");
+    }
+
+    if (typeof applyPlanningFilters === "function") {
+        applyPlanningFilters(); 
+    } else {
+        console.error("applyPlanningFilters function is not defined. Falling back to loadPlannedMeals.");
+        if (typeof loadPlannedMeals === "function") {
+            loadPlannedMeals();
+        } else {
+            console.error("loadPlannedMeals also not defined.");
+            const plannedListDiv = document.getElementById('plannedMealsList');
+            if(plannedListDiv) plannedListDiv.innerHTML = '<div class="list-group-item text-danger text-center">Error: Could not load planned meals function.</div>';
+        }
+    }
+
+    if (typeof loadShoppingList === "function") {
+        loadShoppingList();
+    } else {
+        console.error("loadShoppingList function is not defined.");
+    }
+}
+
+
+/**
+ * Clears all filter inputs for the planning view and re-applies filters (showing all).
+ */
+function clearPlanningFilters() {
+    const dateStartInput = document.getElementById('planDateRangeStart');
+    const dateEndInput = document.getElementById('planDateRangeEnd');
+    const nameSearchInput = document.getElementById('planRecipeNameSearch');
+
+    if (dateStartInput) dateStartInput.value = '';
+    if (dateEndInput) dateEndInput.value = '';
+    if (nameSearchInput) nameSearchInput.value = '';
+
+    if (typeof applyPlanningFilters === "function") {
+        applyPlanningFilters();
+    } else {
+        console.error("applyPlanningFilters is not defined. Cannot clear and refresh planning view.");
+    }
+}
+
+async function applyPlanningFilters() {
+    const listContainer = document.getElementById('plannedMealsList');
+    if (!listContainer) {
+        console.error("applyPlanningFilters: plannedMealsList container not found.");
+        return;
+    }
+    listContainer.innerHTML = '<div class="list-group-item text-muted text-center">Loading & Filtering Planned Meals... <span class="spinner-border spinner-border-sm"></span></div>';
+
+    // Get filter values
+    const dateStartFilter = document.getElementById('planDateRangeStart')?.value;
+    const dateEndFilter = document.getElementById('planDateRangeEnd')?.value;
+    const nameSearchTerm = document.getElementById('planRecipeNameSearch')?.value.toLowerCase().trim();
+    
+    let allPlannedMeals = [];
+
+    try {
+        if (currentUser) {
+            const querySnapshot = await db.collection("planning")
+                .where('uid', '==', currentUser.uid)
+                .orderBy('date') // Base order by date
+                .get();
+            if (!querySnapshot.empty) {
+                allPlannedMeals = querySnapshot.docs.map(doc => ({ firestoreId: doc.id, id: doc.id, ...doc.data() }));
+            }
+        } else if (localDB) {
+            allPlannedMeals = await localDB.planning.orderBy('date').toArray();
+            allPlannedMeals = allPlannedMeals.map(p => ({ ...p, id: p.localId, isLocal: true }));
+        } else {
+             listContainer.innerHTML = '<div class="alert alert-warning text-center">Local storage not available.</div>';
+             return;
+        }
+
+        // Apply client-side filters to the fetched 'allPlannedMeals'
+        let filteredList = [...allPlannedMeals];
+
+        if (dateStartFilter) {
+            filteredList = filteredList.filter(plan => plan.date >= dateStartFilter);
+        }
+        if (dateEndFilter) {
+            // Ensure the end date filter includes the entire day
+            const endOfDay = new Date(dateEndFilter + 'T23:59:59.999');
+            filteredList = filteredList.filter(plan => {
+                const planDate = new Date(plan.date + 'T00:00:00');
+                return planDate <= endOfDay;
+            });
+        }
+        if (nameSearchTerm) {
+            filteredList = filteredList.filter(plan => 
+                plan.recipeName && plan.recipeName.toLowerCase().includes(nameSearchTerm)
+            );
+        }
+        
+        const displayOptions = {};
+        if (nameSearchTerm) {
+            displayOptions.highlightNameTerm = nameSearchTerm; 
+        }
+
+        if (typeof renderPlannedMealsList === "function") {
+            renderPlannedMealsList(filteredList, displayOptions);
+        } else {
+            console.error("renderPlannedMealsList function is not defined.");
+            listContainer.innerHTML = '<div class="alert alert-danger text-center">Error: Cannot display planned meals.</div>';
+        }
+
+    } catch (error) {
+        console.error("Error loading/filtering planned meals:", error.stack || error);
+        listContainer.innerHTML = '<div class="alert alert-danger text-center">Could not load or filter planned meals.</div>';
+    }
 }
 
 function populateRecipeDropdownForPlanning() {
@@ -4531,7 +4821,7 @@ function handleAccountNavClick() {
         const userEmail = currentUser.email || "your account";
         showInfoConfirmModal( // Ensure this function and its modal instance are working
             "Account Options",
-            `<p>You are signed in as ${escapeHtml(userEmail)}.</p><p class="mt-3">Manage your account or view preferences here (details coming soon!).</p>`,
+            `<p>You are signed in as ${escapeHtml(userEmail)}.</p><p class="mt-3">Manage your account or view preferences here (eventually).</p>`,
             [
                 { 
                     text: 'Log Out', 

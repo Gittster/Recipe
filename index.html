@@ -152,6 +152,57 @@
         </div>
     </div>
 
+    <div class="modal fade" id="addRecipeMethodModal" tabindex="-1" aria-labelledby="addRecipeMethodModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addRecipeMethodModalLabel">How would you like to add a recipe?</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-3">Select your preferred method below.</p>
+                    
+                    <div class="list-group">
+                        <button type="button" class="list-group-item list-group-item-action d-flex align-items-center" onclick="selectAddRecipeMethod('manual')">
+                            <i class="bi bi-keyboard fs-4 me-3"></i>
+                            <div>
+                                <div class="fw-semibold">Manual Entry</div>
+                                <small class="text-muted">Type in the recipe details yourself.</small>
+                            </div>
+                        </button>
+                        <button type="button" class="list-group-item list-group-item-action d-flex align-items-center" onclick="selectAddRecipeMethod('photo')">
+                            <i class="bi bi-camera fs-4 me-3"></i>
+                            <div>
+                                <div class="fw-semibold">From a Photo (AI)</div>
+                                <small class="text-muted">Upload a photo of a recipe and let AI extract it.</small>
+                            </div>
+                        </button>
+                        <button type="button" class="list-group-item list-group-item-action d-flex align-items-center" onclick="selectAddRecipeMethod('paste')">
+                            <i class="bi bi-clipboard-plus fs-4 me-3"></i>
+                            <div>
+                                <div class="fw-semibold">By Pasting Text (AI)</div>
+                                <small class="text-muted">Paste recipe text and let AI structure it.</small>
+                            </div>
+                        </button>
+                        <button type="button" class="list-group-item list-group-item-action d-flex align-items-center" onclick="selectAddRecipeMethod('chefbot')">
+                            <i class="bi bi-robot fs-4 me-3"></i>
+                            <div>
+                                <div class="fw-semibold">Ask Chef Bot (New Recipe)</div>
+                                <small class="text-muted">Let Chef Bot generate a new recipe for you.</small>
+                            </div>
+                        </button>
+                        </div>
+
+                    <div id="addRecipeMethodPreview" class="mt-3 p-3 bg-light-subtle rounded" style="display:none;">
+                        {/* Content changes based on selection */}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
     <canvas id="preprocessCanvas" style="display:none;"></canvas>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
