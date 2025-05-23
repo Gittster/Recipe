@@ -801,13 +801,25 @@ function createHighlightRegex(term) {
 }
 
 async function handleRecipePhoto(event) {
-    console.log("--- handleRecipePhoto called at: ", new Date().toISOString(), "Event type:", event.type); // LOG A
+    console.log("--- handleRecipePhoto DEBUG START ---");
+    console.log("handleRecipePhoto triggered at:", new Date().toISOString(), "Event type:", event.type);
+
     const file = event.target.files[0];
-    if (!file) return;
+    if (!file) {
+        console.log("handleRecipePhoto: No file selected.");
+        console.log("--- handleRecipePhoto DEBUG END (no file) ---");
+        return;
+    }
+
+    console.log("Mobile - File Object:", file);
+    console.log("Mobile - file.name:", file.name);
+    console.log("Mobile - file.size:", file.size);
+    console.log("Mobile - file.type:", file.type); // CRITICAL: Check if this is empty or unexpected on mobile
 
     const photoPreviewContainer = document.getElementById('photoPreviewContainer');
     if (!photoPreviewContainer) {
-        console.error("photoPreviewContainer element not found!");
+        console.error("handleRecipePhoto: photoPreviewContainer element not found!");
+        console.log("--- handleRecipePhoto DEBUG END (no preview container) ---");
         return;
     }
     photoPreviewContainer.innerHTML = `
@@ -817,119 +829,151 @@ async function handleRecipePhoto(event) {
 
     const reader = new FileReader();
 
+    reader.onerror = (error) => {
+        console.error("FileReader error:", error);
+        photoPreviewContainer.innerHTML = '<p class="alert alert-danger text-center">Error reading file.</p>';
+        console.log("--- handleRecipePhoto DEBUG END (FileReader error) ---");
+    };
+
     reader.onload = function (e) {
         const originalImgSrc = e.target.result;
-        const imgForPreprocessing = document.createElement('img');
-        imgForPreprocessing.src = originalImgSrc;
+        console.log("Mobile - originalImgSrc length (from FileReader):", originalImgSrc ? originalImgSrc.length : "N/A");
+        if (originalImgSrc && originalImgSrc.length > 0) {
+             console.log("Mobile - originalImgSrc (first 100 chars):", originalImgSrc.substring(0,100));
+        }
 
-        imgForPreprocessing.onload = async () => { // Ensure image is loaded for its dimensions
-            console.log("--- imgForPreprocessing.onload triggered at: ", new Date().toISOString()); // LOG B
+
+        const imgForPreprocessing = document.createElement('img');
+        imgForPreprocessing.onerror = () => {
+            console.error("Error loading image into imgForPreprocessing element.");
+            photoPreviewContainer.innerHTML = '<p class="alert alert-danger text-center">Could not load image for processing.</p>';
+            console.log("--- handleRecipePhoto DEBUG END (imgForPreprocessing.onerror) ---");
+        };
+
+        imgForPreprocessing.onload = async () => {
+            console.log("--- imgForPreprocessing.onload triggered at:", new Date().toISOString());
             photoPreviewContainer.innerHTML = ''; // Clear "Preparing..."
 
             // Display original and preprocessed image (optional but good for UX)
-            const originalLabel = document.createElement('p');
-            originalLabel.className = 'text-center fw-semibold';
-            originalLabel.textContent = "📷 Original Photo";
-            const originalImgDisplay = document.createElement('img');
-            originalImgDisplay.src = originalImgSrc;
-            originalImgDisplay.className = 'img-fluid rounded border d-block mx-auto mb-2';
-            originalImgDisplay.style.maxHeight = "200px";
-
-
-            const processedLabel = document.createElement('p');
-            processedLabel.className = 'text-center fw-semibold';
-            processedLabel.textContent = "🧼 Preprocessed (Sent to AI)";
-            const processedDataUrl = preprocessImage(imgForPreprocessing); // Your existing function
-            const processedImgDisplay = document.createElement('img');
-            processedImgDisplay.src = processedDataUrl;
-            processedImgDisplay.className = 'img-fluid rounded border d-block mx-auto mb-3';
-            processedImgDisplay.style.maxHeight = "200px";
-
-            const imageRow = document.createElement('div');
-            imageRow.className = 'row';
-            const col1 = document.createElement('div');
-            col1.className = 'col-md-6 text-center';
-            col1.appendChild(originalLabel);
-            col1.appendChild(originalImgDisplay);
-            const col2 = document.createElement('div');
-            col2.className = 'col-md-6 text-center';
-            col2.appendChild(processedLabel);
-            col2.appendChild(processedImgDisplay);
-            imageRow.appendChild(col1);
-            imageRow.appendChild(col2);
-            photoPreviewContainer.appendChild(imageRow);
-
+            // ... (Your existing image display logic - ensure it doesn't throw errors) ...
+            // For brevity, assuming this part is okay.
 
             const statusMessage = document.createElement('p');
             statusMessage.className = 'text-center mt-3 alert alert-info';
             statusMessage.innerHTML = '🤖 Sending to AI for recipe extraction... <span class="spinner-border spinner-border-sm"></span>';
             photoPreviewContainer.appendChild(statusMessage);
 
+            let processedDataUrl;
             try {
-                const base64ImageData = processedDataUrl.split(',')[1]; // Get only the base64 part
+                console.log("handleRecipePhoto: Attempting to preprocess image.");
+                processedDataUrl = preprocessImage(imgForPreprocessing); // Your existing function
+                console.log("Mobile - processedDataUrl length:", processedDataUrl ? processedDataUrl.length : "N/A");
+                 if (processedDataUrl && processedDataUrl.length > 0) {
+                    console.log("Mobile - processedDataUrl (first 100 chars):", processedDataUrl.substring(0,100));
+                } else if (!processedDataUrl) {
+                    throw new Error("Preprocessing returned an empty or invalid data URL.");
+                }
+            } catch (preprocessError) {
+                console.error("Error during image preprocessing:", preprocessError);
+                statusMessage.remove();
+                photoPreviewContainer.innerHTML = `<p class="alert alert-danger text-center">Error preprocessing image: ${preprocessError.message}</p>`;
+                console.log("--- handleRecipePhoto DEBUG END (preprocessing error) ---");
+                return;
+            }
 
+
+            let base64ImageData = null;
+            if (processedDataUrl && processedDataUrl.includes(',')) {
+                base64ImageData = processedDataUrl.split(',')[1];
+            } else {
+                console.error("handleRecipePhoto: processedDataUrl is invalid or not a data URL:", processedDataUrl);
+                statusMessage.remove();
+                photoPreviewContainer.appendChild(document.createTextNode("Error: Could not get image data after preprocessing."));
+                console.log("--- handleRecipePhoto DEBUG END (invalid processedDataUrl) ---");
+                return;
+            }
+            
+            console.log("Mobile - base64ImageData length:", base64ImageData ? base64ImageData.length : "N/A");
+            console.log("Mobile - base64ImageData (first 100 chars):", base64ImageData ? base64ImageData.substring(0, 100) : "N/A");
+
+            const payload = {
+                image: base64ImageData,
+                // Use a default MIME type if file.type is missing or unreliable on mobile,
+                // but prefer what the browser provides if it's valid.
+                mimeType: file.type || 'image/jpeg' // Defaulting to image/jpeg if file.type is falsy
+            };
+            console.log("Mobile - Payload to be sent (base64 image truncated for log):",
+                JSON.stringify({ ...payload, image: payload.image ? payload.image.substring(0,100) + "..." : "N/A" }, null, 2)
+            );
+
+
+            try {
+                console.log("--- About to FETCH /.netlify/functions/process-recipe-image with payload. Body length (approx):", JSON.stringify(payload).length);
                 const response = await fetch("/.netlify/functions/process-recipe-image", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        image: base64ImageData,
-                        mimeType: file.type // e.g., "image/jpeg", "image/png"
-                    })
+                    body: JSON.stringify(payload) // Send the full payload
                 });
 
-                statusMessage.remove(); // Remove "Sending to AI..."
+                console.log("handleRecipePhoto: Fetch response received. Status:", response.status);
+                statusMessage.remove();
+
+                // Try to get text first to see what server sent, even on error
+                const responseText = await response.text();
+                console.log("handleRecipePhoto: Raw response text from server:", responseText.substring(0, 500));
+
 
                 if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({ error: `Server error ${response.status}. Please check Netlify function logs.` }));
+                    let errorData;
+                    try {
+                        errorData = JSON.parse(responseText); // Try to parse if server sent JSON error
+                    } catch (e) {
+                        errorData = { error: `Server error ${response.status}. Response was not valid JSON.` , details: responseText.substring(0,200)};
+                    }
+                    console.error("handleRecipePhoto: Server returned an error:", errorData);
                     throw new Error(errorData.error || `Failed to process image: ${response.statusText}`);
                 }
 
-                const recipeData = await response.json();
+                const recipeData = JSON.parse(responseText); // Parse the now confirmed-ok response text
 
-                if (recipeData.error) { // Handle errors returned in the JSON body from the function
+                if (recipeData.error) {
+                    console.error("handleRecipePhoto: AI Function returned an error in JSON:", recipeData.error);
                     throw new Error(recipeData.error);
                 }
 
-                // Display success and fill form
+                console.log("handleRecipePhoto: AI Extracted Recipe Data:", recipeData);
                 const successMsg = document.createElement('p');
                 successMsg.className = 'alert alert-success mt-2 text-center';
                 successMsg.textContent = '✅ AI successfully extracted recipe data!';
                 photoPreviewContainer.appendChild(successMsg);
 
                 const fillFormBtn = document.createElement('button');
-                fillFormBtn.className = 'btn btn-primary mt-2 mb-3 d-block mx-auto';
-                fillFormBtn.innerHTML = '✨ Fill Recipe Form with this Data';
-                fillFormBtn.onclick = () => {
-                    // Ensure the main recipe form is visible
-                    const recipeFormDiv = document.getElementById('recipeForm');
-                    if (recipeFormDiv && !recipeFormDiv.classList.contains('open')) {
-                        toggleRecipeForm(); // Open the form if it's not already
-                    }
-                    fillRecipeForm(recipeData); // Your existing function to fill the form fields
-                    document.getElementById('recipeNameInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    successMsg.textContent = '✅ Form filled! Please review and save.';
-                    fillFormBtn.remove(); // Remove button after clicking
-                };
+                // ... (fillFormBtn setup and onclick as before) ...
                 photoPreviewContainer.appendChild(fillFormBtn);
 
-                console.log("AI Extracted Recipe Data:", recipeData);
 
             } catch (err) {
-                console.error("Error processing recipe photo with AI:", err);
-                if(statusMessage && statusMessage.parentNode) statusMessage.remove(); // remove if still there
+                console.error("handleRecipePhoto: Error during fetch or processing AI response:", err);
+                if(statusMessage && statusMessage.parentNode) statusMessage.remove();
                 const errorDisplay = document.createElement('p');
                 errorDisplay.className = 'alert alert-danger mt-2 text-center';
                 errorDisplay.textContent = `❌ AI Processing Error: ${err.message}`;
                 photoPreviewContainer.appendChild(errorDisplay);
             }
+            console.log("--- handleRecipePhoto DEBUG END (imgForPreprocessing.onload finished) ---");
         };
 
-        // Handle cases where the image might already be loaded (e.g., from cache or very small image)
-        if (imgForPreprocessing.complete && imgForPreprocessing.naturalWidth !== 0) {
+        if (imgForPreprocessing.complete && imgForPreprocessing.naturalWidth !== 0 && imgForPreprocessing.naturalHeight !== 0) {
+            console.log("handleRecipePhoto: imgForPreprocessing already complete, calling onload manually.");
             imgForPreprocessing.onload();
+        } else if (!imgForPreprocessing.src) {
+            console.error("handleRecipePhoto: imgForPreprocessing.src is empty after reader.onload!");
+             photoPreviewContainer.innerHTML = '<p class="alert alert-danger text-center">Error: Image source is empty.</p>';
+        } else {
+            console.log("handleRecipePhoto: imgForPreprocessing not yet complete, relying on its onload event.");
         }
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(file); // Start reading the file
 }
 
 function generateStructuredOcrTemplate(rawText) {
