@@ -37,69 +37,86 @@ function openAddRecipeMethodChoiceModal() {
     }
 }
 
-function selectAddRecipeMethod(method) {
-    currentAddRecipeMethod = method;
+let dedicatedRecipePhotoInput = null;function selectAddRecipeMethod(method) {
     console.log("Selected add recipe method:", method);
 
     if (addRecipeMethodModalInstance) {
-        addRecipeMethodModalInstance.hide(); // Hide the choice modal
+        addRecipeMethodModalInstance.hide();
     }
 
-    // Now, open the specialized UI for the chosen method
-    // This will replace your old toggleRecipeForm() and direct showChatbotModal() calls for *new* recipes.
+    currentAddRecipeMethod = method; // Keep track of the selected method
+
     switch (method) {
         case 'manual':
-            // Open your existing manual recipe form, perhaps in a new dedicated modal or by revealing it.
-            // For now, let's assume toggleRecipeForm() still shows the main manual form.
-            // We need to ensure toggleRecipeForm() now presents *just* the manual form fields,
-            // and the accordion for Photo/Paste might be removed from it or handled differently.
-            toggleRecipeForm(true); // Pass true to indicate it's being opened for manual entry
-            // Ensure the form is scrolled into view and focused
-            document.getElementById('recipeNameInput')?.focus();
+            toggleRecipeForm(true, true); // Open and reset for manual entry
+            setTimeout(() => { // Ensure form is visible before focus
+                const recipeNameInput = document.getElementById('recipeNameInput');
+                if (recipeNameInput) recipeNameInput.focus();
+                // Collapse other accordions if they exist in the manual form
+                const collapseOCR = document.getElementById('collapseOCR');
+                const collapsePaste = document.getElementById('collapsePaste');
+                if (collapseOCR && bootstrap.Collapse.getInstance(collapseOCR)) bootstrap.Collapse.getInstance(collapseOCR).hide();
+                if (collapsePaste && bootstrap.Collapse.getInstance(collapsePaste)) bootstrap.Collapse.getInstance(collapsePaste).hide();
+            }, 150);
             break;
         case 'photo':
-            // Trigger the UI for photo upload. This might mean opening the
-            // #recipeForm and then programmatically opening the "Add by Photo" accordion item,
-            // or having a dedicated modal for photo upload.
-            toggleRecipeForm(true); // Open the main form container
-            // Ensure the accordion is set up after innerHTML is done in showRecipeFilter
-            setTimeout(() => { // Delay to ensure DOM is ready
-                const collapseOCR = document.getElementById('collapseOCR');
-                const accordionButtonOCR = document.querySelector('button[data-bs-target="#collapseOCR"]');
-                if (collapseOCR && accordionButtonOCR) {
-                    const bsCollapse = bootstrap.Collapse.getOrCreateInstance(collapseOCR);
-                    bsCollapse.show();
-                    accordionButtonOCR.setAttribute('aria-expanded', 'true');
-                    accordionButtonOCR.classList.remove('collapsed');
-                    document.getElementById('recipePhotoInput')?.focus();
-                } else {
-                    console.warn("Could not find OCR accordion elements to auto-open.");
+            console.log("Photo method selected. Triggering dedicated photo input.");
+            // Clean up any previous input
+            if (dedicatedRecipePhotoInput && dedicatedRecipePhotoInput.parentNode) {
+                dedicatedRecipePhotoInput.remove();
+            }
+            // Create a new file input programmatically
+            dedicatedRecipePhotoInput = document.createElement('input');
+            dedicatedRecipePhotoInput.type = 'file';
+            dedicatedRecipePhotoInput.accept = 'image/*';
+            // For mobile, 'capture="environment"' prefers the back camera
+            // You might want to only add 'capture' on mobile devices.
+            if (navigator.userAgent.match(/Android/i) || navigator.userAgent.match(/iPhone|iPad|iPod/i)) {
+                dedicatedRecipePhotoInput.capture = 'environment';
+            }
+            dedicatedRecipePhotoInput.style.display = 'none'; // Keep it hidden
+            dedicatedRecipePhotoInput.onchange = (event) => {
+                // Once a file is selected, immediately call handleRecipePhoto
+                handleRecipePhoto(event, true); // Pass a new flag to indicate direct fill
+                // Clean up the input after use
+                if (dedicatedRecipePhotoInput && dedicatedRecipePhotoInput.parentNode) {
+                    dedicatedRecipePhotoInput.remove();
                 }
-            }, 100); // Small delay
+                dedicatedRecipePhotoInput = null;
+            };
+            document.body.appendChild(dedicatedRecipePhotoInput); // Add to body to make it clickable
+            dedicatedRecipePhotoInput.click(); // Programmatically click the hidden file input
             break;
         case 'paste':
-            // Similar to photo, open the #recipeForm and the "Paste Text" accordion.
-            toggleRecipeForm(true);
+            toggleRecipeForm(true, false); // Open form, don't do full manual reset
             setTimeout(() => {
                 const collapsePaste = document.getElementById('collapsePaste');
                 const accordionButtonPaste = document.querySelector('button[data-bs-target="#collapsePaste"]');
+                const collapseOCR = document.getElementById('collapseOCR');
+                 if (collapseOCR && bootstrap.Collapse.getInstance(collapseOCR)) bootstrap.Collapse.getInstance(collapseOCR).hide();
+
                 if (collapsePaste && accordionButtonPaste) {
                     const bsCollapse = bootstrap.Collapse.getOrCreateInstance(collapsePaste);
                     bsCollapse.show();
                     accordionButtonPaste.setAttribute('aria-expanded', 'true');
                     accordionButtonPaste.classList.remove('collapsed');
-                    document.getElementById('ocrTextPaste')?.focus();
-                } else {
-                    console.warn("Could not find Paste Text accordion elements to auto-open.");
+                    const pasteArea = document.getElementById('ocrTextPaste');
+                    if (pasteArea) {
+                        pasteArea.focus();
+                        pasteArea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
                 }
-            }, 100);
+            }, 150);
             break;
         case 'chefbot':
-            // This calls your existing function that opens the Chef Bot modal for new recipes
-            showChatbotModal();
+            if (typeof showChatbotModal === "function") {
+                showChatbotModal();
+            } else {
+                console.error("showChatbotModal function is not defined!");
+            }
             break;
         default:
-            console.error("Unknown recipe add method:", method);
+            console.error("Unknown recipe add method selected:", method);
     }
 }
 
@@ -910,65 +927,68 @@ async function handleRecipePhoto(event) {
 
             try {
                 console.log("--- About to FETCH /.netlify/functions/process-recipe-image. Payload length (approx):", JSON.stringify(payload).length);
-                const response = await fetch("/.netlify/functions/process-recipe-image", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
-                });
+                const response = await fetch("/.netlify/functions/process-recipe-image", { /* ... */ });
 
-                console.log("handleRecipePhoto: Fetch response received. Status:", response.status);
-                if(statusMessage && statusMessage.parentNode) statusMessage.remove();
+                if (statusMessage && statusMessage.parentNode) statusMessage.remove(); // Remove "Analyzing..." message
 
-                const responseText = await response.text(); // Get raw text first
+                const responseText = await response.text();
                 console.log("handleRecipePhoto: Raw response text from server (first 500 chars):", responseText.substring(0, 500));
 
-                if (!response.ok) {
-                    let errorData = { error: `Server error ${response.status}. No details.` };
-                    try {
-                        errorData = JSON.parse(responseText); // Try to parse for a JSON error message
-                    } catch (e) {
-                        console.warn("Response from server was not valid JSON, using raw text for error.");
-                        errorData = { error: `Server error ${response.status}. Response: ${responseText.substring(0,100)}...` };
-                    }
-                    console.error("handleRecipePhoto: Server returned an error object:", errorData);
-                    throw new Error(errorData.error || `Failed to process image: ${response.statusText}`);
-                }
+                if (!response.ok) { /* ... handle fetch error, throw new Error ... */ }
 
-                const recipeData = JSON.parse(responseText); 
+                const recipeData = JSON.parse(responseText);
 
-                if (recipeData.error) { // Check for error field in successful (2xx) JSON response
-                    console.error("handleRecipePhoto: AI Function returned an error in JSON:", recipeData.error);
-                    throw new Error(recipeData.error);
-                }
+                if (recipeData.error) { /* ... throw new Error(recipeData.error) ... */ }
 
-                // At this point, assume recipeData is valid if no error was thrown
                 console.log("handleRecipePhoto: AI Extracted Recipe Data:", recipeData);
-                if (photoPreviewContainer) { // Clear previous messages before showing success & button
-                    photoPreviewContainer.innerHTML = ''; 
-                }
-                
-                const successMsg = document.createElement('p');
-                successMsg.className = 'alert alert-success mt-2 text-center';
-                successMsg.textContent = '✅ AI successfully extracted recipe data!';
-                if (photoPreviewContainer) photoPreviewContainer.appendChild(successMsg);
 
-                const fillFormBtn = document.createElement('button');
-                fillFormBtn.className = 'btn btn-primary mt-2 mb-3 d-block mx-auto';
-                fillFormBtn.innerHTML = '✨ Fill Recipe Form with this Data';
-                fillFormBtn.onclick = () => {
-                    const recipeFormDiv = document.getElementById('recipeForm');
-                    if (recipeFormDiv && !recipeFormDiv.classList.contains('open')) {
-                        toggleRecipeForm(true, false); // Open form, don't do full manual reset
-                    }
-                    fillRecipeForm(recipeData); // Your function to populate the main recipe form
+                if (directFill) {
+                    // --- DIRECTLY FILL AND SHOW THE MAIN RECIPE FORM ---
+                    if (photoPreviewContainer) photoPreviewContainer.innerHTML = ''; // Clear preview area
+
+                    toggleRecipeForm(true, false); // Open #recipeForm, don't do full manual reset initially
+                    fillRecipeForm(recipeData);   // Populate with AI data
+                    
+                    // Optionally, reset parts of the form that fillRecipeForm might not cover
+                    // currentTags = recipeData.tags || []; // If fillRecipeForm doesn't handle tags
+                    // renderTags(); // If fillRecipeForm doesn't handle tags
+
                     const recipeNameField = document.getElementById('recipeNameInput');
                     if (recipeNameField) {
                         recipeNameField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        recipeNameField.focus();
                     }
-                    successMsg.textContent = '✅ Form filled! Please review and save.';
-                    fillFormBtn.remove();
-                };
-                if (photoPreviewContainer) photoPreviewContainer.appendChild(fillFormBtn);
+                    showSuccessMessage("✅ Recipe data extracted by AI and form populated! Please review and save.");
+
+                } else {
+                    // --- OLD BEHAVIOR: Show "Fill Form" button (keep this if called from accordion) ---
+                    if (photoPreviewContainer) {
+                        // Clear previous status message before adding success & button
+                        const existingStatus = photoPreviewContainer.querySelector('.alert-info');
+                        if (existingStatus) existingStatus.remove();
+                    }
+
+                    const successMsg = document.createElement('p');
+                    successMsg.className = 'alert alert-success mt-2 text-center';
+                    successMsg.textContent = '✅ AI successfully extracted recipe data!';
+                    if (photoPreviewContainer) photoPreviewContainer.appendChild(successMsg);
+
+                    const fillFormBtn = document.createElement('button');
+                    fillFormBtn.className = 'btn btn-primary mt-2 mb-3 d-block mx-auto';
+                    fillFormBtn.innerHTML = '✨ Fill Recipe Form with this Data';
+                    fillFormBtn.onclick = () => {
+                        const recipeFormDiv = document.getElementById('recipeForm');
+                        if (recipeFormDiv && !recipeFormDiv.classList.contains('open')) {
+                            toggleRecipeForm(true, false); // Open form, don't reset for manual entry
+                        }
+                        fillRecipeForm(recipeData);
+                        const recipeNameField = document.getElementById('recipeNameInput');
+                        if (recipeNameField) recipeNameField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        successMsg.textContent = '✅ Form filled! Please review and save.';
+                        fillFormBtn.remove();
+                    };
+                    if (photoPreviewContainer) photoPreviewContainer.appendChild(fillFormBtn);
+                }
 
             } catch (err) {
                 console.error("handleRecipePhoto: Error during fetch or processing AI response:", err);
@@ -1407,7 +1427,6 @@ function preprocessImage(imgElement) {
         }
     }
 }
-
 
 function parseOcrToRecipeFields(ocrText) {
   // 🧼 Normalize Unicode fractions
