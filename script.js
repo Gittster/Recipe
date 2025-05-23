@@ -7,6 +7,8 @@ let chatbotModalElement = null; // To keep a reference to the modal DOM element
 let loginModalInstance = null; // To store the Bootstrap modal instance
 let localDB = null; // Initialize localDB as null
 let infoConfirmModalInstance = null; // To store the Bootstrap modal instance
+let addRecipeMethodModalInstance = null;
+let currentAddRecipeMethod = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     const loginModalElement = document.getElementById('loginModal');
@@ -17,7 +19,89 @@ document.addEventListener('DOMContentLoaded', () => {
     if (infoModalElement) {
         infoConfirmModalInstance = new bootstrap.Modal(infoModalElement);
     }
+    const addMethodModalElement = document.getElementById('addRecipeMethodModal');
+    if (addMethodModalElement) {
+        addRecipeMethodModalInstance = new bootstrap.Modal(addMethodModalElement);
+    }
 });
+
+function openAddRecipeMethodChoiceModal() {
+    currentAddRecipeMethod = null; // Reset
+    const previewArea = document.getElementById('addRecipeMethodPreview');
+    if (previewArea) previewArea.style.display = 'none'; // Hide preview
+
+    if (addRecipeMethodModalInstance) {
+        addRecipeMethodModalInstance.show();
+    } else {
+        console.error("Add Recipe Method Modal not initialized.");
+    }
+}
+
+function selectAddRecipeMethod(method) {
+    currentAddRecipeMethod = method;
+    console.log("Selected add recipe method:", method);
+
+    if (addRecipeMethodModalInstance) {
+        addRecipeMethodModalInstance.hide(); // Hide the choice modal
+    }
+
+    // Now, open the specialized UI for the chosen method
+    // This will replace your old toggleRecipeForm() and direct showChatbotModal() calls for *new* recipes.
+    switch (method) {
+        case 'manual':
+            // Open your existing manual recipe form, perhaps in a new dedicated modal or by revealing it.
+            // For now, let's assume toggleRecipeForm() still shows the main manual form.
+            // We need to ensure toggleRecipeForm() now presents *just* the manual form fields,
+            // and the accordion for Photo/Paste might be removed from it or handled differently.
+            toggleRecipeForm(true); // Pass true to indicate it's being opened for manual entry
+            // Ensure the form is scrolled into view and focused
+            document.getElementById('recipeNameInput')?.focus();
+            break;
+        case 'photo':
+            // Trigger the UI for photo upload. This might mean opening the
+            // #recipeForm and then programmatically opening the "Add by Photo" accordion item,
+            // or having a dedicated modal for photo upload.
+            toggleRecipeForm(true); // Open the main form container
+            // Ensure the accordion is set up after innerHTML is done in showRecipeFilter
+            setTimeout(() => { // Delay to ensure DOM is ready
+                const collapseOCR = document.getElementById('collapseOCR');
+                const accordionButtonOCR = document.querySelector('button[data-bs-target="#collapseOCR"]');
+                if (collapseOCR && accordionButtonOCR) {
+                    const bsCollapse = bootstrap.Collapse.getOrCreateInstance(collapseOCR);
+                    bsCollapse.show();
+                    accordionButtonOCR.setAttribute('aria-expanded', 'true');
+                    accordionButtonOCR.classList.remove('collapsed');
+                    document.getElementById('recipePhotoInput')?.focus();
+                } else {
+                    console.warn("Could not find OCR accordion elements to auto-open.");
+                }
+            }, 100); // Small delay
+            break;
+        case 'paste':
+            // Similar to photo, open the #recipeForm and the "Paste Text" accordion.
+            toggleRecipeForm(true);
+            setTimeout(() => {
+                const collapsePaste = document.getElementById('collapsePaste');
+                const accordionButtonPaste = document.querySelector('button[data-bs-target="#collapsePaste"]');
+                if (collapsePaste && accordionButtonPaste) {
+                    const bsCollapse = bootstrap.Collapse.getOrCreateInstance(collapsePaste);
+                    bsCollapse.show();
+                    accordionButtonPaste.setAttribute('aria-expanded', 'true');
+                    accordionButtonPaste.classList.remove('collapsed');
+                    document.getElementById('ocrTextPaste')?.focus();
+                } else {
+                    console.warn("Could not find Paste Text accordion elements to auto-open.");
+                }
+            }, 100);
+            break;
+        case 'chefbot':
+            // This calls your existing function that opens the Chef Bot modal for new recipes
+            showChatbotModal();
+            break;
+        default:
+            console.error("Unknown recipe add method:", method);
+    }
+}
 
 /**
  * Shows a generic modal for information or confirmation.
@@ -346,6 +430,10 @@ async function loadRecipes() {
 }
 
 function showRecipeFilter() {
+    // If using page titles and active nav states from responsive navigation:
+    updatePageTitle("Recipes");
+    setActiveNavButton("recipes");
+
     const view = document.getElementById('mainView');
     if (!view) {
         console.error("mainView element not found for showRecipeFilter");
@@ -355,121 +443,85 @@ function showRecipeFilter() {
 
     view.innerHTML = `
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h4 class="mb-0"><i class="bi bi-journal-richtext me-2"></i>Recipes</h4>
-            <div> <button class="btn btn-outline-secondary btn-sm me-2" type="button" onclick="clearAllRecipeFilters()" title="Clear all filters">
-                    <i class="bi bi-x-lg"></i> Clear Filters
+            <div> 
+                <button class="btn btn-outline-warning btn-sm me-2" type="button" onclick="showChatbotModal()" title="Ask Chef Bot to create a new recipe">
+                    <i class="bi bi-robot"></i> Chef Bot
                 </button>
-                <button class="btn btn-primary btn-sm" onclick="toggleRecipeForm()">
+                <button class="btn btn-outline-info btn-sm me-2" type="button" data-bs-toggle="collapse" data-bs-target="#recipeFiltersCollapse" aria-expanded="false" aria-controls="recipeFiltersCollapse" title="Toggle filters">
+                    <i class="bi bi-funnel-fill"></i> Filters
+                </button>
+                <button class="btn btn-primary btn-sm" onclick="openAddRecipeMethodChoiceModal()">
                     <i class="bi bi-plus-circle-fill me-1"></i>Add Recipe
                 </button>
             </div>
         </div>
 
-        <div class="filter-section card card-body bg-light-subtle mb-3">
-             <div class="row g-2 align-items-end">
-                <div class="col-lg-4 col-md-12">
-                    <label for="nameSearch" class="form-label small mb-1">By Name:</label>
-                    <input type="text" class="form-control form-control-sm" id="nameSearch" placeholder="Filter by name..." oninput="applyAllRecipeFilters()" />
+        <div class="collapse mb-3" id="recipeFiltersCollapse">
+            <div class="filter-section card card-body bg-light-subtle">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0">Filter & Search</h6>
+                    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearAllRecipeFilters()" title="Clear all filters">
+                        <i class="bi bi-x-lg"></i> Clear All
+                    </button>
                 </div>
-                <div class="col-lg-4 col-md-6">
-                    <label for="recipeSearch" class="form-label small mb-1">By Ingredient(s):</label>
-                    <input type="text" class="form-control form-control-sm" id="recipeSearch" placeholder="Filter by ingredient..." oninput="applyAllRecipeFilters()" />
-                </div>
-                <div class="col-lg-4 col-md-6">
-                    <label for="tagSearch" class="form-label small mb-1">By Tag(s):</label>
-                    <input type="text" class="form-control form-control-sm" id="tagSearch" placeholder="Filter by tag..." oninput="applyAllRecipeFilters()" />
+                <div class="row g-2 align-items-end">
+                    <div class="col-lg-4 col-md-12">
+                        <label for="nameSearch" class="form-label small mb-1">By Name:</label>
+                        <input type="text" class="form-control form-control-sm" id="nameSearch" placeholder="Search by recipe name..." oninput="applyAllRecipeFilters()" />
+                    </div>
+                    <div class="col-lg-4 col-md-6">
+                        <label for="recipeSearch" class="form-label small mb-1">By Ingredient(s):</label>
+                        <input type="text" class="form-control form-control-sm" id="recipeSearch" placeholder="e.g., chicken,tomato" oninput="applyAllRecipeFilters()" />
+                    </div>
+                    <div class="col-lg-4 col-md-6">
+                        <label for="tagSearch" class="form-label small mb-1">By Tag(s):</label>
+                        <input type="text" class="form-control form-control-sm" id="tagSearch" placeholder="e.g., dinner,quick" oninput="applyAllRecipeFilters()" />
+                    </div>
                 </div>
             </div>
         </div>
 
         <div id="recipeForm" class="collapsible-form mb-4">
-            <div class="card card-body">
+            ${getAddRecipeFormHTML()}
+        </div>
 
-                <label class="form-label fw-semibold">📛 Recipe Name</label>
-                <input class="form-control mb-3" id="recipeNameInput" placeholder="Recipe name" />
-
-                <div class="mb-3">
-                    <label class="form-label fw-semibold mt-3">🧂 Ingredients</label>
-                    <div id="ingredientsTable"></div> </div>
-
-                <label class="form-label fw-semibold mt-3">📝 Instructions</label>
-                <textarea class="form-control mb-3" id="recipeInstructionsInput" rows="4" placeholder="Instructions"></textarea>
-
-                <label class="form-label fw-semibold mt-3">🏷️ Tags</label>
-                <div class="mb-3">
-                    <div id="tagsContainer" class="form-control d-flex flex-wrap align-items-center gap-1 p-2 position-relative" style="min-height: 38px; background-color: #f8f9fa; border: 1px dashed #ced4da;">
-                        <span id="tagsPlaceholder" class="text-muted position-absolute small" style="left: 10px; top: 50%; transform: translateY(-50%); pointer-events: none;">Add some tags...</span>
-                    </div>
-                    <div class="input-group input-group-sm mt-2">
-                        <input type="text" id="tagInput" class="form-control" placeholder="Type a tag & press Enter" />
-                        <button type="button" id="tagAddButton" class="btn btn-outline-secondary"><i class="bi bi-plus"></i> Add</button>
-                    </div>
-                </div>
-
-                <hr class="my-3" style="border-top: 1px solid #ccc;" />
-
-                <div class="d-flex gap-2 mb-3 justify-content-end">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleRecipeForm()">Cancel</button>
-                    <button type="button" class="btn btn-success btn-sm" onclick="saveRecipe()">Save Recipe</button>
-                </div>
-
-                <div class="accordion" id="addRecipeOptionsAccordion">
-                    <div class="accordion-item">
-                        <h2 class="accordion-header" id="headingOCR">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOCR" aria-expanded="false" aria-controls="collapseOCR">
-                                📸 Add Recipe by Photo
-                            </button>
-                        </h2>
-                        <div id="collapseOCR" class="accordion-collapse collapse" aria-labelledby="headingOCR" data-bs-parent="#addRecipeOptionsAccordion">
-                            <div class="accordion-body">
-                                <label for="recipePhotoInput" class="form-label">Upload or Take a Recipe Photo</label>
-                                <input type="file" id="recipePhotoInput" accept="image/*" capture="environment" class="form-control mb-3" onchange="handleRecipePhoto(event)" />
-                                <div id="photoPreviewContainer" class="mb-3"></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="accordion-item">
-                        <h2 class="accordion-header" id="headingPaste">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePaste" aria-expanded="false" aria-controls="collapsePaste">
-                                ⌨️ Add Recipe by Pasting Text
-                            </button>
-                        </h2>
-                        <div id="collapsePaste" class="accordion-collapse collapse" aria-labelledby="headingPaste" data-bs-parent="#addRecipeOptionsAccordion">
-                            <div class="accordion-body">
-                                <label for="ocrTextPaste" class="form-label">Paste your recipe text below:</label>
-                                <textarea id="ocrTextPaste" class="form-control mb-2" rows="10">
-📛 RECIPE NAME
-====================
-
-🧂 INGREDIENTS
-====================
-
-📝 INSTRUCTIONS
-====================
-                                </textarea>
-                                <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="handlePastedRecipeText()">✨ Parse Text to Fill Form</button>
-                            </div>
-                        </div>
-                    </div>
-                </div> </div> </div> <div id="recipeResults"></div>
+        <div id="recipeResults"></div>
     `;
 
     initializeMainRecipeFormTagInput();
 
-    if (typeof recipes !== 'undefined') {
+    if (typeof recipes !== 'undefined' && typeof applyAllRecipeFilters === "function") {
         applyAllRecipeFilters();
     } else {
         const recipeResultsContainer = document.getElementById('recipeResults');
         if (recipeResultsContainer) {
             recipeResultsContainer.innerHTML = '<p class="text-center text-muted">Loading recipes or no recipes found...</p>';
         }
-        console.warn("Global 'recipes' array not defined when showRecipeFilter was called. Ensure loadInitialRecipes() has run.");
+        if (typeof recipes === 'undefined') {
+            console.warn("Global 'recipes' array not defined when showRecipeFilter was called. Ensure loadInitialRecipes() has run or will run.");
+        }
+        if (typeof applyAllRecipeFilters !== "function") {
+            console.error("CRITICAL: applyAllRecipeFilters function is not defined!");
+        }
+    }
+}
+
+/**
+ * Updates the text content of the #currentPageTitle element in the #topBar.
+ * @param {string} title - The new title to display.
+ */
+function updatePageTitle(title) {
+    const titleElement = document.getElementById('currentPageTitle');
+    if (titleElement) {
+        titleElement.textContent = title;
+    } else {
+        console.warn("Element with ID 'currentPageTitle' not found in the DOM.");
     }
 }
 
 function clearAllRecipeFilters() {
     const nameSearch = document.getElementById('nameSearch');
-    const ingredientSearch = document.getElementById('recipeSearch'); // ID for ingredient search
+    const ingredientSearch = document.getElementById('recipeSearch'); // Uses 'recipeSearch' for ingredients
     const tagSearch = document.getElementById('tagSearch');
 
     if (nameSearch) nameSearch.value = '';
@@ -666,32 +718,28 @@ function filterRecipesByTag() { // This will now be triggered by tag search inpu
 // script.js
 
 function applyAllRecipeFilters() {
-    const nameSearchInput = document.getElementById('recipeNameSearch');
-    const ingredientSearchInput = document.getElementById('recipeIngredientSearch');
-    const tagSearchInput = document.getElementById('recipeTagSearch');
+    const nameSearchInput = document.getElementById('nameSearch'); // ID from your HTML
+    const ingredientSearchInput = document.getElementById('recipeSearch'); // ID from your HTML
+    const tagSearchInput = document.getElementById('tagSearch'); // ID from your HTML
 
     const nameSearchTerm = nameSearchInput ? nameSearchInput.value.toLowerCase().trim() : "";
-    
     const ingredientSearchValue = ingredientSearchInput ? ingredientSearchInput.value.toLowerCase().trim() : "";
-    const ingredientSearchTermsArray = ingredientSearchValue.split(',') // Keep as array for highlighting
+    const ingredientSearchTermsArray = ingredientSearchValue.split(',')
                                      .map(term => term.trim().toLowerCase())
                                      .filter(Boolean);
-
     const tagSearchValue = tagSearchInput ? tagSearchInput.value.toLowerCase().trim() : "";
-    const tagTermsArray = tagSearchValue.split(',') // Keep as array for highlighting
+    const tagTermsArray = tagSearchValue.split(',')
                         .map(t => t.trim().toLowerCase())
                         .filter(Boolean);
 
-    let filteredList = [...recipes]; 
+    let filteredList = [...recipes]; // Start with a fresh copy of all recipes
 
-    // Filter by Recipe Name
     if (nameSearchTerm) {
         filteredList = filteredList.filter(recipe =>
             recipe.name && recipe.name.toLowerCase().includes(nameSearchTerm)
         );
     }
 
-    // Filter by Ingredients
     if (ingredientSearchTermsArray.length > 0) {
         filteredList = filteredList.filter(recipe => {
             if (!recipe.ingredients || recipe.ingredients.length === 0) return false;
@@ -705,27 +753,20 @@ function applyAllRecipeFilters() {
         });
     }
 
-    // Filter by Tags
     if (tagTermsArray.length > 0) {
         filteredList = filteredList.filter(recipe => {
             if (!recipe.tags || recipe.tags.length === 0) return false;
             const recipeTagsLower = recipe.tags.map(tag => tag.toLowerCase());
             return tagTermsArray.every(term =>
-                recipeTagsLower.some(tag => tag.includes(term)) // Using 'includes' for more flexible tag matching
+                recipeTagsLower.some(tag => tag.includes(term)) // Using 'includes' for tags as well
             );
         });
     }
     
     const displayOptions = {};
-    if (nameSearchTerm) {
-        displayOptions.highlightNameTerm = nameSearchTerm; // Single string for name
-    }
-    if (ingredientSearchTermsArray.length > 0) {
-        displayOptions.highlightIngredients = ingredientSearchTermsArray; // Array of strings
-    }
-    if (tagTermsArray.length > 0) {
-        displayOptions.highlightTags = tagTermsArray; // Array of strings
-    }
+    if (nameSearchTerm) displayOptions.highlightNameTerm = nameSearchTerm;
+    if (ingredientSearchTermsArray.length > 0) displayOptions.highlightIngredients = ingredientSearchTermsArray;
+    if (tagTermsArray.length > 0) displayOptions.highlightTags = tagTermsArray;
 
     displayRecipes(filteredList, 'recipeResults', displayOptions);
 }
@@ -958,108 +999,166 @@ function deleteHistoryEntry(entryId, cardElement) {
     });
 }
 
+/**
+ * Called when a "Mark as Made" button on a recipe card is clicked.
+ * It opens an inline form for notes and date.
+ * @param {object} recipeDataFromCard - The full recipe object from the card.
+ * @param {HTMLElement} buttonElement - The button element that was clicked.
+ */
+function markAsMade(recipeDataFromCard, buttonElement) {
+    // Log the data received from the recipe card
+    console.log("markAsMade clicked for recipe:", recipeDataFromCard.name, "ID:", recipeDataFromCard.id);
 
-function markAsMade(recipeName, buttonElement) {
-    console.log("Mark as Made clicked for:", recipeName);
-
-    const card = buttonElement.closest('.card');
-    if (!card) return;
-    if (card.querySelector('.mark-made-form')) return; // Prevent multiple forms
+    const card = buttonElement.closest('.recipe-card'); // Ensure your recipe cards have class 'recipe-card'
+    if (!card) {
+        console.error("Could not find parent card for 'Mark as Made' button.");
+        return;
+    }
+    // Prevent multiple forms on the same card
+    if (card.querySelector('.mark-made-form')) {
+        console.log("Mark as Made form already open for this recipe.");
+        return;
+    }
 
     const form = document.createElement('div');
-    form.className = 'mark-made-form mt-3 p-3 border rounded bg-light-subtle'; // Used bg-light-subtle for BS5
+    form.className = 'mark-made-form mt-3 p-3 border rounded bg-light-subtle';
 
     const textarea = document.createElement('textarea');
     textarea.className = 'form-control mb-2';
     textarea.rows = 2;
-    textarea.placeholder = 'Optional comment...';
+    textarea.placeholder = 'Optional notes about when you made it...';
 
     const dateLabel = document.createElement('label');
-    dateLabel.textContent = 'Made date:';
-    dateLabel.className = 'form-label mb-0 ms-md-3 fw-semibold'; // ms-md-3 for spacing on medium+ screens
+    dateLabel.textContent = 'Made on date:';
+    dateLabel.className = 'form-label mb-0 me-2 fw-semibold small'; // Added me-2 for spacing
     dateLabel.style.whiteSpace = 'nowrap';
 
     const dateInput = document.createElement('input');
     dateInput.type = 'date';
-    dateInput.className = 'form-control form-control-sm d-inline-block'; // d-inline-block for layout
+    dateInput.className = 'form-control form-control-sm d-inline-block';
     dateInput.style.maxWidth = '150px';
     dateInput.value = new Date().toISOString().split('T')[0]; // Default to today
 
     const saveBtn = document.createElement('button');
-    saveBtn.className = 'btn btn-outline-success btn-sm'; // Changed to success
-    saveBtn.innerHTML = '<i class="bi bi-check-lg"></i> Save';
+    saveBtn.className = 'btn btn-success btn-sm'; // Using solid success button
+    saveBtn.innerHTML = '<i class="bi bi-check-lg"></i> Save to History';
 
     const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'btn btn-outline-secondary btn-sm'; // Changed to secondary
+    cancelBtn.className = 'btn btn-outline-secondary btn-sm';
     cancelBtn.innerHTML = '<i class="bi bi-x-lg"></i> Cancel';
 
     const controls = document.createElement('div');
-    controls.className = 'd-flex align-items-center gap-2 flex-wrap mt-2'; // Added mt-2 and flex-wrap
-    controls.appendChild(saveBtn);
-    controls.appendChild(cancelBtn);
+    controls.className = 'd-flex align-items-center gap-2 flex-wrap mt-2'; // flex-wrap for responsiveness
     controls.appendChild(dateLabel);
     controls.appendChild(dateInput);
-
-    saveBtn.onclick = () => {
+    controls.appendChild(saveBtn);
+    controls.appendChild(cancelBtn);
+    
+    saveBtn.onclick = async () => { // Made async for db operations
         const notes = textarea.value.trim();
-        // Ensure date is treated as local, then get start of day in UTC for consistent ISO string
-        const localDate = new Date(dateInput.value + 'T00:00:00'); // Treat selected date as local
-        const timestamp = localDate.toISOString();
+        const madeOnDateString = dateInput.value;
 
-        // Find the full recipe object to get tags if available
-        // This assumes `recipes` array is populated with current view (local or cloud)
-        const recipeObj = recipes.find(r => r.name === recipeName);
-        const recipeTags = recipeObj && recipeObj.tags ? recipeObj.tags : [];
+        if (!madeOnDateString) {
+            alert("Please select a date for when this recipe was made.");
+            dateInput.focus();
+            return;
+        }
+
+        // Ensure date is treated as local, then get start of day in UTC for consistent ISO string for timestamp
+        const localDate = new Date(madeOnDateString + 'T00:00:00');
+        const timestampForHistory = localDate.toISOString(); // This is the "date made"
+
+        // Extract data from the recipeDataFromCard object
+        const actualRecipeName = recipeDataFromCard.name;
+        const originalRecipeID = recipeDataFromCard.id; // This is localId or FirestoreId
+        const recipeTagsToSave = recipeDataFromCard.tags || [];
+
+        let nameToSave;
+        if (actualRecipeName && typeof actualRecipeName === 'string' && actualRecipeName.trim() !== "") {
+            nameToSave = actualRecipeName.trim();
+        } else {
+            nameToSave = "Untitled Recipe Event";
+            console.warn("Recipe name was invalid or empty for history, defaulting to:", nameToSave, "Original value was:", actualRecipeName);
+        }
 
         const historyEntry = {
-            recipeName: recipeName, // Changed from 'recipe' to 'recipeName' for clarity with localDB schema
-            tags: recipeTags,
-            timestamp: timestamp,
-            notes: notes || '',
+            recipeName: nameToSave,
+            originalRecipeId: originalRecipeID || null, // Store the ID of the recipe being marked as made
+            tags: recipeTagsToSave,                     // Store the tags of the recipe at this time
+            timestamp: timestampForHistory,             // The date it was made
+            notes: notes || "",                         // User's notes
+            // recordCreatedAt: new Date().toISOString() // Optional: if you want to timestamp the history record itself
         };
 
-        if (currentUser) {
-            // --- LOGGED IN: Save to Firebase ---
-            historyEntry.uid = currentUser.uid;
-            db.collection("history").add(historyEntry)
-                .then(() => {
-                    console.log("✅ History entry added to Firestore!");
-                    form.innerHTML = '<div class="text-success fw-bold p-2">✅ Marked as made!</div>';
-                    setTimeout(() => form.remove(), 2000);
-                })
-                .catch(err => {
-                    console.error("❌ Failed to save history to Firestore:", err);
-                    alert('Failed to save history: ' + err.message);
-                });
-        } else {
-            // --- NOT LOGGED IN: Save to LocalDB ---
-            if (!localDB) {
-                alert("Local storage not available. Please sign in.");
-                console.error("Attempted to save local history, but localDB is not initialized.");
-                return;
-            }
-            historyEntry.localId = generateLocalUUID(); // Add localId for IndexedDB
-            // No UID needed for local anonymous history
+        console.log("Attempting to save history entry:", JSON.stringify(historyEntry, null, 2));
+        let success = false;
 
-            localDB.history.add(historyEntry)
-                .then(() => {
-                    console.log("✅ History entry added to LocalDB!");
-                    form.innerHTML = '<div class="text-success fw-bold p-2">✅ Marked as made (saved locally)!</div>';
-                    setTimeout(() => form.remove(), 2000);
-                })
-                .catch(err => {
-                    console.error("❌ Failed to save history to LocalDB:", err.stack || err);
-                    alert('Failed to save history locally: ' + err.message);
-                });
+        if (currentUser) {
+            historyEntry.uid = currentUser.uid; // Add UID for Firestore document
+            console.log("Saving history to Firestore for user:", currentUser.uid);
+            try {
+                await db.collection("history").add(historyEntry);
+                console.log("✅ History entry added to Firestore!");
+                success = true;
+            } catch (err) {
+                console.error("❌ Failed to save history to Firestore:", err);
+                alert('Failed to save history to your account: ' + err.message);
+            }
+        } else {
+            // User is NOT LOGGED IN: Save to LocalDB
+            if (!localDB) {
+                alert("Local storage is not available. Please sign in to save history permanently.");
+                console.error("Attempted to save local history, but localDB is not initialized.");
+                return; // Exit if localDB isn't ready
+            }
+            // 'localId' for the history entry itself will be auto-generated by Dexie's '++localId' primary key
+            console.log("Saving history to LocalDB.");
+            try {
+                const addedId = await localDB.history.add(historyEntry); // Dexie's add() returns the ID
+                console.log("✅ History entry added to LocalDB with localId:", addedId);
+                success = true;
+            } catch (err) {
+                console.error("❌ Failed to save history to LocalDB:", err.stack || err);
+                alert('Failed to save history locally: ' + err.message);
+            }
         }
+
+        if (success) {
+            form.innerHTML = `<div class="text-success fw-bold p-2">✅ Marked as made${currentUser ? '!' : ' (locally)!'}</div>`;
+            setTimeout(() => {
+                if (form.parentNode) form.remove();
+            }, 2000);
+            // If history view is active, it should ideally refresh.
+            // Or, a more global event system could notify the history view to update.
+            // For now, user will see update next time they visit History.
+        }
+        // If not successful, the form remains for the user to try again or cancel.
+        // Error messages are handled by alerts within the try/catch blocks.
     };
 
-    cancelBtn.onclick = () => form.remove();
+    cancelBtn.onclick = () => {
+        if (form.parentNode) form.remove();
+    };
 
     form.appendChild(textarea);
     form.appendChild(controls);
-    card.appendChild(form);
-    textarea.focus(); // Focus on the textarea
+    // Insert the form after the card's main content but before other action buttons if any,
+    // or simply at the end of the card body.
+    // Assuming 'card' is the main recipe card element:
+    const cardBody = card.querySelector('.card-body'); // Or a more specific container within the card
+    if (cardBody) {
+        // Check if there's a row of buttons at the bottom of card-body (like plan meal, mark as made)
+        const bottomButtonRow = cardBody.querySelector('.justify-content-start.gap-2.mt-3.pt-2.border-top');
+        if (bottomButtonRow) {
+            cardBody.insertBefore(form, bottomButtonRow); // Insert form before the bottom button row
+        } else {
+            cardBody.appendChild(form); // Append to end of card body if specific row not found
+        }
+    } else {
+        card.appendChild(form); // Fallback if no .card-body found
+    }
+    
+    textarea.focus();
 }
 
 
@@ -1414,54 +1513,172 @@ function showSuccessMessage(message) {
 
 
 
-function toggleRecipeForm() {
-  const form = document.getElementById('recipeForm');
-  if (!form) return;
-
-  const isNowOpen = form.classList.toggle('open');
-
-  const nameInput = document.getElementById('recipeNameInput');
-  const ingredientsTable = document.getElementById('ingredientsTable');
-  const instructionsInput = document.getElementById('recipeInstructionsInput');
-
-  if (isNowOpen) {
-    // ✅ When opening, clear old values and set up grid
-    if (nameInput) nameInput.value = '';
-    if (instructionsInput) instructionsInput.value = '';
-    if (ingredientsTable) {
-      ingredientsTable.innerHTML = '';
-      createIngredientRow();
-    }
-
+// --- Updated toggleRecipeForm Function ---
+/**
+ * Toggles the main recipe form visibility and resets it if opening for a new manual entry.
+ * @param {boolean} [forceOpen=false] - If true, ensures the form is opened. If false, it toggles.
+ * @param {boolean} [isManualEntrySetup=false] - If true (and opening), sets up for blank manual entry.
+ */
+function toggleRecipeForm(forceOpen = false, isManualEntrySetup = false) {
+    const form = document.getElementById('recipeForm');
+    const recipeNameInput = document.getElementById('recipeNameInput');
+    const ingredientsTable = document.getElementById('ingredientsTable');
+    const instructionsInput = document.getElementById('recipeInstructionsInput');
     const tagInput = document.getElementById('tagInput');
-    const tagsContainer = document.getElementById('tagsContainer');
+    const photoPreviewContainer = document.getElementById('photoPreviewContainer');
+    const ocrTextPasteArea = document.getElementById('ocrTextPaste');
 
-    if (tagInput && tagsContainer) {
-      tagInput.value = '';
-      tagsContainer.innerHTML = '';
-
-      tagInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ',') {
-          e.preventDefault();
-          const value = tagInput.value.trim().toLowerCase();
-          if (value && !currentTags.includes(value)) {
-            currentTags.push(value);
-            renderTags();
-          }
-          tagInput.value = '';
-        }
-      });
+    if (!form) {
+        console.error("Recipe form with ID 'recipeForm' not found.");
+        return;
     }
 
-    const preview = document.getElementById('photoPreviewContainer');
-    if (preview) preview.innerHTML = '';
-  } else {
-    // Optional cleanup when hiding
-    if (ingredientsTable) ingredientsTable.innerHTML = '';
-  }
+    const isCurrentlyOpen = form.classList.contains('open');
+
+    if (forceOpen) {
+        if (!isCurrentlyOpen) {
+            form.classList.add('open');
+        }
+        // When forcing open (e.g., for 'manual' or to show AI results),
+        // reset only if it's specifically for a new manual entry.
+        if (isManualEntrySetup) {
+            console.log("toggleRecipeForm: Opening and resetting for new manual entry.");
+            if (recipeNameInput) recipeNameInput.value = '';
+            if (instructionsInput) instructionsInput.value = '';
+            if (ingredientsTable) {
+                ingredientsTable.innerHTML = '';
+                if (typeof createIngredientRow === "function") createIngredientRow();
+            }
+            currentTags = []; // Reset global/scoped tags for the form
+            if (typeof renderTags === "function") renderTags();
+            if (tagInput) tagInput.value = '';
+            
+            if (photoPreviewContainer) photoPreviewContainer.innerHTML = '';
+            if (ocrTextPasteArea) {
+                ocrTextPasteArea.value = `📛 RECIPE NAME\n====================\n\n🧂 INGREDIENTS\n====================\n\n📝 INSTRUCTIONS\n====================`;
+            }
+            // Ensure accordion sections for photo/paste are collapsed for a fresh manual entry
+            const collapseOCR = document.getElementById('collapseOCR');
+            const collapsePaste = document.getElementById('collapsePaste');
+            if (collapseOCR) {
+                const bsCollapseOCR = bootstrap.Collapse.getInstance(collapseOCR) || new bootstrap.Collapse(collapseOCR, {toggle: false});
+                bsCollapseOCR.hide();
+            }
+            if (collapsePaste) {
+                const bsCollapsePaste = bootstrap.Collapse.getInstance(collapsePaste) || new bootstrap.Collapse(collapsePaste, {toggle: false});
+                bsCollapsePaste.hide();
+            }
+            if (recipeNameInput) recipeNameInput.focus();
+        }
+    } else { // Standard toggle
+        form.classList.toggle('open');
+        if (form.classList.contains('open') && !isCurrentlyOpen) { // If just toggled to open
+            // Reset for new manual entry if toggled open (old behavior)
+            console.log("toggleRecipeForm: Toggled open, resetting for new manual entry.");
+            if (recipeNameInput) recipeNameInput.value = '';
+            if (instructionsInput) instructionsInput.value = '';
+            if (ingredientsTable) {
+                ingredientsTable.innerHTML = '';
+                if (typeof createIngredientRow === "function") createIngredientRow();
+            }
+            currentTags = [];
+            if (typeof renderTags === "function") renderTags();
+            if (tagInput) tagInput.value = '';
+            if (photoPreviewContainer) photoPreviewContainer.innerHTML = '';
+            if (ocrTextPasteArea) {
+                 ocrTextPasteArea.value = `📛 RECIPE NAME\n====================\n\n🧂 INGREDIENTS\n====================\n\n📝 INSTRUCTIONS\n====================`;
+            }
+            if (recipeNameInput) recipeNameInput.focus();
+        }
+    }
+
+    if (form.classList.contains('open')) {
+        if (typeof initializeMainRecipeFormTagInput === "function") {
+            initializeMainRecipeFormTagInput();
+        }
+        // Scroll the form into view if it's opened
+        form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
 }
 
+function getAddRecipeFormHTML() {
+    // This MUST return the full HTML string for the content of <div id="recipeForm">...</div>
+    // including the manual fields AND the accordion for Photo/Paste.
+    // Example:
+    return `
+        <div class="card card-body">
+            <label class="form-label fw-semibold">📛 Recipe Name</label>
+            <input class="form-control mb-3" id="recipeNameInput" placeholder="Recipe name" />
 
+            <div class="mb-3">
+                <label class="form-label fw-semibold mt-3">🧂 Ingredients</label>
+                <div id="ingredientsTable"></div>
+                 <button type="button" class="btn btn-outline-secondary btn-sm mt-2" onclick="createIngredientRow('', '', '')"><i class="bi bi-plus-circle"></i> Add Ingredient Row</button>
+            </div>
+
+            <label class="form-label fw-semibold mt-3">📝 Instructions</label>
+            <textarea class="form-control mb-3" id="recipeInstructionsInput" rows="4" placeholder="Instructions"></textarea>
+
+            <label class="form-label fw-semibold mt-3">🏷️ Tags</label>
+            <div class="mb-3">
+                <div id="tagsContainer" class="form-control d-flex flex-wrap align-items-center gap-1 p-2 position-relative" style="min-height: 38px; background-color: #f8f9fa; border: 1px dashed #ced4da;">
+                    <span id="tagsPlaceholder" class="text-muted position-absolute small" style="left: 10px; top: 50%; transform: translateY(-50%); pointer-events: none;">Add some tags...</span>
+                </div>
+                <div class="input-group input-group-sm mt-2">
+                    <input type="text" id="tagInput" class="form-control" placeholder="Type a tag & press Enter" />
+                    <button type="button" id="tagAddButton" class="btn btn-outline-secondary"><i class="bi bi-plus"></i> Add</button>
+                </div>
+            </div>
+
+            <hr class="my-3" style="border-top: 1px solid #ccc;" />
+
+            <div class="d-flex gap-2 mb-3 justify-content-end">
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleRecipeForm()">Cancel</button>
+                <button type="button" class="btn btn-success btn-sm" onclick="saveRecipe()">Save Recipe</button>
+            </div>
+
+            <div class="accordion" id="addRecipeOptionsAccordion">
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="headingOCR">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOCR" aria-expanded="false" aria-controls="collapseOCR">
+                            📸 Add Recipe by Photo
+                        </button>
+                    </h2>
+                    <div id="collapseOCR" class="accordion-collapse collapse" aria-labelledby="headingOCR" data-bs-parent="#addRecipeOptionsAccordion">
+                        <div class="accordion-body">
+                            <label for="recipePhotoInput" class="form-label">Upload or Take a Recipe Photo</label>
+                            <input type="file" id="recipePhotoInput" accept="image/*" capture="environment" class="form-control mb-3" onchange="handleRecipePhoto(event)" />
+                            <div id="photoPreviewContainer" class="mb-3"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="headingPaste">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePaste" aria-expanded="false" aria-controls="collapsePaste">
+                            ⌨️ Add Recipe by Pasting Text
+                        </button>
+                    </h2>
+                    <div id="collapsePaste" class="accordion-collapse collapse" aria-labelledby="headingPaste" data-bs-parent="#addRecipeOptionsAccordion">
+                        <div class="accordion-body">
+                            <label for="ocrTextPaste" class="form-label">Paste your recipe text below:</label>
+                            <textarea id="ocrTextPaste" class="form-control mb-2" rows="10">
+📛 RECIPE NAME
+====================
+
+🧂 INGREDIENTS
+====================
+
+📝 INSTRUCTIONS
+====================
+                            </textarea>
+                            <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="handlePastedRecipeText()">✨ Parse Text to Fill Form</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
 
 function showRandomRecipe() {
   const view = document.getElementById('mainView');
@@ -1482,53 +1699,71 @@ function showRandomRecipe() {
   displayRecipes([randomRecipe], 'randomRecipeCard');
 }
 
+function clearHistoryFilters() {
+    const historySearchInput = document.getElementById('historySearch');
+    const historyTagSearchInput = document.getElementById('historyTagSearch');
+
+    if (historySearchInput) historySearchInput.value = '';
+    if (historyTagSearchInput) historyTagSearchInput.value = '';
+
+    filterHistory(); // Re-apply empty filters to show all history items
+}
 
 function viewHistory() {
+    // If using page titles and active nav states:
+    updatePageTitle("History");
+    setActiveNavButton("history");
+
     const view = document.getElementById('mainView');
-    view.className = 'section-history'; // For potential specific styling
+    if (!view) {
+        console.error("mainView element not found for viewHistory");
+        return;
+    }
+    view.className = 'section-history container py-3'; // Consistent class
+
     view.innerHTML = `
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recipe History</h5>
+            <button class="btn btn-outline-info btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#historyFiltersCollapse" aria-expanded="false" aria-controls="historyFiltersCollapse" title="Toggle history filters">
+                <i class="bi bi-funnel-fill"></i> Filters
+            </button>
+        </div>
+
+        <div class="collapse mb-3" id="historyFiltersCollapse">
+            <div class="filter-section card card-body bg-light-subtle">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0">Filter History</h6>
+                    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearHistoryFilters()" title="Clear all history filters">
+                        <i class="bi bi-x-lg"></i> Clear Filters
+                    </button>
+                </div>
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <label for="historySearch" class="form-label small mb-1">Search Notes/Recipe:</label>
+                        <input type="text" class="form-control form-control-sm" id="historySearch" placeholder="Search notes or recipe name..." oninput="filterHistory()">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="historyTagSearch" class="form-label small mb-1">Filter by Tag(s):</label>
+                        <input type="text" class="form-control form-control-sm" id="historyTagSearch" placeholder="e.g., dinner,easy (comma-sep)" oninput="filterHistory()">
+                    </div>
+                </div>
             </div>
-        <input type="text" class="form-control mb-2" id="historySearch" placeholder="Search notes or recipe name..." oninput="filterHistory()" />
-        <input type="text" class="form-control mb-3" id="historyTagSearch" placeholder="Filter by tag (e.g., dinner,easy)..." oninput="filterHistory()" />
+        </div>
+
         <div id="historyListContainer">
-            <div id="historyList" class="mt-2">Loading...</div>
+            <div id="historyList" class="mt-2">Loading history...</div>
         </div>
     `;
 
-    if (currentUser) {
-        // --- LOGGED IN: Load from Firebase ---
-        console.log("Loading history from Firestore for user:", currentUser.uid);
-        db.collection("history")
-            .where('uid', '==', currentUser.uid)
-            .orderBy('timestamp', 'desc')
-            .get()
-            .then(snapshot => {
-                const historyEntries = snapshot.docs.map(doc => ({ firestoreId: doc.id, ...doc.data() }));
-                // Pass firestoreId as 'id' for renderHistoryList if it expects 'id' for deletion
-                renderHistoryList(historyEntries.map(e => ({ ...e, id: e.firestoreId })));
-            })
-            .catch(err => {
-                console.error("Error loading history from Firestore:", err);
-                document.getElementById('historyList').innerHTML = '<p class="text-danger">Error loading history.</p>';
-            });
+    // Load history data (which will then call renderHistoryList)
+    // The filterHistory function will be responsible for applying filters
+    if (typeof filterHistory === "function") {
+        filterHistory(); // Call initially to load and display (with empty filters)
+    } else if (typeof loadHistory === "function") { // Fallback if filterHistory isn't the main loader yet
+        loadHistory();
     } else {
-        // --- NOT LOGGED IN: Load from LocalDB ---
-        console.log("Loading history from LocalDB.");
-        if (!localDB) {
-            document.getElementById('historyList').innerHTML = '<p class="text-warning">Local storage not available.</p>';
-            return;
-        }
-        localDB.history.orderBy('timestamp').reverse().toArray()
-            .then(historyEntries => {
-                // Pass localId as 'id' for renderHistoryList
-                renderHistoryList(historyEntries.map(e => ({ ...e, id: e.localId })));
-            })
-            .catch(err => {
-                console.error("Error loading history from LocalDB:", err.stack || err);
-                document.getElementById('historyList').innerHTML = '<p class="text-danger">Error loading local history.</p>';
-            });
+        console.error("loadHistory or filterHistory function is not defined.");
+        const historyListDiv = document.getElementById('historyList');
+        if (historyListDiv) historyListDiv.innerHTML = '<p class="text-danger text-center">Error initializing history view.</p>';
     }
 }
 
@@ -1762,7 +1997,7 @@ function populateIngredientSelect() {
 }
 
 function escapeHtml(unsafe) {
-    if (typeof unsafe !== 'string') return unsafe; // Return non-strings as is
+    if (typeof unsafe !== 'string') return unsafe;
     return unsafe
          .replace(/&/g, "&amp;")
          .replace(/</g, "&lt;")
@@ -1772,58 +2007,72 @@ function escapeHtml(unsafe) {
 }
 
 function applyAllRecipeFilters() {
-    const nameSearchTerm = document.getElementById('nameSearch') ?
-                           document.getElementById('nameSearch').value.toLowerCase().trim() : "";
-    const ingredientSearchTerm = document.getElementById('recipeSearch') ?
-                                 document.getElementById('recipeSearch').value.toLowerCase().trim() : "";
-    const tagSearchTerm = document.getElementById('tagSearch') ?
-                          document.getElementById('tagSearch').value.toLowerCase().trim() : "";
+    // Use the IDs that are actually in your showRecipeFilter's innerHTML
+    const nameSearchInput = document.getElementById('nameSearch'); 
+    const ingredientSearchInput = document.getElementById('recipeSearch'); 
+    const tagSearchInput = document.getElementById('tagSearch');    
 
-    let currentFilteredRecipes = [...recipes]; // Start with a fresh copy of all recipes
+    const nameSearchTerm = nameSearchInput ? nameSearchInput.value.toLowerCase().trim() : "";
+    const ingredientSearchValue = ingredientSearchInput ? ingredientSearchInput.value.toLowerCase().trim() : "";
+    const ingredientSearchTermsArray = ingredientSearchValue.split(',')
+                                         .map(term => term.trim().toLowerCase())
+                                         .filter(Boolean);
+    const tagSearchValue = tagSearchInput ? tagSearchInput.value.toLowerCase().trim() : "";
+    const tagTermsArray = tagSearchValue.split(',')
+                            .map(t => t.trim().toLowerCase())
+                            .filter(Boolean);
 
-    // Filter by Name
+    console.log("Applying filters. Name:", `"${nameSearchTerm}"`, "Ingredients:", ingredientSearchTermsArray, "Tags:", tagTermsArray);
+    console.log("Based on master recipes count:", recipes.length);
+
+
+    let filteredList = [...recipes]; 
+
+    // Filter by Recipe Name
     if (nameSearchTerm) {
-        currentFilteredRecipes = currentFilteredRecipes.filter(recipe =>
+        filteredList = filteredList.filter(recipe =>
             recipe.name && recipe.name.toLowerCase().includes(nameSearchTerm)
         );
     }
 
-    // Filter by Ingredient(s) - using your existing logic style
-    if (ingredientSearchTerm) {
-        const ingredientSearchTerms = ingredientSearchTerm.split(',').map(s => s.trim()).filter(Boolean);
-        if (ingredientSearchTerms.length > 0) {
-            currentFilteredRecipes = currentFilteredRecipes.filter(recipe => {
-                if (!recipe.ingredients) return false;
-                const ingredientNames = recipe.ingredients.map(ing =>
-                    typeof ing === 'object' ? (ing.name || '').toLowerCase() : (ing || '').toLowerCase()
-                );
-                return ingredientSearchTerms.every(term => // All search terms must match at least one ingredient
-                    ingredientNames.some(ingName => ingName.includes(term))
-                );
+    // Filter by Ingredients
+    if (ingredientSearchTermsArray.length > 0) {
+        filteredList = filteredList.filter(recipe => {
+            if (!recipe.ingredients || recipe.ingredients.length === 0) return false;
+            const ingredientNamesLower = recipe.ingredients.map(ing => {
+                const name = (typeof ing === 'object' && ing.name) ? ing.name : (typeof ing === 'string' ? ing : '');
+                return name.toLowerCase();
             });
-        }
+            return ingredientSearchTermsArray.every(term =>
+                ingredientNamesLower.some(ingName => ingName.includes(term))
+            );
+        });
     }
 
-    // Filter by Tag(s) - using your existing logic style
-    if (tagSearchTerm) {
-        const tagTerms = tagSearchTerm.split(',').map(t => t.trim()).filter(Boolean);
-        if (tagTerms.length > 0) {
-            currentFilteredRecipes = currentFilteredRecipes.filter(recipe => {
-                if (!recipe.tags) return false;
-                const recipeTags = recipe.tags.map(tag => tag.toLowerCase());
-                return tagTerms.every(term => // All search tags must match at least one recipe tag
-                    recipeTags.some(tag => tag.startsWith(term)) // Your original was startsWith, can change to includes
-                );
-            });
-        }
+    // Filter by Tags
+    if (tagTermsArray.length > 0) {
+        filteredList = filteredList.filter(recipe => {
+            if (!recipe.tags || recipe.tags.length === 0) return false;
+            const recipeTagsLower = recipe.tags.map(tag => tag.toLowerCase());
+            return tagTermsArray.every(term =>
+                recipeTagsLower.some(tag => tag.includes(term))
+            );
+        });
     }
-
+    
     const displayOptions = {};
-    if (nameSearchTerm) displayOptions.highlightNameTerm = nameSearchTerm;
-    if (ingredientSearchTerm) displayOptions.highlightIngredients = ingredientSearchTerm.split(',').map(s => s.trim()).filter(Boolean);
-    if (tagSearchTerm) displayOptions.highlightTags = tagSearchTerm.split(',').map(t => t.trim()).filter(Boolean);
+    if (nameSearchTerm) {
+        displayOptions.highlightNameTerm = nameSearchTerm;
+    }
+    if (ingredientSearchTermsArray.length > 0) {
+        displayOptions.highlightIngredients = ingredientSearchTermsArray;
+    }
+    if (tagTermsArray.length > 0) {
+        displayOptions.highlightTags = tagTermsArray;
+    }
 
-    displayRecipes(currentFilteredRecipes, 'recipeResults', displayOptions);
+    console.log("Final filtered list count:", filteredList.length);
+    displayRecipes(filteredList, 'recipeResults', displayOptions);
 }
 
 function filterRecipesByText() { // This will now be triggered by ingredient search input
@@ -3377,55 +3626,223 @@ function loadIngredientsFromFirestore() {
 }
 
 function showPlanning() {
+    updatePageTitle("Meal Plan & Shopping");
+    setActiveNavButton("plan");
+
     const view = document.getElementById('mainView');
-    view.className = 'section-planning container py-3'; // Added container and padding
+    if (!view) {
+        console.error("mainView element not found for showPlanning");
+        return;
+    }
+    view.className = 'section-planning container py-3';
+
     view.innerHTML = `
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="mb-0"><i class="bi bi-calendar-week"></i> Planned Meals</h5>
-            <button id="clearAllPlanningBtn" class="btn btn-outline-danger btn-sm" onclick="confirmClearAllPlanning(this)">
-                <i class="bi bi-trash3"></i> Clear All Planned
-            </button>
+        <div class="planned-meals-header mb-3">
+            <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center">
+                <h4 class="mb-2 mb-sm-0"><i class="bi bi-calendar-week me-2"></i>Planned Meals</h4>
+                
+                <div class="btn-toolbar" role="toolbar" aria-label="Planned meals actions">
+                    <div class="btn-group btn-group-sm w-100" role="group">
+                        <button class="btn btn-outline-info" style="flex-basis: 50%;" type="button" data-bs-toggle="collapse" data-bs-target="#planningFiltersCollapse" aria-expanded="false" aria-controls="planningFiltersCollapse" title="Toggle filters for planned meals">
+                            <i class="bi bi-funnel-fill"></i> Filters
+                        </button>
+                        <button id="clearAllPlanningBtn" class="btn btn-outline-danger" style="flex-basis: 50%;" onclick="confirmClearAllPlanning(this)" title="Clear all planned meals">
+                            <i class="bi bi-trash3"></i> Clear All
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div id="plannedMealsList" class="mb-4 list-group"></div> <hr class="my-4" />
+
+        <div class="collapse mb-3" id="planningFiltersCollapse">
+            <div class="filter-section card card-body bg-light-subtle">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0">Filter Planned Meals</h6>
+                    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearPlanningFilters()" title="Clear all planning filters">
+                        <i class="bi bi-x-lg"></i> Clear Filters
+                    </button>
+                </div>
+                <div class="row g-2">
+                    <div class="col-md-6 col-lg-4">
+                        <label for="planDateRangeStart" class="form-label small mb-1">From Date:</label>
+                        <input type="date" class="form-control form-control-sm" id="planDateRangeStart" oninput="applyPlanningFilters()">
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <label for="planDateRangeEnd" class="form-label small mb-1">To Date:</label>
+                        <input type="date" class="form-control form-control-sm" id="planDateRangeEnd" oninput="applyPlanningFilters()">
+                    </div>
+                    <div class="col-lg-4 col-12">
+                        <label for="planRecipeNameSearch" class="form-label small mb-1">Search Recipe Name in Plan:</label>
+                        <input type="text" class="form-control form-control-sm" id="planRecipeNameSearch" placeholder="Enter recipe name..." oninput="applyPlanningFilters()">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="plannedMealsList" class="mb-4 list-group">
+            </div>
+
+        <hr class="my-4" />
 
         <h5 class="mb-3"><i class="bi bi-calendar-plus"></i> Plan a New Meal</h5>
-        <div class="card card-body bg-light-subtle mb-4"> <div class="row g-3">
+        <div class="card card-body bg-light-subtle mb-4">
+            <div class="row g-3">
                 <div class="col-md-6">
                     <label for="planDate" class="form-label fw-semibold">Select Date:</label>
-                    <input type="date" class="form-control" id="planDate" value="${new Date().toISOString().split('T')[0]}">
+                    <input type="date" class="form-control form-control-sm" id="planDate" value="${new Date().toISOString().split('T')[0]}">
                 </div>
                 <div class="col-md-6">
                     <label for="planRecipe" class="form-label fw-semibold">Select Recipe:</label>
-                    <select id="planRecipe" class="form-select">
+                    <select id="planRecipe" class="form-select form-select-sm">
                         <option value="">-- Choose a recipe --</option>
                     </select>
                 </div>
             </div>
+            <div id="planMealError" class="alert alert-danger small p-2 mt-3" style="display:none;"></div>
             <div class="mt-3 text-end">
-                <button class="btn btn-success" onclick="addPlannedMeal()">
-                    <i class="bi bi-plus-circle"></i> Add to Plan
-                </button>
+                <button class="btn btn-success btn-sm" onclick="addPlannedMeal()"><i class="bi bi-plus-circle"></i> Add to Plan</button>
             </div>
         </div>
 
         <hr class="my-4" />
         
-        <div class="d-flex justify-content-between align-items-center mb-3">
-             <h5 class="mb-0"><i class="bi bi-cart3"></i> Shopping List</h5>
-             <div> <button class="btn btn-primary me-2" onclick="generateShoppingList()">
-                    <i class="bi bi-list-check"></i> Generate Ingredient Checklist
-                </button>
-                <button id="clearShoppingListBtn" class="btn btn-outline-danger btn-sm" onclick="confirmClearShoppingList()" disabled>
-                    <i class="bi bi-trash2"></i> Clear Shopping List
-                </button>
+        <div class="shopping-list-header mb-3">
+            <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center">
+                <h5 class="mb-2 mb-sm-0"><i class="bi bi-cart3"></i> Shopping List</h5>
+                <div class="btn-toolbar" role="toolbar" aria-label="Shopping list actions">
+                    <div class="btn-group btn-group-sm w-100" role="group">
+                        <button class="btn btn-primary" style="flex-basis: 40%;" onclick="generateShoppingList()" title="Generate list from current plans">
+                            <i class="bi bi-list-check"></i> Generate
+                        </button>
+                        <button id="clearCheckedShoppingListBtn" class="btn btn-outline-success" style="flex-basis: 30%; display: none;" onclick="confirmClearCheckedShoppingListItems()" title="Clear checked items from list">
+                            <i class="bi bi-check2-square"></i> Checked
+                        </button>
+                        <button id="clearShoppingListBtn" class="btn btn-outline-danger" style="flex-basis: 30%;" onclick="confirmClearShoppingList()" disabled title="Clear entire shopping list">
+                            <i class="bi bi-trash2"></i> Clear All
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
-        <div id="shoppingListResults" class="mb-4"></div>
+        <div id="shoppingListResults" class="mb-4">
+            <div class="list-group-item text-muted text-center">Generate a list from your planned meals.</div>
+        </div>
     `;
 
-    populateRecipeDropdownForPlanning(); // Renamed for clarity
-    loadPlannedMeals();
-    loadShoppingList(); // This will be adapted in the next phase
+    if (typeof populateRecipeDropdownForPlanning === "function") {
+        populateRecipeDropdownForPlanning();
+    } else {
+        console.error("populateRecipeDropdownForPlanning function is not defined.");
+    }
+
+    if (typeof applyPlanningFilters === "function") {
+        applyPlanningFilters(); 
+    } else {
+        console.error("applyPlanningFilters function is not defined. Falling back to loadPlannedMeals.");
+        if (typeof loadPlannedMeals === "function") {
+            loadPlannedMeals();
+        } else {
+            console.error("loadPlannedMeals also not defined.");
+            const plannedListDiv = document.getElementById('plannedMealsList');
+            if(plannedListDiv) plannedListDiv.innerHTML = '<div class="list-group-item text-danger text-center">Error: Could not load planned meals function.</div>';
+        }
+    }
+
+    if (typeof loadShoppingList === "function") {
+        loadShoppingList();
+    } else {
+        console.error("loadShoppingList function is not defined.");
+    }
+}
+
+
+/**
+ * Clears all filter inputs for the planning view and re-applies filters (showing all).
+ */
+function clearPlanningFilters() {
+    const dateStartInput = document.getElementById('planDateRangeStart');
+    const dateEndInput = document.getElementById('planDateRangeEnd');
+    const nameSearchInput = document.getElementById('planRecipeNameSearch');
+
+    if (dateStartInput) dateStartInput.value = '';
+    if (dateEndInput) dateEndInput.value = '';
+    if (nameSearchInput) nameSearchInput.value = '';
+
+    if (typeof applyPlanningFilters === "function") {
+        applyPlanningFilters();
+    } else {
+        console.error("applyPlanningFilters is not defined. Cannot clear and refresh planning view.");
+    }
+}
+
+async function applyPlanningFilters() {
+    const listContainer = document.getElementById('plannedMealsList');
+    if (!listContainer) {
+        console.error("applyPlanningFilters: plannedMealsList container not found.");
+        return;
+    }
+    listContainer.innerHTML = '<div class="list-group-item text-muted text-center">Loading & Filtering Planned Meals... <span class="spinner-border spinner-border-sm"></span></div>';
+
+    // Get filter values
+    const dateStartFilter = document.getElementById('planDateRangeStart')?.value;
+    const dateEndFilter = document.getElementById('planDateRangeEnd')?.value;
+    const nameSearchTerm = document.getElementById('planRecipeNameSearch')?.value.toLowerCase().trim();
+    
+    let allPlannedMeals = [];
+
+    try {
+        if (currentUser) {
+            const querySnapshot = await db.collection("planning")
+                .where('uid', '==', currentUser.uid)
+                .orderBy('date') // Base order by date
+                .get();
+            if (!querySnapshot.empty) {
+                allPlannedMeals = querySnapshot.docs.map(doc => ({ firestoreId: doc.id, id: doc.id, ...doc.data() }));
+            }
+        } else if (localDB) {
+            allPlannedMeals = await localDB.planning.orderBy('date').toArray();
+            allPlannedMeals = allPlannedMeals.map(p => ({ ...p, id: p.localId, isLocal: true }));
+        } else {
+             listContainer.innerHTML = '<div class="alert alert-warning text-center">Local storage not available.</div>';
+             return;
+        }
+
+        // Apply client-side filters to the fetched 'allPlannedMeals'
+        let filteredList = [...allPlannedMeals];
+
+        if (dateStartFilter) {
+            filteredList = filteredList.filter(plan => plan.date >= dateStartFilter);
+        }
+        if (dateEndFilter) {
+            // Ensure the end date filter includes the entire day
+            const endOfDay = new Date(dateEndFilter + 'T23:59:59.999');
+            filteredList = filteredList.filter(plan => {
+                const planDate = new Date(plan.date + 'T00:00:00');
+                return planDate <= endOfDay;
+            });
+        }
+        if (nameSearchTerm) {
+            filteredList = filteredList.filter(plan => 
+                plan.recipeName && plan.recipeName.toLowerCase().includes(nameSearchTerm)
+            );
+        }
+        
+        const displayOptions = {};
+        if (nameSearchTerm) {
+            displayOptions.highlightNameTerm = nameSearchTerm; 
+        }
+
+        if (typeof renderPlannedMealsList === "function") {
+            renderPlannedMealsList(filteredList, displayOptions);
+        } else {
+            console.error("renderPlannedMealsList function is not defined.");
+            listContainer.innerHTML = '<div class="alert alert-danger text-center">Error: Cannot display planned meals.</div>';
+        }
+
+    } catch (error) {
+        console.error("Error loading/filtering planned meals:", error.stack || error);
+        listContainer.innerHTML = '<div class="alert alert-danger text-center">Could not load or filter planned meals.</div>';
+    }
 }
 
 function populateRecipeDropdownForPlanning() {
@@ -4294,8 +4711,6 @@ function updateClearCheckedButton(ingredients) {
   }
 }
 
-const auth = firebase.auth();
-
 // Utility to get initials
 function getInitials(name) {
   if (!name) return '?';
@@ -4305,125 +4720,246 @@ function getInitials(name) {
   return first + last;
 }
 
+/**
+ * Sets the 'active' class on the correct navigation button for both mobile and desktop
+ * and removes it from others.
+ * @param {string} viewName - The name of the view to activate (e.g., 'recipes', 'history', 'pantry', 'plan', 'account').
+ */
+function setActiveNavButton(viewName) {
+    if (!viewName) {
+        console.warn("setActiveNavButton called with no viewName.");
+        return;
+    }
+    currentActiveView = viewName.toLowerCase(); // Standardize to lowercase
+
+    // --- Handle Mobile Bottom Navigation Bar ---
+    const bottomNavButtons = document.querySelectorAll('#bottomNavBar .btn-nav');
+    if (bottomNavButtons.length > 0) {
+        bottomNavButtons.forEach(btn => {
+            btn.classList.remove('active'); // Remove 'active' from all
+            if (btn.dataset.view === currentActiveView) {
+                btn.classList.add('active'); // Add 'active' to the matching button
+            }
+        });
+    } else {
+        // This might log if on desktop where bottomNavBar is display:none, which is fine.
+        // console.warn("#bottomNavBar .btn-nav elements not found.");
+    }
+
+    // --- Handle Desktop Top Menu Bar ---
+    // Assumes buttons in #menuBar have data-view attributes matching viewName
+    // and that active state means changing from btn-outline-* to btn-* (solid)
+    const desktopNavButtons = document.querySelectorAll('#menuBar button.btn');
+    if (desktopNavButtons.length > 0) {
+        desktopNavButtons.forEach(btn => {
+            // Reset all desktop buttons to their default outline style
+            // This requires knowing their original outline style or having a common one
+            // For simplicity, we'll remove 'active' and a generic 'btn-primary' (if used for active)
+            // and ensure their specific outline class is present.
+            btn.classList.remove('active', 'btn-primary', 'btn-info', 'btn-success', 'btn-secondary', 'btn-warning'); // Remove common solid styles and active
+
+            // Re-apply original outline style based on its data-view or a default
+            const originalOutlineStyle = {
+                'recipes': 'btn-outline-primary',
+                'history': 'btn-outline-info',
+                'plan': 'btn-outline-success',
+                'pantry': 'btn-outline-secondary',
+                // 'chefbot' doesn't have a data-view for active state typically
+            };
+            
+            if (btn.dataset.view && originalOutlineStyle[btn.dataset.view]) {
+                if (!btn.classList.contains(originalOutlineStyle[btn.dataset.view])) {
+                    // Remove other outlines before adding the correct one
+                    Object.values(originalOutlineStyle).forEach(cls => btn.classList.remove(cls));
+                    btn.classList.add(originalOutlineStyle[btn.dataset.view]);
+                }
+            } else if (!btn.getAttribute('onclick')?.includes('showChatbotModal')) { 
+                // Default for any other buttons that aren't the Chef Bot button
+                // and don't have a specific mapping (unlikely if data-view is used consistently)
+                if (!btn.classList.contains('btn-outline-dark')) { // Assuming a default outline
+                     Object.values(originalOutlineStyle).forEach(cls => btn.classList.remove(cls)); // remove specific outlines
+                     btn.classList.add('btn-outline-dark'); // a generic fallback
+                }
+            }
+
+
+            // Set the active desktop button
+            if (btn.dataset.view === currentActiveView) {
+                btn.classList.add('active');
+                // Change from outline to solid for active state
+                if (originalOutlineStyle[btn.dataset.view]) {
+                    btn.classList.remove(originalOutlineStyle[btn.dataset.view]); // Remove e.g., btn-outline-primary
+                    btn.classList.add(originalOutlineStyle[btn.dataset.view].replace('outline-', '')); // Add e.g., btn-primary
+                } else {
+                    btn.classList.remove('btn-outline-dark');
+                    btn.classList.add('btn-dark'); // Fallback solid style
+                }
+            }
+        });
+    } else {
+        // console.warn("#menuBar button.btn elements not found.");
+    }
+
+    console.log(`Active navigation set to: ${currentActiveView}`);
+}
+
+function handleAccountNavClick() {
+    setActiveNavButton("account");
+    console.log("handleAccountNavClick called. currentUser:", currentUser); // First debug log
+    
+    // Set the active state for the 'account' tab
+    // Make sure setActiveNavButton is defined and works correctly.
+    if (typeof setActiveNavButton === "function") {
+        setActiveNavButton("account");
+    } else {
+        console.warn("setActiveNavButton function is not defined.");
+    }
+
+    if (currentUser) {
+        // User is logged in - show account options (e.g., a modal with logout)
+        console.log("User is logged in. Showing account options.");
+        const userEmail = currentUser.email || "your account";
+        showInfoConfirmModal( // Ensure this function and its modal instance are working
+            "Account Options",
+            `<p>You are signed in as ${escapeHtml(userEmail)}.</p><p class="mt-3">Manage your account or view preferences here (eventually).</p>`,
+            [
+                { 
+                    text: 'Log Out', 
+                    class: 'btn-danger btn-sm', 
+                    onClick: () => { 
+                        if(infoConfirmModalInstance) infoConfirmModalInstance.hide(); 
+                        signOut(); 
+                    },
+                    dismissOnClick: false 
+                },
+                { text: 'Close', class: 'btn-secondary btn-sm', dismiss: true }
+            ]
+        );
+    } else {
+        // User is not logged in - show the login modal
+        console.log("User is not logged in. Calling showLoginModal().");
+        if (typeof showLoginModal === "function") {
+            showLoginModal();
+        } else {
+            console.error("showLoginModal function is not defined!");
+            alert("Login functionality is currently unavailable.");
+        }
+    }
+}
+
 // Update auth UI
 function updateAuthUI(user) {
-    const authArea = document.getElementById('userAuthArea');
-    authArea.innerHTML = '';
+    const authAreaDesktop = document.getElementById('userAuthAreaDesktop');
+    const authNavButtonMobile = document.getElementById('userAuthNavButton'); // For the mobile bottom nav "Account" button
 
-    if (user) {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'position-relative';
+    // --- 1. Update Desktop Authentication Area ---
+    if (authAreaDesktop) {
+        authAreaDesktop.innerHTML = ''; // Clear previous content
+        if (user) {
+            // User is signed in - Create the desktop dropdown
+            const wrapper = document.createElement('div');
+            wrapper.className = 'position-relative';
 
-        const avatarBtn = document.createElement('button');
-        // ... (avatarBtn setup remains the same as before) ...
-        avatarBtn.className = 'btn btn-outline-dark rounded-circle fw-bold d-flex align-items-center justify-content-center';
-        avatarBtn.style.width = '45px';
-        avatarBtn.style.height = '45px';
-        avatarBtn.style.fontSize = '1rem';
-        avatarBtn.style.padding = '0';
-        avatarBtn.title = user.displayName || user.email || 'Account';
-        avatarBtn.textContent = getInitials(user.displayName || user.email);
-        avatarBtn.setAttribute('aria-expanded', 'false');
+            const avatarBtn = document.createElement('button');
+            avatarBtn.className = 'btn btn-outline-dark rounded-circle fw-bold d-flex align-items-center justify-content-center';
+            avatarBtn.style.width = '40px'; // Slightly smaller for a top bar
+            avatarBtn.style.height = '40px';
+            avatarBtn.style.fontSize = '0.9rem';
+            avatarBtn.style.padding = '0';
+            avatarBtn.title = user.displayName || user.email || 'Account';
+            avatarBtn.textContent = getInitials(user.displayName || user.email); // Ensure getInitials is defined
+            avatarBtn.setAttribute('aria-expanded', 'false');
+            avatarBtn.setAttribute('data-bs-toggle', 'dropdown'); // For Bootstrap dropdown behavior (optional)
 
+            const dropdownMenu = document.createElement('div');
+            dropdownMenu.className = 'user-info-dropdown shadow rounded dropdown-menu dropdown-menu-end'; // Added Bootstrap classes
+            // Removed inline styles for display, position, z-index, width, bg-color, padding, border as Bootstrap + CSS should handle it.
+            // CSS will target .user-info-dropdown
 
-        const dropdownMenu = document.createElement('div');
-        dropdownMenu.className = 'user-info-dropdown shadow rounded'; // Using Bootstrap's `rounded` and `shadow`
-        dropdownMenu.style.display = 'none';
-        dropdownMenu.style.position = 'absolute';
-        dropdownMenu.style.top = '55px'; 
-        dropdownMenu.style.right = '0';
-        dropdownMenu.style.width = '280px'; // Slightly narrower or adjust as you like
-        dropdownMenu.style.backgroundColor = 'white';
-        // Removed border: '1px solid #ddd'; as shadow and padding will define edges
-        dropdownMenu.style.zIndex = '1050';
-        dropdownMenu.style.padding = '0.5rem 0'; // Add padding top/bottom for the whole menu
-
-        // -- Dropdown Header: "Signed in as" (Optional, can be removed for more sleekness if email is prominent) --
-        const dropdownHeader = document.createElement('div');
-        dropdownHeader.className = 'px-3 pt-2 pb-1 text-muted small'; // Adjusted padding
-        dropdownHeader.textContent = 'Signed in as:';
-        dropdownMenu.appendChild(dropdownHeader);
-
-        // -- User Info Area (Icon + Email) --
-        const userInfoDiv = document.createElement('div');
-        userInfoDiv.className = 'px-3 pb-2 pt-1 d-flex align-items-center'; // Adjusted padding
-
-        let providerIconHtml = '<i class="bi bi-person-circle me-2 fs-4 text-secondary"></i>'; // Default, larger icon
-        if (user.providerData && user.providerData.length > 0) {
-            const mainProviderId = user.providerData[0].providerId;
-            if (mainProviderId === 'google.com') {
-                providerIconHtml = '<i class="bi bi-google me-2 fs-4" style="color: #DB4437;"></i>';
-            } else if (mainProviderId === 'password') {
-                providerIconHtml = '<i class="bi bi-envelope-fill me-2 fs-4" style="color: #0d6efd;"></i>'; // Bootstrap primary
-            } else if (mainProviderId === 'apple.com') {
-                providerIconHtml = '<i class="bi bi-apple me-2 fs-4" style="color: #000;"></i>';
-            } else if (mainProviderId === 'microsoft.com') {
-                providerIconHtml = '<i class="bi bi-microsoft me-2 fs-4" style="color: #0078D4;"></i>';
+            let providerIconHtml = '<i class="bi bi-person-circle me-2 fs-5 text-secondary"></i>'; // Default icon
+            if (user.providerData && user.providerData.length > 0) {
+                const mainProviderId = user.providerData[0].providerId;
+                if (mainProviderId === 'google.com') {
+                    providerIconHtml = '<i class="bi bi-google me-2 fs-5" style="color: #DB4437;"></i>';
+                } else if (mainProviderId === 'password') {
+                    providerIconHtml = '<i class="bi bi-envelope-fill me-2 fs-5" style="color: #0d6efd;"></i>';
+                } // Add more providers as needed (Apple, Microsoft)
             }
+
+            dropdownMenu.innerHTML = `
+                <div class="px-3 pt-2 pb-1 text-muted small">Signed in as:</div>
+                <div class="px-3 pb-2 pt-1 d-flex align-items-center">
+                    ${providerIconHtml}
+                    <span class="text-truncate fw-medium" style="font-size: 0.9rem;">${escapeHtml(user.email || "User")}</span>
+                </div>
+                <div><hr class="dropdown-divider my-1"></div>
+                <a class="dropdown-item d-flex align-items-center user-info-logout-link" href="#" style="color: #dc3545;">
+                    <i class="bi bi-box-arrow-right me-2 fs-5"></i> Log out
+                </a>
+            `;
+            
+            const signOutLink = dropdownMenu.querySelector('.user-info-logout-link');
+            if (signOutLink) {
+                signOutLink.onclick = (e) => {
+                    e.preventDefault();
+                    signOut();
+                    // Bootstrap dropdown should close automatically, but can force if needed
+                    // const ddInstance = bootstrap.Dropdown.getInstance(avatarBtn);
+                    // if (ddInstance) ddInstance.hide();
+                };
+            }
+
+            // Bootstrap 5 dropdown initialization (if not using data-bs-toggle on button)
+            // For simplicity, if using data-bs-toggle="dropdown" on avatarBtn, this might not be needed explicitly
+            // but good to be aware of if issues arise with dropdown not showing.
+            // Ensure avatarBtn has `data-bs-toggle="dropdown"` and dropdownMenu has `aria-labelledby` pointing to avatarBtn's ID.
+            // If avatarBtn itself is the toggle, it needs an ID, e.g., id="userAvatarDropdownToggle"
+            // and dropdownMenu would have aria-labelledby="userAvatarDropdownToggle"
+
+            avatarBtn.id = `userAvatarToggle-${Date.now()}`; // Ensure unique ID for aria
+            dropdownMenu.setAttribute('aria-labelledby', avatarBtn.id);
+
+
+            wrapper.appendChild(avatarBtn);
+            wrapper.appendChild(dropdownMenu);
+            authAreaDesktop.appendChild(wrapper);
+
+            // Initialize Bootstrap dropdown for the newly created elements
+             new bootstrap.Dropdown(avatarBtn); // Initialize the dropdown behavior
+
+            // The global click listener to close the dropdown when clicking outside
+            // should be managed carefully to avoid adding multiple listeners.
+            // It's often better to have one persistent global listener.
+            // For now, let's assume the Bootstrap Dropdown handles outside clicks.
+
+        } else { // User is not logged in - Desktop
+            const signInBtnDesktop = document.createElement('button');
+            signInBtnDesktop.className = 'btn btn-outline-dark btn-sm';
+            signInBtnDesktop.innerHTML = `<i class="bi bi-person-circle me-1"></i> Sign in`;
+            signInBtnDesktop.onclick = showLoginModal;
+            authAreaDesktop.appendChild(signInBtnDesktop);
         }
-        const iconWrapper = document.createElement('span'); // Wrapper for icon styling if needed
-        iconWrapper.innerHTML = providerIconHtml;
-        userInfoDiv.appendChild(iconWrapper);
-
-        const userEmailSpan = document.createElement('span');
-        userEmailSpan.className = 'text-truncate fw-medium'; // Changed to fw-medium for slightly less boldness
-        userEmailSpan.style.fontSize = '0.95rem';
-        userEmailSpan.textContent = user.email || 'No email provided';
-        userInfoDiv.appendChild(userEmailSpan);
-        dropdownMenu.appendChild(userInfoDiv);
-
-        // -- Subtle Divider (Optional - can use margin/padding instead) --
-        // If you want a very subtle divider that doesn't go all the way across:
-        const dividerDiv = document.createElement('div');
-        dividerDiv.style.height = '1px';
-        dividerDiv.style.backgroundColor = '#e9ecef'; // Bootstrap's $gray-200
-        dividerDiv.style.margin = '0.5rem 1rem'; // Margin on left/right to not span full width
-        dropdownMenu.appendChild(dividerDiv);
-        // OR, for no visible line, just rely on padding of the logout item.
-        // If you remove the dividerDiv, adjust padding on logoutMenuItem below.
-
-        // -- Log Out Button Area (as a menu item) --
-        const logoutMenuItem = document.createElement('a'); // Changed to <a> for semantic menu item
-        logoutMenuItem.href = '#'; // Prevent page jump
-        logoutMenuItem.className = 'dropdown-item d-flex align-items-center px-3 py-2'; // Bootstrap's dropdown-item class for styling
-        logoutMenuItem.style.color = '#dc3545'; // Bootstrap's text-danger color
-
-        logoutMenuItem.innerHTML = '<i class="bi bi-box-arrow-right me-2 fs-5"></i> Log out';
-        
-        logoutMenuItem.onclick = (e) => {
-            e.preventDefault(); // Prevent default anchor action
-            signOut(); 
-            dropdownMenu.style.display = 'none';
-        };
-        dropdownMenu.appendChild(logoutMenuItem);
-
-        // Toggle dropdown display
-        avatarBtn.onclick = (e) => {
-            e.stopPropagation();
-            const isShown = dropdownMenu.style.display === 'block';
-            dropdownMenu.style.display = isShown ? 'none' : 'block';
-            avatarBtn.setAttribute('aria-expanded', String(!isShown));
-        };
-
-        wrapper.appendChild(avatarBtn);
-        wrapper.appendChild(dropdownMenu);
-        authArea.appendChild(wrapper);
-
-        // Global click listener (same as before, ensure it's managed if this function is called often)
-        document.addEventListener('click', function closeDropdownOnClickOutside(event) {
-            if (dropdownMenu && !wrapper.contains(event.target) && dropdownMenu.style.display === 'block') {
-                dropdownMenu.style.display = 'none';
-                if(avatarBtn) avatarBtn.setAttribute('aria-expanded', 'false');
-            }
-        }, { capture: true }); // Use capture phase for this type of global listener to avoid issues with e.stopPropagation()
-
     } else {
-        // ... (Sign In button code remains the same) ...
-        const signInBtn = document.createElement('button');
-        signInBtn.className = 'btn btn-outline-dark d-flex align-items-center gap-2';
-        signInBtn.innerHTML = `<i class="bi bi-person"></i> Sign in`;
-        signInBtn.onclick = showLoginModal; 
-        authArea.appendChild(signInBtn);
+        console.warn("updateAuthUI: #userAuthAreaDesktop element not found in DOM.");
+    }
+
+    // --- 2. Update Mobile Bottom Navigation "Account" Button ---
+    if (authNavButtonMobile) {
+        if (user) {
+            authNavButtonMobile.innerHTML = `
+                <i class="bi bi-person-check-fill fs-4"></i>
+                <span class="nav-label d-block small">Account</span>`;
+        } else {
+            authNavButtonMobile.innerHTML = `
+                <i class="bi bi-person-circle fs-4"></i>
+                <span class="nav-label d-block small">Log In</span>`;
+        }
+        // The onclick is already set in the HTML: onclick="handleAccountNavClick()"
+        // So, we don't need to re-assign it here unless the HTML attribute is removed.
+        // If you were assigning it here, it would look like:
+        // authNavButtonMobile.onclick = handleAccountNavClick; 
+    } else {
+        console.warn("updateAuthUI: #userAuthNavButton element not found for mobile.");
     }
 }
 
@@ -5360,7 +5896,12 @@ function showChatbotModal() {
             const userQuery = chatbotQueryInput.value.trim();
             if (!userQuery) {
                 if (chefBotListeningStatus) chefBotListeningStatus.textContent = "Please describe the recipe.";
-                chatbotQueryInput.focus();
+                if (window.innerWidth >= 576) { // Larger than typical mobile portrait
+                    chatbotQueryInput.focus();
+                } else {
+                    // On smaller screens, don't autofocus, let the user tap if they want to type.
+                    // The placeholder text or label should guide them.
+                }
                 return;
             }
             if (chefBotListeningStatus) chefBotListeningStatus.textContent = "";
@@ -5419,7 +5960,15 @@ function showChatbotModal() {
     // ... (The speech recognition will populate chatbotQueryInput.value) ...
     // ... (Your full speech recognition setup as previously provided) ...
 
-    if (chatbotQueryInput) chatbotQueryInput.focus();
+    if (chatbotQueryInput)
+    {
+        if (window.innerWidth >= 576) { // Larger than typical mobile portrait
+            chatbotQueryInput.focus();
+        } else {
+            // On smaller screens, don't autofocus, let the user tap if they want to type.
+            // The placeholder text or label should guide them.
+        }
+    }
 }
 
 // Mock function to simulate chatbot response

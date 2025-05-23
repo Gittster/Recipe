@@ -27,12 +27,17 @@
     display: block;
   }
   
-  #mainView {
+#mainView {
     width: 100%;
-    max-width: 100%;
     margin: 0 auto;
-    padding: 1rem;
-  }
+    padding: 1rem; /* Default padding for content (top, left, right) */
+    /* === CRUCIAL FOR MOBILE === */
+    /* Add padding-bottom equal to or slightly more than the bottomNavBar height */
+    /* This ensures content can scroll above the fixed bottom navigation bar */
+    padding-bottom: 80px !important; /* Example: 65px (nav height) + 15px extra space */
+    /* overflow-auto is set in your HTML via JS or should be here if not */
+    overflow-y: auto; /* Ensure vertical scrolling is enabled */
+}
   
   @media screen and (orientation: landscape) and (min-width: 768px) {
     #mainView {
@@ -45,6 +50,37 @@
       background: #fff;
     }
   }
+
+  @media (min-width: 768px) { /* Bootstrap's md breakpoint and up (tablets and desktops) */
+    #mainView {
+        max-width: 750px; 
+        margin: 1.5rem auto; 
+        padding: 1.5rem;   /* Reset all padding for desktop if desired */
+        /* No extra padding-bottom needed here because #bottomNavBar is hidden on desktop */
+        /* If #mainView still had the mobile padding-bottom, it would look too large on desktop */
+    }
+}
+
+#bottomNavBar {
+    /* Bootstrap class d-md-none makes it visible only on screens smaller than md */
+    height: 65px; /* Your actual nav bar height */
+    box-shadow: 0 -2px 5px rgba(0,0,0,0.08);
+    background-color: #ffffff; 
+    z-index: 1030; 
+    /* fixed-bottom is handled by Bootstrap class */
+}
+
+@media (min-width: 768px) { /* Corresponds to Bootstrap's 'md' breakpoint */
+    #mainView {
+        /* Your desktop-specific styles: max-width, margin, border, shadow etc. */
+        max-width: 750px; 
+        margin: 1.5rem auto;
+        padding: 1.5rem; /* Reset padding to desktop default */
+        /* padding-bottom is implicitly reset by the above if not specified,
+           or you can explicitly set it: */
+        padding-bottom: 1.5rem; 
+    }
+}
   
   /* ===============================
      Tables, Forms, and Animations
@@ -281,4 +317,160 @@ mark {
     /* letter-spacing: normal; */ /* Usually not needed, but can explicitly set if there's an issue */
     /* display: inline; */ /* Default, but ensures it doesn't try to be a block */
     border-radius: 2px; /* Optional: slightly rounded corners can look nice */
+}
+
+.btn-nav.active {
+    color: #0d6efd; /* Bootstrap primary color - makes icon and text colored */
+    /* Optional: Add a top border or a background indication */
+    /* border-top: 3px solid #0d6efd; */
+    /* background-color: rgba(13, 110, 253, 0.08); */ /* Very subtle background */
+}
+
+.btn-nav .nav-label {
+    font-size: 0.65rem; 
+    margin-top: -2px;   
+    line-height: 1.2;
+    font-weight: 600; /* Or bolder */
+}
+
+#menuBar button.btn.active {
+    /* Example: Make it look like a solid button or just bolder */
+    /* This will be applied if the JS adds btn-primary, btn-info etc. */
+    /* If you want a custom active style distinct from solid buttons: */
+    font-weight: bold;
+    /* background-color: #e9ecef; */ /* A subtle highlight */
+    /* color: #000; */
+}
+
+#addRecipeMethodModal .list-group-item {
+    cursor: pointer;
+    padding: 1rem 1.25rem;
+}
+
+#addRecipeMethodModal .list-group-item i {
+    color: #0d6efd; /* Bootstrap primary color for icons */
+}
+
+#addRecipeMethodModal .list-group-item:hover {
+    background-color: #f8f9fa; /* Light hover */
+}
+
+/* style.css */
+
+/* Shopping List Specifics */
+.shopping-list-header .d-flex {
+    /* On extra-small screens, allow buttons to stack if needed */
+}
+
+@media (max-width: 575.98px) { /* xs screens */
+    .shopping-list-header .d-flex.justify-content-between {
+        flex-direction: column;
+        align-items: stretch !important; /* Override align-items-sm-center */
+    }
+    .shopping-list-header .d-flex.gap-2 { /* The div wrapping the buttons */
+        flex-direction: column; /* Stack buttons vertically */
+        width: 100%;
+    }
+    .shopping-list-header .d-flex.gap-2 .btn {
+        width: 100%; /* Make buttons full width when stacked */
+        margin-bottom: 0.5rem; /* Add space between stacked buttons */
+    }
+    .shopping-list-header .d-flex.gap-2 .btn:last-child {
+        margin-bottom: 0;
+    }
+    .shopping-list-header h5 {
+        text-align: center; /* Center title on mobile */
+        margin-bottom: 0.75rem !important; /* Ensure space below title */
+    }
+}
+
+#shoppingListResults .list-group-item {
+    padding: 0.75rem 1rem; /* Adjust padding for touch targets */
+    align-items: flex-start; /* Align items to top if text wraps */
+}
+
+#shoppingListResults .form-check-input {
+    width: 1.25em; /* Slightly larger checkbox */
+    height: 1.25em;
+    margin-top: 0.2em; /* Adjust vertical alignment with text */
+}
+
+#shoppingListResults .shopping-item-label {
+    font-size: 0.95rem; /* Slightly larger item text */
+    word-break: break-word; /* Allow long item names to wrap */
+}
+
+#shoppingListResults .shopping-item-label[style*="line-through"] {
+    color: #6c757d; /* Muted color for checked items */
+}
+
+#shoppingListResults .shopping-item-delete-btn {
+    padding: 0.25rem 0.5rem; /* Ensure delete button is easy to tap */
+}
+
+.shopping-list-header h5 {
+    /* Ensure title is well-spaced, especially if buttons stack below it on very small screens */
+}
+
+/* Styling for the action buttons in the shopping list header */
+.shopping-list-actions .btn-group .btn {
+    /* If you want more control over how buttons in the group behave on xs screens */
+    /* For example, to ensure they don't get too squished or wrap awkwardly */
+    white-space: nowrap; /* Prevents text inside button from wrapping */
+}
+@media (max-width: 380px) { /* Very small screens */
+    .shopping-list-actions .btn-group {
+        /* flex-direction: column; */ /* Uncomment to stack buttons vertically */
+    }
+    /* .shopping-list-actions .btn-group .btn { */
+        /* width: 100%; */ /* Make buttons full width if stacked */
+        /* margin-bottom: 0.5rem; */
+    /* } */
+    /* .shopping-list-actions .btn-group .btn:last-child { */
+        /* margin-bottom: 0; */
+    /* } */
+}
+
+
+#shoppingListResults .list-group-item.shopping-list-item {
+    padding: 0.75rem 1rem;        /* Good touch padding */
+    align-items: center;          /* Vertically align checkbox/text with delete button */
+    border-radius: 0.375rem;      /* Rounded corners for items */
+    margin-bottom: 0.5rem;        /* Space between items */
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05); /* Subtle shadow for item separation */
+}
+
+#shoppingListResults .form-check-input {
+    width: 1.3em; /* Make checkbox a bit larger for easier tapping */
+    height: 1.3em;
+    margin-top: 0.1em; /* Fine-tune vertical alignment if needed */
+    flex-shrink: 0; /* Prevent checkbox from shrinking */
+}
+
+#shoppingListResults .shopping-item-label {
+    font-size: 0.95rem;
+    word-break: break-word; /* Allow long item names to wrap nicely */
+    margin-left: 0.5rem; /* Space between checkbox and label */
+    line-height: 1.4;
+}
+
+#shoppingListResults .shopping-item-label[style*="line-through"] {
+    color: #6c757d; /* Muted color for checked items */
+    opacity: 0.7;   /* Slightly more opacity than before */
+}
+
+#shoppingListResults .shopping-item-delete-btn {
+    padding: 0.25rem 0.6rem; /* Slightly larger padding for easier tap */
+    line-height: 1; /* Ensure icon is centered in button */
+    flex-shrink: 0; /* Prevent delete button from shrinking */
+}
+#shoppingListResults .shopping-item-delete-btn i {
+    vertical-align: middle;
+}
+
+/* Empty state for shopping list */
+#shoppingListResults .list-group-item.text-muted {
+    border: none;
+    box-shadow: none;
+    background-color: transparent;
 }
