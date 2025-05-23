@@ -346,18 +346,28 @@ async function loadRecipes() {
 }
 
 function showRecipeFilter() {
+    // If using page titles and active nav states from responsive navigation:
+    updatePageTitle("Recipes");
+    setActiveNavButton("recipes");
+
     const view = document.getElementById('mainView');
     if (!view) {
         console.error("mainView element not found for showRecipeFilter");
         return;
     }
+    // Setting a general class for the view, and Bootstrap container + padding
     view.className = 'section-recipes container py-3';
 
+    // HTML structure for the Recipes view
     view.innerHTML = `
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h4 class="mb-0"><i class="bi bi-journal-richtext me-2"></i>Recipes</h4>
-            <div> <button class="btn btn-outline-secondary btn-sm me-2" type="button" onclick="clearAllRecipeFilters()" title="Clear all filters">
-                    <i class="bi bi-x-lg"></i> Clear Filters
+            <div> 
+                <button class="btn btn-outline-warning btn-sm me-2" type="button" onclick="showChatbotModal()" title="Ask Chef Bot to create a new recipe">
+                    <i class="bi bi-robot"></i> Chef Bot
+                </button>
+                <button class="btn btn-outline-info btn-sm me-2" type="button" data-bs-toggle="collapse" data-bs-target="#recipeFiltersCollapse" aria-expanded="false" aria-controls="recipeFiltersCollapse" title="Toggle filters">
+                    <i class="bi bi-funnel-fill"></i> Filters
                 </button>
                 <button class="btn btn-primary btn-sm" onclick="toggleRecipeForm()">
                     <i class="bi bi-plus-circle-fill me-1"></i>Add Recipe
@@ -365,26 +375,33 @@ function showRecipeFilter() {
             </div>
         </div>
 
-        <div class="filter-section card card-body bg-light-subtle mb-3">
-             <div class="row g-2 align-items-end">
-                <div class="col-lg-4 col-md-12">
-                    <label for="nameSearch" class="form-label small mb-1">By Name:</label>
-                    <input type="text" class="form-control form-control-sm" id="nameSearch" placeholder="Filter by name..." oninput="applyAllRecipeFilters()" />
+        <div class="collapse mb-3" id="recipeFiltersCollapse">
+            <div class="filter-section card card-body bg-light-subtle">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0">Filter & Search</h6>
+                    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearAllRecipeFilters()" title="Clear all filters">
+                        <i class="bi bi-x-lg"></i> Clear All
+                    </button>
                 </div>
-                <div class="col-lg-4 col-md-6">
-                    <label for="recipeSearch" class="form-label small mb-1">By Ingredient(s):</label>
-                    <input type="text" class="form-control form-control-sm" id="recipeSearch" placeholder="Filter by ingredient..." oninput="applyAllRecipeFilters()" />
-                </div>
-                <div class="col-lg-4 col-md-6">
-                    <label for="tagSearch" class="form-label small mb-1">By Tag(s):</label>
-                    <input type="text" class="form-control form-control-sm" id="tagSearch" placeholder="Filter by tag..." oninput="applyAllRecipeFilters()" />
+                <div class="row g-2 align-items-end">
+                    <div class="col-lg-4 col-md-12">
+                        <label for="nameSearch" class="form-label small mb-1">By Name:</label>
+                        <input type="text" class="form-control form-control-sm" id="nameSearch" placeholder="Search by recipe name..." oninput="applyAllRecipeFilters()" />
+                    </div>
+                    <div class="col-lg-4 col-md-6">
+                        <label for="recipeSearch" class="form-label small mb-1">By Ingredient(s):</label>
+                        <input type="text" class="form-control form-control-sm" id="recipeSearch" placeholder="e.g., chicken,tomato" oninput="applyAllRecipeFilters()" />
+                    </div>
+                    <div class="col-lg-4 col-md-6">
+                        <label for="tagSearch" class="form-label small mb-1">By Tag(s):</label>
+                        <input type="text" class="form-control form-control-sm" id="tagSearch" placeholder="e.g., dinner,quick" oninput="applyAllRecipeFilters()" />
+                    </div>
                 </div>
             </div>
         </div>
 
         <div id="recipeForm" class="collapsible-form mb-4">
             <div class="card card-body">
-
                 <label class="form-label fw-semibold">📛 Recipe Name</label>
                 <input class="form-control mb-3" id="recipeNameInput" placeholder="Recipe name" />
 
@@ -451,22 +468,35 @@ function showRecipeFilter() {
                             </div>
                         </div>
                     </div>
-                </div> </div> </div> <div id="recipeResults"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="recipeResults">
+            </div>
     `;
 
+    // Initialize tag input for the main "Add Recipe" form whenever this view is shown
+    // This ensures event listeners are fresh if the DOM is being re-rendered by innerHTML.
     initializeMainRecipeFormTagInput();
 
-    if (typeof recipes !== 'undefined') {
-        applyAllRecipeFilters();
+    // Apply filters to display recipes.
+    // This assumes the global `recipes` array is populated (e.g., by loadInitialRecipes).
+    if (typeof recipes !== 'undefined' && typeof applyAllRecipeFilters === "function") {
+        applyAllRecipeFilters(); // This will read current filter values and display
     } else {
         const recipeResultsContainer = document.getElementById('recipeResults');
         if (recipeResultsContainer) {
             recipeResultsContainer.innerHTML = '<p class="text-center text-muted">Loading recipes or no recipes found...</p>';
         }
-        console.warn("Global 'recipes' array not defined when showRecipeFilter was called. Ensure loadInitialRecipes() has run.");
+        // Log warnings if critical parts are missing
+        if (typeof recipes === 'undefined') {
+            console.warn("Global 'recipes' array not defined when showRecipeFilter was called. Ensure loadInitialRecipes() has run or will run.");
+        }
+        if (typeof applyAllRecipeFilters !== "function") {
+            console.error("CRITICAL: applyAllRecipeFilters function is not defined!");
+        }
     }
-    updatePageTitle("Recipes");
-    setActiveNavButton("recipes");
 }
 
 /**
@@ -484,7 +514,7 @@ function updatePageTitle(title) {
 
 function clearAllRecipeFilters() {
     const nameSearch = document.getElementById('nameSearch');
-    const ingredientSearch = document.getElementById('recipeSearch'); // ID for ingredient search
+    const ingredientSearch = document.getElementById('recipeSearch'); // Uses 'recipeSearch' for ingredients
     const tagSearch = document.getElementById('tagSearch');
 
     if (nameSearch) nameSearch.value = '';
@@ -681,32 +711,28 @@ function filterRecipesByTag() { // This will now be triggered by tag search inpu
 // script.js
 
 function applyAllRecipeFilters() {
-    const nameSearchInput = document.getElementById('recipeNameSearch');
-    const ingredientSearchInput = document.getElementById('recipeIngredientSearch');
-    const tagSearchInput = document.getElementById('recipeTagSearch');
+    const nameSearchInput = document.getElementById('nameSearch'); // ID from your HTML
+    const ingredientSearchInput = document.getElementById('recipeSearch'); // ID from your HTML
+    const tagSearchInput = document.getElementById('tagSearch'); // ID from your HTML
 
     const nameSearchTerm = nameSearchInput ? nameSearchInput.value.toLowerCase().trim() : "";
-    
     const ingredientSearchValue = ingredientSearchInput ? ingredientSearchInput.value.toLowerCase().trim() : "";
-    const ingredientSearchTermsArray = ingredientSearchValue.split(',') // Keep as array for highlighting
+    const ingredientSearchTermsArray = ingredientSearchValue.split(',')
                                      .map(term => term.trim().toLowerCase())
                                      .filter(Boolean);
-
     const tagSearchValue = tagSearchInput ? tagSearchInput.value.toLowerCase().trim() : "";
-    const tagTermsArray = tagSearchValue.split(',') // Keep as array for highlighting
+    const tagTermsArray = tagSearchValue.split(',')
                         .map(t => t.trim().toLowerCase())
                         .filter(Boolean);
 
-    let filteredList = [...recipes]; 
+    let filteredList = [...recipes]; // Start with a fresh copy of all recipes
 
-    // Filter by Recipe Name
     if (nameSearchTerm) {
         filteredList = filteredList.filter(recipe =>
             recipe.name && recipe.name.toLowerCase().includes(nameSearchTerm)
         );
     }
 
-    // Filter by Ingredients
     if (ingredientSearchTermsArray.length > 0) {
         filteredList = filteredList.filter(recipe => {
             if (!recipe.ingredients || recipe.ingredients.length === 0) return false;
@@ -720,27 +746,20 @@ function applyAllRecipeFilters() {
         });
     }
 
-    // Filter by Tags
     if (tagTermsArray.length > 0) {
         filteredList = filteredList.filter(recipe => {
             if (!recipe.tags || recipe.tags.length === 0) return false;
             const recipeTagsLower = recipe.tags.map(tag => tag.toLowerCase());
             return tagTermsArray.every(term =>
-                recipeTagsLower.some(tag => tag.includes(term)) // Using 'includes' for more flexible tag matching
+                recipeTagsLower.some(tag => tag.includes(term)) // Using 'includes' for tags as well
             );
         });
     }
     
     const displayOptions = {};
-    if (nameSearchTerm) {
-        displayOptions.highlightNameTerm = nameSearchTerm; // Single string for name
-    }
-    if (ingredientSearchTermsArray.length > 0) {
-        displayOptions.highlightIngredients = ingredientSearchTermsArray; // Array of strings
-    }
-    if (tagTermsArray.length > 0) {
-        displayOptions.highlightTags = tagTermsArray; // Array of strings
-    }
+    if (nameSearchTerm) displayOptions.highlightNameTerm = nameSearchTerm;
+    if (ingredientSearchTermsArray.length > 0) displayOptions.highlightIngredients = ingredientSearchTermsArray;
+    if (tagTermsArray.length > 0) displayOptions.highlightTags = tagTermsArray;
 
     displayRecipes(filteredList, 'recipeResults', displayOptions);
 }
@@ -973,108 +992,166 @@ function deleteHistoryEntry(entryId, cardElement) {
     });
 }
 
+/**
+ * Called when a "Mark as Made" button on a recipe card is clicked.
+ * It opens an inline form for notes and date.
+ * @param {object} recipeDataFromCard - The full recipe object from the card.
+ * @param {HTMLElement} buttonElement - The button element that was clicked.
+ */
+function markAsMade(recipeDataFromCard, buttonElement) {
+    // Log the data received from the recipe card
+    console.log("markAsMade clicked for recipe:", recipeDataFromCard.name, "ID:", recipeDataFromCard.id);
 
-function markAsMade(recipeName, buttonElement) {
-    console.log("Mark as Made clicked for:", recipeName);
-
-    const card = buttonElement.closest('.card');
-    if (!card) return;
-    if (card.querySelector('.mark-made-form')) return; // Prevent multiple forms
+    const card = buttonElement.closest('.recipe-card'); // Ensure your recipe cards have class 'recipe-card'
+    if (!card) {
+        console.error("Could not find parent card for 'Mark as Made' button.");
+        return;
+    }
+    // Prevent multiple forms on the same card
+    if (card.querySelector('.mark-made-form')) {
+        console.log("Mark as Made form already open for this recipe.");
+        return;
+    }
 
     const form = document.createElement('div');
-    form.className = 'mark-made-form mt-3 p-3 border rounded bg-light-subtle'; // Used bg-light-subtle for BS5
+    form.className = 'mark-made-form mt-3 p-3 border rounded bg-light-subtle';
 
     const textarea = document.createElement('textarea');
     textarea.className = 'form-control mb-2';
     textarea.rows = 2;
-    textarea.placeholder = 'Optional comment...';
+    textarea.placeholder = 'Optional notes about when you made it...';
 
     const dateLabel = document.createElement('label');
-    dateLabel.textContent = 'Made date:';
-    dateLabel.className = 'form-label mb-0 ms-md-3 fw-semibold'; // ms-md-3 for spacing on medium+ screens
+    dateLabel.textContent = 'Made on date:';
+    dateLabel.className = 'form-label mb-0 me-2 fw-semibold small'; // Added me-2 for spacing
     dateLabel.style.whiteSpace = 'nowrap';
 
     const dateInput = document.createElement('input');
     dateInput.type = 'date';
-    dateInput.className = 'form-control form-control-sm d-inline-block'; // d-inline-block for layout
+    dateInput.className = 'form-control form-control-sm d-inline-block';
     dateInput.style.maxWidth = '150px';
     dateInput.value = new Date().toISOString().split('T')[0]; // Default to today
 
     const saveBtn = document.createElement('button');
-    saveBtn.className = 'btn btn-outline-success btn-sm'; // Changed to success
-    saveBtn.innerHTML = '<i class="bi bi-check-lg"></i> Save';
+    saveBtn.className = 'btn btn-success btn-sm'; // Using solid success button
+    saveBtn.innerHTML = '<i class="bi bi-check-lg"></i> Save to History';
 
     const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'btn btn-outline-secondary btn-sm'; // Changed to secondary
+    cancelBtn.className = 'btn btn-outline-secondary btn-sm';
     cancelBtn.innerHTML = '<i class="bi bi-x-lg"></i> Cancel';
 
     const controls = document.createElement('div');
-    controls.className = 'd-flex align-items-center gap-2 flex-wrap mt-2'; // Added mt-2 and flex-wrap
-    controls.appendChild(saveBtn);
-    controls.appendChild(cancelBtn);
+    controls.className = 'd-flex align-items-center gap-2 flex-wrap mt-2'; // flex-wrap for responsiveness
     controls.appendChild(dateLabel);
     controls.appendChild(dateInput);
-
-    saveBtn.onclick = () => {
+    controls.appendChild(saveBtn);
+    controls.appendChild(cancelBtn);
+    
+    saveBtn.onclick = async () => { // Made async for db operations
         const notes = textarea.value.trim();
-        // Ensure date is treated as local, then get start of day in UTC for consistent ISO string
-        const localDate = new Date(dateInput.value + 'T00:00:00'); // Treat selected date as local
-        const timestamp = localDate.toISOString();
+        const madeOnDateString = dateInput.value;
 
-        // Find the full recipe object to get tags if available
-        // This assumes `recipes` array is populated with current view (local or cloud)
-        const recipeObj = recipes.find(r => r.name === recipeName);
-        const recipeTags = recipeObj && recipeObj.tags ? recipeObj.tags : [];
+        if (!madeOnDateString) {
+            alert("Please select a date for when this recipe was made.");
+            dateInput.focus();
+            return;
+        }
+
+        // Ensure date is treated as local, then get start of day in UTC for consistent ISO string for timestamp
+        const localDate = new Date(madeOnDateString + 'T00:00:00');
+        const timestampForHistory = localDate.toISOString(); // This is the "date made"
+
+        // Extract data from the recipeDataFromCard object
+        const actualRecipeName = recipeDataFromCard.name;
+        const originalRecipeID = recipeDataFromCard.id; // This is localId or FirestoreId
+        const recipeTagsToSave = recipeDataFromCard.tags || [];
+
+        let nameToSave;
+        if (actualRecipeName && typeof actualRecipeName === 'string' && actualRecipeName.trim() !== "") {
+            nameToSave = actualRecipeName.trim();
+        } else {
+            nameToSave = "Untitled Recipe Event";
+            console.warn("Recipe name was invalid or empty for history, defaulting to:", nameToSave, "Original value was:", actualRecipeName);
+        }
 
         const historyEntry = {
-            recipeName: recipeName, // Changed from 'recipe' to 'recipeName' for clarity with localDB schema
-            tags: recipeTags,
-            timestamp: timestamp,
-            notes: notes || '',
+            recipeName: nameToSave,
+            originalRecipeId: originalRecipeID || null, // Store the ID of the recipe being marked as made
+            tags: recipeTagsToSave,                     // Store the tags of the recipe at this time
+            timestamp: timestampForHistory,             // The date it was made
+            notes: notes || "",                         // User's notes
+            // recordCreatedAt: new Date().toISOString() // Optional: if you want to timestamp the history record itself
         };
 
-        if (currentUser) {
-            // --- LOGGED IN: Save to Firebase ---
-            historyEntry.uid = currentUser.uid;
-            db.collection("history").add(historyEntry)
-                .then(() => {
-                    console.log("✅ History entry added to Firestore!");
-                    form.innerHTML = '<div class="text-success fw-bold p-2">✅ Marked as made!</div>';
-                    setTimeout(() => form.remove(), 2000);
-                })
-                .catch(err => {
-                    console.error("❌ Failed to save history to Firestore:", err);
-                    alert('Failed to save history: ' + err.message);
-                });
-        } else {
-            // --- NOT LOGGED IN: Save to LocalDB ---
-            if (!localDB) {
-                alert("Local storage not available. Please sign in.");
-                console.error("Attempted to save local history, but localDB is not initialized.");
-                return;
-            }
-            historyEntry.localId = generateLocalUUID(); // Add localId for IndexedDB
-            // No UID needed for local anonymous history
+        console.log("Attempting to save history entry:", JSON.stringify(historyEntry, null, 2));
+        let success = false;
 
-            localDB.history.add(historyEntry)
-                .then(() => {
-                    console.log("✅ History entry added to LocalDB!");
-                    form.innerHTML = '<div class="text-success fw-bold p-2">✅ Marked as made (saved locally)!</div>';
-                    setTimeout(() => form.remove(), 2000);
-                })
-                .catch(err => {
-                    console.error("❌ Failed to save history to LocalDB:", err.stack || err);
-                    alert('Failed to save history locally: ' + err.message);
-                });
+        if (currentUser) {
+            historyEntry.uid = currentUser.uid; // Add UID for Firestore document
+            console.log("Saving history to Firestore for user:", currentUser.uid);
+            try {
+                await db.collection("history").add(historyEntry);
+                console.log("✅ History entry added to Firestore!");
+                success = true;
+            } catch (err) {
+                console.error("❌ Failed to save history to Firestore:", err);
+                alert('Failed to save history to your account: ' + err.message);
+            }
+        } else {
+            // User is NOT LOGGED IN: Save to LocalDB
+            if (!localDB) {
+                alert("Local storage is not available. Please sign in to save history permanently.");
+                console.error("Attempted to save local history, but localDB is not initialized.");
+                return; // Exit if localDB isn't ready
+            }
+            // 'localId' for the history entry itself will be auto-generated by Dexie's '++localId' primary key
+            console.log("Saving history to LocalDB.");
+            try {
+                const addedId = await localDB.history.add(historyEntry); // Dexie's add() returns the ID
+                console.log("✅ History entry added to LocalDB with localId:", addedId);
+                success = true;
+            } catch (err) {
+                console.error("❌ Failed to save history to LocalDB:", err.stack || err);
+                alert('Failed to save history locally: ' + err.message);
+            }
         }
+
+        if (success) {
+            form.innerHTML = `<div class="text-success fw-bold p-2">✅ Marked as made${currentUser ? '!' : ' (locally)!'}</div>`;
+            setTimeout(() => {
+                if (form.parentNode) form.remove();
+            }, 2000);
+            // If history view is active, it should ideally refresh.
+            // Or, a more global event system could notify the history view to update.
+            // For now, user will see update next time they visit History.
+        }
+        // If not successful, the form remains for the user to try again or cancel.
+        // Error messages are handled by alerts within the try/catch blocks.
     };
 
-    cancelBtn.onclick = () => form.remove();
+    cancelBtn.onclick = () => {
+        if (form.parentNode) form.remove();
+    };
 
     form.appendChild(textarea);
     form.appendChild(controls);
-    card.appendChild(form);
-    textarea.focus(); // Focus on the textarea
+    // Insert the form after the card's main content but before other action buttons if any,
+    // or simply at the end of the card body.
+    // Assuming 'card' is the main recipe card element:
+    const cardBody = card.querySelector('.card-body'); // Or a more specific container within the card
+    if (cardBody) {
+        // Check if there's a row of buttons at the bottom of card-body (like plan meal, mark as made)
+        const bottomButtonRow = cardBody.querySelector('.justify-content-start.gap-2.mt-3.pt-2.border-top');
+        if (bottomButtonRow) {
+            cardBody.insertBefore(form, bottomButtonRow); // Insert form before the bottom button row
+        } else {
+            cardBody.appendChild(form); // Append to end of card body if specific row not found
+        }
+    } else {
+        card.appendChild(form); // Fallback if no .card-body found
+    }
+    
+    textarea.focus();
 }
 
 
@@ -1497,55 +1574,72 @@ function showRandomRecipe() {
   displayRecipes([randomRecipe], 'randomRecipeCard');
 }
 
+function clearHistoryFilters() {
+    const historySearchInput = document.getElementById('historySearch');
+    const historyTagSearchInput = document.getElementById('historyTagSearch');
+
+    if (historySearchInput) historySearchInput.value = '';
+    if (historyTagSearchInput) historyTagSearchInput.value = '';
+
+    filterHistory(); // Re-apply empty filters to show all history items
+}
 
 function viewHistory() {
-    updatePageTitle("History"); // Assuming you want to update the title
+    // If using page titles and active nav states:
+    updatePageTitle("History");
     setActiveNavButton("history");
+
     const view = document.getElementById('mainView');
-    view.className = 'section-history'; // For potential specific styling
+    if (!view) {
+        console.error("mainView element not found for viewHistory");
+        return;
+    }
+    view.className = 'section-history container py-3'; // Consistent class
+
     view.innerHTML = `
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recipe History</h5>
+            <h4 class="mb-0"><i class="bi bi-clock-history me-2"></i>Recipe History</h4>
+            <button class="btn btn-outline-info btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#historyFiltersCollapse" aria-expanded="false" aria-controls="historyFiltersCollapse" title="Toggle history filters">
+                <i class="bi bi-funnel-fill"></i> Filters
+            </button>
+        </div>
+
+        <div class="collapse mb-3" id="historyFiltersCollapse">
+            <div class="filter-section card card-body bg-light-subtle">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0">Filter History</h6>
+                    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearHistoryFilters()" title="Clear all history filters">
+                        <i class="bi bi-x-lg"></i> Clear Filters
+                    </button>
+                </div>
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <label for="historySearch" class="form-label small mb-1">Search Notes/Recipe:</label>
+                        <input type="text" class="form-control form-control-sm" id="historySearch" placeholder="Search notes or recipe name..." oninput="filterHistory()">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="historyTagSearch" class="form-label small mb-1">Filter by Tag(s):</label>
+                        <input type="text" class="form-control form-control-sm" id="historyTagSearch" placeholder="e.g., dinner,easy (comma-sep)" oninput="filterHistory()">
+                    </div>
+                </div>
             </div>
-        <input type="text" class="form-control mb-2" id="historySearch" placeholder="Search notes or recipe name..." oninput="filterHistory()" />
-        <input type="text" class="form-control mb-3" id="historyTagSearch" placeholder="Filter by tag (e.g., dinner,easy)..." oninput="filterHistory()" />
+        </div>
+
         <div id="historyListContainer">
-            <div id="historyList" class="mt-2">Loading...</div>
+            <div id="historyList" class="mt-2">Loading history...</div>
         </div>
     `;
 
-    if (currentUser) {
-        // --- LOGGED IN: Load from Firebase ---
-        console.log("Loading history from Firestore for user:", currentUser.uid);
-        db.collection("history")
-            .where('uid', '==', currentUser.uid)
-            .orderBy('timestamp', 'desc')
-            .get()
-            .then(snapshot => {
-                const historyEntries = snapshot.docs.map(doc => ({ firestoreId: doc.id, ...doc.data() }));
-                // Pass firestoreId as 'id' for renderHistoryList if it expects 'id' for deletion
-                renderHistoryList(historyEntries.map(e => ({ ...e, id: e.firestoreId })));
-            })
-            .catch(err => {
-                console.error("Error loading history from Firestore:", err);
-                document.getElementById('historyList').innerHTML = '<p class="text-danger">Error loading history.</p>';
-            });
+    // Load history data (which will then call renderHistoryList)
+    // The filterHistory function will be responsible for applying filters
+    if (typeof filterHistory === "function") {
+        filterHistory(); // Call initially to load and display (with empty filters)
+    } else if (typeof loadHistory === "function") { // Fallback if filterHistory isn't the main loader yet
+        loadHistory();
     } else {
-        // --- NOT LOGGED IN: Load from LocalDB ---
-        console.log("Loading history from LocalDB.");
-        if (!localDB) {
-            document.getElementById('historyList').innerHTML = '<p class="text-warning">Local storage not available.</p>';
-            return;
-        }
-        localDB.history.orderBy('timestamp').reverse().toArray()
-            .then(historyEntries => {
-                // Pass localId as 'id' for renderHistoryList
-                renderHistoryList(historyEntries.map(e => ({ ...e, id: e.localId })));
-            })
-            .catch(err => {
-                console.error("Error loading history from LocalDB:", err.stack || err);
-                document.getElementById('historyList').innerHTML = '<p class="text-danger">Error loading local history.</p>';
-            });
+        console.error("loadHistory or filterHistory function is not defined.");
+        const historyListDiv = document.getElementById('historyList');
+        if (historyListDiv) historyListDiv.innerHTML = '<p class="text-danger text-center">Error initializing history view.</p>';
     }
 }
 
@@ -1789,58 +1883,72 @@ function escapeHtml(unsafe) {
 }
 
 function applyAllRecipeFilters() {
-    const nameSearchTerm = document.getElementById('nameSearch') ?
-                           document.getElementById('nameSearch').value.toLowerCase().trim() : "";
-    const ingredientSearchTerm = document.getElementById('recipeSearch') ?
-                                 document.getElementById('recipeSearch').value.toLowerCase().trim() : "";
-    const tagSearchTerm = document.getElementById('tagSearch') ?
-                          document.getElementById('tagSearch').value.toLowerCase().trim() : "";
+    // Use the IDs that are actually in your showRecipeFilter's innerHTML
+    const nameSearchInput = document.getElementById('nameSearch'); 
+    const ingredientSearchInput = document.getElementById('recipeSearch'); 
+    const tagSearchInput = document.getElementById('tagSearch');    
 
-    let currentFilteredRecipes = [...recipes]; // Start with a fresh copy of all recipes
+    const nameSearchTerm = nameSearchInput ? nameSearchInput.value.toLowerCase().trim() : "";
+    const ingredientSearchValue = ingredientSearchInput ? ingredientSearchInput.value.toLowerCase().trim() : "";
+    const ingredientSearchTermsArray = ingredientSearchValue.split(',')
+                                         .map(term => term.trim().toLowerCase())
+                                         .filter(Boolean);
+    const tagSearchValue = tagSearchInput ? tagSearchInput.value.toLowerCase().trim() : "";
+    const tagTermsArray = tagSearchValue.split(',')
+                            .map(t => t.trim().toLowerCase())
+                            .filter(Boolean);
 
-    // Filter by Name
+    console.log("Applying filters. Name:", `"${nameSearchTerm}"`, "Ingredients:", ingredientSearchTermsArray, "Tags:", tagTermsArray);
+    console.log("Based on master recipes count:", recipes.length);
+
+
+    let filteredList = [...recipes]; 
+
+    // Filter by Recipe Name
     if (nameSearchTerm) {
-        currentFilteredRecipes = currentFilteredRecipes.filter(recipe =>
+        filteredList = filteredList.filter(recipe =>
             recipe.name && recipe.name.toLowerCase().includes(nameSearchTerm)
         );
     }
 
-    // Filter by Ingredient(s) - using your existing logic style
-    if (ingredientSearchTerm) {
-        const ingredientSearchTerms = ingredientSearchTerm.split(',').map(s => s.trim()).filter(Boolean);
-        if (ingredientSearchTerms.length > 0) {
-            currentFilteredRecipes = currentFilteredRecipes.filter(recipe => {
-                if (!recipe.ingredients) return false;
-                const ingredientNames = recipe.ingredients.map(ing =>
-                    typeof ing === 'object' ? (ing.name || '').toLowerCase() : (ing || '').toLowerCase()
-                );
-                return ingredientSearchTerms.every(term => // All search terms must match at least one ingredient
-                    ingredientNames.some(ingName => ingName.includes(term))
-                );
+    // Filter by Ingredients
+    if (ingredientSearchTermsArray.length > 0) {
+        filteredList = filteredList.filter(recipe => {
+            if (!recipe.ingredients || recipe.ingredients.length === 0) return false;
+            const ingredientNamesLower = recipe.ingredients.map(ing => {
+                const name = (typeof ing === 'object' && ing.name) ? ing.name : (typeof ing === 'string' ? ing : '');
+                return name.toLowerCase();
             });
-        }
+            return ingredientSearchTermsArray.every(term =>
+                ingredientNamesLower.some(ingName => ingName.includes(term))
+            );
+        });
     }
 
-    // Filter by Tag(s) - using your existing logic style
-    if (tagSearchTerm) {
-        const tagTerms = tagSearchTerm.split(',').map(t => t.trim()).filter(Boolean);
-        if (tagTerms.length > 0) {
-            currentFilteredRecipes = currentFilteredRecipes.filter(recipe => {
-                if (!recipe.tags) return false;
-                const recipeTags = recipe.tags.map(tag => tag.toLowerCase());
-                return tagTerms.every(term => // All search tags must match at least one recipe tag
-                    recipeTags.some(tag => tag.startsWith(term)) // Your original was startsWith, can change to includes
-                );
-            });
-        }
+    // Filter by Tags
+    if (tagTermsArray.length > 0) {
+        filteredList = filteredList.filter(recipe => {
+            if (!recipe.tags || recipe.tags.length === 0) return false;
+            const recipeTagsLower = recipe.tags.map(tag => tag.toLowerCase());
+            return tagTermsArray.every(term =>
+                recipeTagsLower.some(tag => tag.includes(term))
+            );
+        });
     }
-
+    
     const displayOptions = {};
-    if (nameSearchTerm) displayOptions.highlightNameTerm = nameSearchTerm;
-    if (ingredientSearchTerm) displayOptions.highlightIngredients = ingredientSearchTerm.split(',').map(s => s.trim()).filter(Boolean);
-    if (tagSearchTerm) displayOptions.highlightTags = tagSearchTerm.split(',').map(t => t.trim()).filter(Boolean);
+    if (nameSearchTerm) {
+        displayOptions.highlightNameTerm = nameSearchTerm;
+    }
+    if (ingredientSearchTermsArray.length > 0) {
+        displayOptions.highlightIngredients = ingredientSearchTermsArray;
+    }
+    if (tagTermsArray.length > 0) {
+        displayOptions.highlightTags = tagTermsArray;
+    }
 
-    displayRecipes(currentFilteredRecipes, 'recipeResults', displayOptions);
+    console.log("Final filtered list count:", filteredList.length);
+    displayRecipes(filteredList, 'recipeResults', displayOptions);
 }
 
 function filterRecipesByText() { // This will now be triggered by ingredient search input
@@ -5498,7 +5606,12 @@ function showChatbotModal() {
             const userQuery = chatbotQueryInput.value.trim();
             if (!userQuery) {
                 if (chefBotListeningStatus) chefBotListeningStatus.textContent = "Please describe the recipe.";
-                chatbotQueryInput.focus();
+                if (window.innerWidth >= 576) { // Larger than typical mobile portrait
+                    chatbotQueryInput.focus();
+                } else {
+                    // On smaller screens, don't autofocus, let the user tap if they want to type.
+                    // The placeholder text or label should guide them.
+                }
                 return;
             }
             if (chefBotListeningStatus) chefBotListeningStatus.textContent = "";
@@ -5557,7 +5670,15 @@ function showChatbotModal() {
     // ... (The speech recognition will populate chatbotQueryInput.value) ...
     // ... (Your full speech recognition setup as previously provided) ...
 
-    if (chatbotQueryInput) chatbotQueryInput.focus();
+    if (chatbotQueryInput)
+    {
+        if (window.innerWidth >= 576) { // Larger than typical mobile portrait
+            chatbotQueryInput.focus();
+        } else {
+            // On smaller screens, don't autofocus, let the user tap if they want to type.
+            // The placeholder text or label should guide them.
+        }
+    }
 }
 
 // Mock function to simulate chatbot response
