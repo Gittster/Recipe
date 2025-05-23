@@ -1293,44 +1293,119 @@ function runOCRFromImage(src) {
 
 
 
-function preprocessImage(img) {
-  const canvas = document.getElementById('preprocessCanvas');
-  const ctx = canvas.getContext('2d');
+/**
+ * Preprocesses an image by resizing it, optionally converting to grayscale and adjusting contrast,
+ * and then outputs it as a base64 data URL (JPEG format).
+ * @param {HTMLImageElement} imgElement - The <img> element containing the loaded source image.
+ * @returns {string|null} The base64 data URL of the processed image (e.g., 'data:image/jpeg;base64,...') or null on error.
+ */
+function preprocessImage(imgElement) {
+    if (!imgElement || !(imgElement instanceof HTMLImageElement) || !imgElement.naturalWidth || !imgElement.naturalHeight) {
+        console.error("preprocessImage: Invalid image element or image not loaded.", imgElement);
+        return null;
+    }
 
-  const scaleFactor = 2;
-  const width = img.naturalWidth * scaleFactor;
-  const height = img.naturalHeight * scaleFactor;
+    const canvas = document.getElementById('preprocessCanvas'); // Make sure this canvas element exists in your HTML
+    if (!canvas) {
+        console.error("preprocessImage: Canvas element with ID 'preprocessCanvas' not found!");
+        return null;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+        console.error("preprocessImage: Could not get 2D context from canvas.");
+        return null;
+    }
 
-  canvas.width = width;
-  canvas.height = height;
+    // --- Image Resizing Logic ---
+    const MAX_WIDTH = 1200;  // Max width for the processed image (pixels)
+    const MAX_HEIGHT = 1600; // Max height for the processed image (pixels)
 
-  ctx.drawImage(img, 0, 0, width, height);
+    let width = imgElement.naturalWidth;
+    let height = imgElement.naturalHeight;
 
-  const imageData = ctx.getImageData(0, 0, width, height);
-  const data = imageData.data;
+    // Calculate new dimensions to fit within MAX_WIDTH and MAX_HEIGHT while maintaining aspect ratio
+    if (width > height) {
+        if (width > MAX_WIDTH) {
+            height = Math.round(height * (MAX_WIDTH / width));
+            width = MAX_WIDTH;
+        }
+    } else {
+        if (height > MAX_HEIGHT) {
+            width = Math.round(width * (MAX_HEIGHT / height));
+            height = MAX_HEIGHT;
+        }
+    }
+    // If the image is already smaller than both max dimensions, it will use its original size
+    // unless you want to enforce a minimum size or always resize.
+    // This logic primarily scales down large images.
 
-  // Parameters to tweak
-  const brightness = 1.1; // Lighten slightly
-  const contrast = 1.1;   // Gentle boost
+    canvas.width = width;
+    canvas.height = height;
 
-  for (let i = 0; i < data.length; i += 4) {
-    const r = data[i], g = data[i + 1], b = data[i + 2];
+    console.log(`preprocessImage: Resizing image from ${imgElement.naturalWidth}x${imgElement.naturalHeight} to ${width}x${height}`);
 
-    // Convert to grayscale
-    let gray = 0.299 * r + 0.587 * g + 0.114 * b;
+    // Optional: Fill background with white if converting transparent PNGs to JPEG
+    // ctx.fillStyle = "#FFFFFF";
+    // ctx.fillRect(0, 0, width, height);
 
-    // Apply brightness and contrast adjustment
-    gray = ((gray - 128) * contrast + 128) * brightness;
+    ctx.drawImage(imgElement, 0, 0, width, height); // Draw the (potentially scaled) image onto the canvas
 
-    // Clamp to 0–255 range
-    gray = Math.max(0, Math.min(255, gray));
+    // --- Optional: Grayscale and Contrast Adjustments ---
+    // These can sometimes help OCR/AI but also increase processing time slightly.
+    // Test with and without these to see if they improve your AI results significantly
+    // after resizing and JPEG conversion.
+    /*
+    try {
+        const imageData = ctx.getImageData(0, 0, width, height);
+        const data = imageData.data;
+        const brightness = 1.0; // 1.0 means no change
+        const contrast = 1.0;   // 1.0 means no change (values > 1 increase contrast)
 
-    // Apply grayscale to all color channels
-    data[i] = data[i + 1] = data[i + 2] = gray;
-  }
+        for (let i = 0; i < data.length; i += 4) {
+            // Grayscale (luminosity method)
+            let gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
 
-  ctx.putImageData(imageData, 0, 0);
-  return canvas.toDataURL();
+            // Apply brightness and contrast
+            // Formula: factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+            // color = factor * (color - 128) + 128;
+            // Simplified for less aggressive changes:
+            gray = ((gray / 255 - 0.5) * contrast + 0.5) * 255; // Contrast
+            gray = gray * brightness; // Brightness
+
+            gray = Math.max(0, Math.min(255, gray)); // Clamp to 0-255
+
+            data[i] = gray;     // Red
+            data[i+1] = gray;   // Green
+            data[i+2] = gray;   // Blue
+            // Alpha (data[i+3]) remains unchanged
+        }
+        ctx.putImageData(imageData, 0, 0);
+        console.log("preprocessImage: Applied grayscale and contrast adjustments.");
+    } catch (err) {
+        console.error("preprocessImage: Error during pixel manipulation (grayscale/contrast):", err);
+        // Continue without these adjustments if they fail
+    }
+    */
+
+    // --- Output as JPEG with Quality Control ---
+    try {
+        const quality = 0.75; // JPEG quality (0.0 to 1.0). 0.7 to 0.8 is usually a good balance.
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        console.log(`preprocessImage: Generated JPEG data URL with quality ${quality}. Length: ${dataUrl.length}`);
+        return dataUrl;
+    } catch (err) {
+        console.error("preprocessImage: Error converting canvas to JPEG data URL:", err);
+        // Fallback to PNG if JPEG fails (e.g., browser doesn't support quality for JPEG on canvas)
+        try {
+            console.warn("preprocessImage: Falling back to PNG format.");
+            const dataUrlPng = canvas.toDataURL('image/png');
+            console.log(`preprocessImage: Generated PNG data URL. Length: ${dataUrlPng.length}`);
+            return dataUrlPng;
+        } catch (pngErr) {
+            console.error("preprocessImage: Error converting canvas to PNG data URL as fallback:", pngErr);
+            return null;
+        }
+    }
 }
 
 
