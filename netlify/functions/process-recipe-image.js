@@ -1,5 +1,5 @@
 // functions/process-recipe-image.js
-// const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require("@google/generative-ai"); // Assuming this is at the top
+const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require("@google/generative-ai"); // Assuming this is at the top
 
 // Use your actual Netlify URL for production, "*" is okay for local dev but be specific later.
 const ALLOWED_ORIGIN = process.env.DEPLOY_PRIME_URL || process.env.URL || "*";
