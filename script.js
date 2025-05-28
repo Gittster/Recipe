@@ -37,120 +37,69 @@ function openAddRecipeMethodChoiceModal() {
     }
 }
 
-let dedicatedRecipePhotoInput = null;
-
-/**
- * Called when a user selects a method from the "Add Recipe Method Choice" modal.
- * It hides the choice modal and triggers the UI for the selected method.
- * @param {string} method - The chosen method: 'manual', 'photo', 'photo-of-food', 'paste', 'chefbot'.
- */
 function selectAddRecipeMethod(method) {
-    currentAddRecipeMethod = method; // Store the selected method
+    currentAddRecipeMethod = method;
     console.log("Selected add recipe method:", method);
 
     if (addRecipeMethodModalInstance) {
         addRecipeMethodModalInstance.hide(); // Hide the choice modal
     }
 
+    // Now, open the specialized UI for the chosen method
+    // This will replace your old toggleRecipeForm() and direct showChatbotModal() calls for *new* recipes.
     switch (method) {
         case 'manual':
-            toggleRecipeForm(true, true); // Open and reset for new manual entry
-            setTimeout(() => {
-                const recipeNameInput = document.getElementById('recipeNameInput');
-                if (recipeNameInput) recipeNameInput.focus();
-                // Ensure other accordions in the form are closed for a clean manual entry start
+            // Open your existing manual recipe form, perhaps in a new dedicated modal or by revealing it.
+            // For now, let's assume toggleRecipeForm() still shows the main manual form.
+            // We need to ensure toggleRecipeForm() now presents *just* the manual form fields,
+            // and the accordion for Photo/Paste might be removed from it or handled differently.
+            toggleRecipeForm(true); // Pass true to indicate it's being opened for manual entry
+            // Ensure the form is scrolled into view and focused
+            document.getElementById('recipeNameInput')?.focus();
+            break;
+        case 'photo':
+            // Trigger the UI for photo upload. This might mean opening the
+            // #recipeForm and then programmatically opening the "Add by Photo" accordion item,
+            // or having a dedicated modal for photo upload.
+            toggleRecipeForm(true); // Open the main form container
+            // Ensure the accordion is set up after innerHTML is done in showRecipeFilter
+            setTimeout(() => { // Delay to ensure DOM is ready
                 const collapseOCR = document.getElementById('collapseOCR');
-                const collapsePaste = document.getElementById('collapsePaste');
-                if (collapseOCR && bootstrap.Collapse.getInstance(collapseOCR)) {
-                     bootstrap.Collapse.getInstance(collapseOCR).hide();
-                }
-                if (collapsePaste && bootstrap.Collapse.getInstance(collapsePaste)) {
-                     bootstrap.Collapse.getInstance(collapsePaste).hide();
-                }
-            }, 150); // Short delay for modal transition
-            break;
-
-        case 'photo': // This is for extracting recipe from photo of TEXT
-        case 'photo-of-food': // This is for generating recipe from photo of FOOD
-            console.log(`Photo method selected: ${method}. Triggering dedicated photo input.`);
-            
-            // Clean up any previous dynamically created input
-            if (dedicatedRecipePhotoInput && dedicatedRecipePhotoInput.parentNode) {
-                dedicatedRecipePhotoInput.remove();
-            }
-            
-            dedicatedRecipePhotoInput = document.createElement('input');
-            dedicatedRecipePhotoInput.type = 'file';
-            dedicatedRecipePhotoInput.accept = 'image/*'; // Accept all image types
-            
-            // Prefer back camera on mobile devices
-            if (navigator.userAgent.match(/Android/i) || navigator.userAgent.match(/iPhone|iPad|iPod/i)) {
-                dedicatedRecipePhotoInput.capture = 'environment';
-            }
-            
-            dedicatedRecipePhotoInput.style.display = 'none'; // Keep it hidden
-
-            dedicatedRecipePhotoInput.onchange = (event) => {
-                // Determine the promptType based on which button was clicked in the modal
-                const resolvedPromptType = (method === 'photo-of-food') ? 'generate-from-food' : 'extract';
-                
-                // Call handleRecipePhoto with directFill=true and the determined promptType
-                if (typeof handleRecipePhoto === "function") {
-                    handleRecipePhoto(event, true, resolvedPromptType);
+                const accordionButtonOCR = document.querySelector('button[data-bs-target="#collapseOCR"]');
+                if (collapseOCR && accordionButtonOCR) {
+                    const bsCollapse = bootstrap.Collapse.getOrCreateInstance(collapseOCR);
+                    bsCollapse.show();
+                    accordionButtonOCR.setAttribute('aria-expanded', 'true');
+                    accordionButtonOCR.classList.remove('collapsed');
+                    document.getElementById('recipePhotoInput')?.focus();
                 } else {
-                    console.error("handleRecipePhoto function is not defined!");
+                    console.warn("Could not find OCR accordion elements to auto-open.");
                 }
-                
-                // Clean up the dynamically created file input after use
-                if (dedicatedRecipePhotoInput && dedicatedRecipePhotoInput.parentNode) {
-                    dedicatedRecipePhotoInput.remove();
-                }
-                dedicatedRecipePhotoInput = null;
-            };
-            
-            document.body.appendChild(dedicatedRecipePhotoInput); // Add to body to make it clickable
-            dedicatedRecipePhotoInput.click(); // Programmatically click the hidden file input
+            }, 100); // Small delay
             break;
-
         case 'paste':
-            toggleRecipeForm(true, false); // Open form container, don't do full manual reset
+            // Similar to photo, open the #recipeForm and the "Paste Text" accordion.
+            toggleRecipeForm(true);
             setTimeout(() => {
                 const collapsePaste = document.getElementById('collapsePaste');
                 const accordionButtonPaste = document.querySelector('button[data-bs-target="#collapsePaste"]');
-                const collapseOCR = document.getElementById('collapseOCR'); // Ensure photo accordion is closed
-
-                if (collapseOCR && bootstrap.Collapse.getInstance(collapseOCR)) {
-                     bootstrap.Collapse.getInstance(collapseOCR).hide();
-                }
-                
                 if (collapsePaste && accordionButtonPaste) {
                     const bsCollapse = bootstrap.Collapse.getOrCreateInstance(collapsePaste);
                     bsCollapse.show();
-                    // Bootstrap might handle these attributes, but good to be explicit
                     accordionButtonPaste.setAttribute('aria-expanded', 'true');
                     accordionButtonPaste.classList.remove('collapsed');
-                    
-                    const pasteArea = document.getElementById('ocrTextPaste');
-                    if (pasteArea) {
-                        pasteArea.focus();
-                        pasteArea.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
+                    document.getElementById('ocrTextPaste')?.focus();
                 } else {
                     console.warn("Could not find Paste Text accordion elements to auto-open.");
                 }
-            }, 150); // Delay for modal transition and form visibility
+            }, 100);
             break;
-
         case 'chefbot':
-            if (typeof showChatbotModal === "function") {
-                showChatbotModal(); // This opens the general Chef Bot for new recipes
-            } else {
-                console.error("showChatbotModal function is not defined!");
-            }
+            // This calls your existing function that opens the Chef Bot modal for new recipes
+            showChatbotModal();
             break;
-
         default:
-            console.error("Unknown recipe add method selected:", method);
+            console.error("Unknown recipe add method:", method);
     }
 }
 
@@ -851,10 +800,9 @@ function createHighlightRegex(term) {
     return new RegExp(`(${escapedTerm})`, 'gi');
 }
 
-async function handleRecipePhoto(event, directFill = false, promptType = 'extract') { // Added directFill and promptType
+async function handleRecipePhoto(event) {
     console.log("--- handleRecipePhoto DEBUG START ---");
     console.log("handleRecipePhoto triggered at:", new Date().toISOString(), "Event type:", event.type);
-    console.log("Direct Fill Mode:", directFill, "| Prompt Type:", promptType); // Log the new parameters
 
     const file = event.target.files[0];
     if (!file) {
@@ -864,204 +812,183 @@ async function handleRecipePhoto(event, directFill = false, promptType = 'extrac
     }
 
     // Log file details
-    console.log("File Object:", file);
-    console.log("file.name:", file.name);
-    console.log("file.size:", file.size);
-    console.log("file.type:", file.type);
+    console.log("Mobile - File Object:", file);
+    console.log("Mobile - file.name:", file.name);
+    console.log("Mobile - file.size:", file.size);
+    console.log("Mobile - file.type:", file.type); // Important for mobile
 
     const photoPreviewContainer = document.getElementById('photoPreviewContainer');
-    // If directFill is true, we might not have a dedicated photoPreviewContainer on the page,
-    // or we might want to show a global loading indicator instead.
-    // For now, let's assume photoPreviewContainer is mainly for the accordion flow.
-    // If directFill, we might show a more generic loading indicator.
-    let statusDisplayArea = photoPreviewContainer; // Default to existing preview
-    if (directFill && !photoPreviewContainer) {
-        // If no dedicated preview area and it's direct fill, maybe use a temporary status message
-        // or rely on button states. For now, this function assumes photoPreviewContainer exists if used.
-        console.warn("handleRecipePhoto: photoPreviewContainer not found, but needed for status messages if not direct filling to form.");
-        // If directFill is true, the user experience is more about immediate form population.
-        // We can show a global loading state if needed.
+    if (!photoPreviewContainer) {
+        console.error("handleRecipePhoto: photoPreviewContainer element not found!");
+        console.log("--- handleRecipePhoto DEBUG END (no preview container) ---");
+        return;
     }
-
-    if (statusDisplayArea) {
-        statusDisplayArea.innerHTML = `<div class="text-center"><p>Reading file... <span class="spinner-border spinner-border-sm"></span></p></div>`;
-    } else if (directFill) {
-        // Consider a global loading indicator for directFill if no preview container
-        showGlobalLoading("Reading image..."); // You'd need to implement showGlobalLoading
-    }
-
+    photoPreviewContainer.innerHTML = `<div class="text-center"><p>Reading file... <span class="spinner-border spinner-border-sm"></span></p></div>`;
 
     const reader = new FileReader();
 
     reader.onerror = (error) => {
         console.error("FileReader error:", error);
-        if (statusDisplayArea) {
-            statusDisplayArea.innerHTML = '<p class="alert alert-danger text-center">Error reading the selected file.</p>';
-        } else if (directFill) {
-            hideGlobalLoading();
-            alert("Error reading the selected file.");
+        if (photoPreviewContainer) {
+            photoPreviewContainer.innerHTML = '<p class="alert alert-danger text-center">Error reading the selected file.</p>';
         }
         console.log("--- handleRecipePhoto DEBUG END (FileReader error) ---");
     };
 
     reader.onload = function (e) {
         const originalImgSrc = e.target.result;
-        console.log("originalImgSrc length (from FileReader):", originalImgSrc ? originalImgSrc.length : "N/A");
+        console.log("Mobile - originalImgSrc length (from FileReader):", originalImgSrc ? originalImgSrc.length : "N/A");
 
         if (!originalImgSrc || originalImgSrc.length === 0) {
             console.error("handleRecipePhoto: FileReader result (originalImgSrc) is empty or invalid.");
-            if (statusDisplayArea) {
-                statusDisplayArea.innerHTML = '<p class="alert alert-danger text-center">Error: Could not read image data from file.</p>';
-            } else if (directFill) {
-                hideGlobalLoading();
-                alert("Error: Could not read image data from file.");
+            if (photoPreviewContainer) {
+                photoPreviewContainer.innerHTML = '<p class="alert alert-danger text-center">Error: Could not read image data from file.</p>';
             }
             console.log("--- handleRecipePhoto DEBUG END (empty originalImgSrc) ---");
             return;
         }
-        console.log("originalImgSrc (first 100 chars):", originalImgSrc.substring(0,100));
+        console.log("Mobile - originalImgSrc (first 100 chars):", originalImgSrc.substring(0,100));
         
-        if (statusDisplayArea) {
-            statusDisplayArea.innerHTML = `<div class="text-center"><p>Processing image for AI... <span class="spinner-border spinner-border-sm"></span></p></div>`;
-        } else if (directFill) {
-            showGlobalLoading("Processing image for AI...");
+        if (photoPreviewContainer) { // Update status
+            photoPreviewContainer.innerHTML = `<div class="text-center"><p>Processing image for AI... <span class="spinner-border spinner-border-sm"></span></p></div>`;
         }
 
         const imgForPreprocessing = document.createElement('img');
 
         imgForPreprocessing.onerror = () => {
-            console.error("Error loading image into temporary img element.");
-            if (statusDisplayArea) {
-                statusDisplayArea.innerHTML = '<p class="alert alert-danger text-center">Could not load image for processing. Please try a different image or ensure it is a standard format (JPG, PNG).</p>';
-            } else if (directFill) {
-                hideGlobalLoading();
-                alert("Could not load image for processing. Please try a different image or ensure it is a standard format (JPG, PNG).");
+            console.error("Error loading image into temporary img element. The Data URL might be corrupted or too long for this browser/device, or an unsupported image format was used initially.");
+            if (photoPreviewContainer) {
+                photoPreviewContainer.innerHTML = '<p class="alert alert-danger text-center">Could not load image for processing. Please try a different image or ensure it is a standard format (JPG, PNG).</p>';
             }
             console.log("--- handleRecipePhoto DEBUG END (imgForPreprocessing.onerror) ---");
         };
 
+        // This is the main processing block, triggered once the browser has loaded the image data into the <img> tag
         imgForPreprocessing.onload = async () => {
             console.log("--- imgForPreprocessing.onload triggered. Image natural dimensions:", imgForPreprocessing.naturalWidth, "x", imgForPreprocessing.naturalHeight);
             
-            if (statusDisplayArea) statusDisplayArea.innerHTML = ''; 
-            
-            const statusMessageUnderPhoto = document.createElement('p'); // Use a consistent status element
-            statusMessageUnderPhoto.className = 'text-center mt-3 alert alert-info';
-            statusMessageUnderPhoto.innerHTML = '🤖 Analyzing recipe with AI... <span class="spinner-border spinner-border-sm"></span> This may take a moment.';
-            if (statusDisplayArea) statusDisplayArea.appendChild(statusMessageUnderPhoto);
-            else if(directFill) showGlobalLoading('🤖 Analyzing recipe with AI... This may take a moment.');
+            if (photoPreviewContainer) photoPreviewContainer.innerHTML = ''; // Clear "Processing..." for new status or preview
 
+            // Optional: Display original and preprocessed image (for UX, can be intensive)
+            // For now, directly proceed to status message and processing.
+            // If you add image display here, make sure photoPreviewContainer is cleared before statusMessage.
+
+            const statusMessage = document.createElement('p');
+            statusMessage.className = 'text-center mt-3 alert alert-info';
+            statusMessage.innerHTML = '🤖 Analyzing recipe with AI... <span class="spinner-border spinner-border-sm"></span> This may take a moment.';
+            if (photoPreviewContainer) photoPreviewContainer.appendChild(statusMessage);
 
             let processedDataUrl;
             try {
                 console.log("handleRecipePhoto: Attempting to preprocess image.");
-                processedDataUrl = preprocessImage(imgForPreprocessing);
-                if (!processedDataUrl || !processedDataUrl.includes(',')) {
+                processedDataUrl = preprocessImage(imgForPreprocessing); // Your existing function
+                if (!processedDataUrl || !processedDataUrl.includes(',')) { // Basic check for valid data URL
                     throw new Error("Preprocessing returned an invalid or empty data URL.");
                 }
-                console.log("processedDataUrl length:", processedDataUrl.length);
+                console.log("Mobile - processedDataUrl length:", processedDataUrl.length);
+                console.log("Mobile - processedDataUrl (first 100 chars):", processedDataUrl.substring(0,100));
             } catch (preprocessError) {
                 console.error("Error during image preprocessing:", preprocessError);
-                if(statusMessageUnderPhoto && statusMessageUnderPhoto.parentNode) statusMessageUnderPhoto.remove();
-                if (directFill) hideGlobalLoading();
-                const errorMsg = `Error preprocessing image: ${preprocessError.message}`;
-                if (statusDisplayArea) statusDisplayArea.innerHTML = `<p class="alert alert-danger text-center">${errorMsg}</p>`;
-                else alert(errorMsg);
+                if(statusMessage && statusMessage.parentNode) statusMessage.remove();
+                if (photoPreviewContainer) {
+                    photoPreviewContainer.innerHTML = `<p class="alert alert-danger text-center">Error preprocessing image: ${preprocessError.message}</p>`;
+                }
                 console.log("--- handleRecipePhoto DEBUG END (preprocessing error) ---");
                 return;
             }
             
             const base64ImageData = processedDataUrl.split(',')[1];
+            console.log("Mobile - base64ImageData length:", base64ImageData ? base64ImageData.length : "N/A");
+
             const payload = {
                 image: base64ImageData,
-                mimeType: file.type || 'image/jpeg',
-                promptType: promptType // This was correctly added in your provided function
+                mimeType: file.type || 'image/jpeg' // Defaulting to image/jpeg if file.type is falsy
             };
-            console.log("Payload to be sent (base64 image truncated for log):", /* ... */);
+            console.log("Mobile - Payload to be sent (base64 image truncated for log):",
+                JSON.stringify({ ...payload, image: payload.image ? payload.image.substring(0,50) + "..." : "N/A" }, null, 2)
+            );
 
             try {
-                console.log("--- About to FETCH /.netlify/functions/process-recipe-image.");
-                const response = await fetch("/.netlify/functions/process-recipe-image", { /* ... */ }); // body: JSON.stringify(payload)
+                console.log("--- About to FETCH /.netlify/functions/process-recipe-image. Payload length (approx):", JSON.stringify(payload).length);
+                const response = await fetch("/.netlify/functions/process-recipe-image", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
 
-                if(statusMessageUnderPhoto && statusMessageUnderPhoto.parentNode) statusMessageUnderPhoto.remove();
-                if (directFill && !statusDisplayArea) hideGlobalLoading(); // Hide global loader if it was shown
+                console.log("handleRecipePhoto: Fetch response received. Status:", response.status);
+                if(statusMessage && statusMessage.parentNode) statusMessage.remove();
 
-                const responseText = await response.text();
+                const responseText = await response.text(); // Get raw text first
                 console.log("handleRecipePhoto: Raw response text from server (first 500 chars):", responseText.substring(0, 500));
 
-                if (!response.ok) { /* ... handle fetch error as before ... */ }
-                const recipeData = JSON.parse(responseText);
-                if (recipeData.error) { /* ... handle AI returned error as before ... */ }
+                if (!response.ok) {
+                    let errorData = { error: `Server error ${response.status}. No details.` };
+                    try {
+                        errorData = JSON.parse(responseText); // Try to parse for a JSON error message
+                    } catch (e) {
+                        console.warn("Response from server was not valid JSON, using raw text for error.");
+                        errorData = { error: `Server error ${response.status}. Response: ${responseText.substring(0,100)}...` };
+                    }
+                    console.error("handleRecipePhoto: Server returned an error object:", errorData);
+                    throw new Error(errorData.error || `Failed to process image: ${response.statusText}`);
+                }
 
+                const recipeData = JSON.parse(responseText); 
+
+                if (recipeData.error) { // Check for error field in successful (2xx) JSON response
+                    console.error("handleRecipePhoto: AI Function returned an error in JSON:", recipeData.error);
+                    throw new Error(recipeData.error);
+                }
+
+                // At this point, assume recipeData is valid if no error was thrown
                 console.log("handleRecipePhoto: AI Extracted Recipe Data:", recipeData);
+                if (photoPreviewContainer) { // Clear previous messages before showing success & button
+                    photoPreviewContainer.innerHTML = ''; 
+                }
+                
+                const successMsg = document.createElement('p');
+                successMsg.className = 'alert alert-success mt-2 text-center';
+                successMsg.textContent = '✅ AI successfully extracted recipe data!';
+                if (photoPreviewContainer) photoPreviewContainer.appendChild(successMsg);
 
-                if (directFill) {
-                    // --- DIRECTLY FILL AND SHOW THE MAIN RECIPE FORM ---
-                    if (statusDisplayArea) statusDisplayArea.innerHTML = ''; // Clear preview area
-
-                    toggleRecipeForm(true, false); // Open #recipeForm, don't do full manual reset
-                    fillRecipeForm(recipeData);   // Populate with AI data
-                    
+                const fillFormBtn = document.createElement('button');
+                fillFormBtn.className = 'btn btn-primary mt-2 mb-3 d-block mx-auto';
+                fillFormBtn.innerHTML = '✨ Fill Recipe Form with this Data';
+                fillFormBtn.onclick = () => {
+                    const recipeFormDiv = document.getElementById('recipeForm');
+                    if (recipeFormDiv && !recipeFormDiv.classList.contains('open')) {
+                        toggleRecipeForm(true, false); // Open form, don't do full manual reset
+                    }
+                    fillRecipeForm(recipeData); // Your function to populate the main recipe form
                     const recipeNameField = document.getElementById('recipeNameInput');
                     if (recipeNameField) {
                         recipeNameField.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        recipeNameField.focus();
                     }
-                    showSuccessMessage("✅ Recipe data extracted and form populated! Please review and save.");
+                    successMsg.textContent = '✅ Form filled! Please review and save.';
+                    fillFormBtn.remove();
+                };
+                if (photoPreviewContainer) photoPreviewContainer.appendChild(fillFormBtn);
 
-                } else { // Old behavior, show "Fill Form" button (e.g., if called from accordion)
-                    if (statusDisplayArea) {
-                         const existingStatus = statusDisplayArea.querySelector('.alert-info, .alert-danger'); // Clear previous processing messages
-                         if (existingStatus) existingStatus.remove();
-                    }
-                    const successMsg = document.createElement('p');
-                    successMsg.className = 'alert alert-success mt-2 text-center';
-                    successMsg.textContent = '✅ AI successfully extracted recipe data!';
-                    if (statusDisplayArea) statusDisplayArea.appendChild(successMsg);
-
-                    const fillFormBtn = document.createElement('button');
-                    fillFormBtn.className = 'btn btn-primary mt-2 mb-3 d-block mx-auto';
-                    fillFormBtn.innerHTML = '✨ Fill Recipe Form with this Data';
-                    fillFormBtn.onclick = () => { /* ... same logic as before ... */ };
-                    if (statusDisplayArea) statusDisplayArea.appendChild(fillFormBtn);
+            } catch (err) {
+                console.error("handleRecipePhoto: Error during fetch or processing AI response:", err);
+                if(statusMessage && statusMessage.parentNode) statusMessage.remove();
+                if (photoPreviewContainer) {
+                    const errorDisplay = document.createElement('p');
+                    errorDisplay.className = 'alert alert-danger mt-2 text-center';
+                    errorDisplay.textContent = `❌ AI Processing Error: ${err.message}`;
+                    photoPreviewContainer.appendChild(errorDisplay);
                 }
-
-            } catch (err) { /* ... your existing fetch error handling ... */ }
+            }
             console.log("--- handleRecipePhoto DEBUG END (imgForPreprocessing.onload finished) ---");
-        }; // End of imgForPreprocessing.onload
+        };
 
+        // Assign src to the <img> AFTER .onload and .onerror are attached
         imgForPreprocessing.src = originalImgSrc;
         console.log("handleRecipePhoto: imgForPreprocessing.src assigned. Waiting for its onload or onerror event.");
-    }; // End of reader.onload
-    reader.readAsDataURL(file);
-}
+    };
 
-let globalLoadingOverlay = null;
-function showGlobalLoading(message = "Processing...") {
-    if (globalLoadingOverlay && globalLoadingOverlay.parentNode) {
-        globalLoadingOverlay.remove();
-    }
-    globalLoadingOverlay = document.createElement('div');
-    globalLoadingOverlay.id = 'globalLoadingOverlay';
-    globalLoadingOverlay.style.position = 'fixed';
-    globalLoadingOverlay.style.top = '0';
-    globalLoadingOverlay.style.left = '0';
-    globalLoadingOverlay.style.width = '100%';
-    globalLoadingOverlay.style.height = '100%';
-    globalLoadingOverlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
-    globalLoadingOverlay.style.zIndex = '3000'; // Very high z-index
-    globalLoadingOverlay.style.display = 'flex';
-    globalLoadingOverlay.style.justifyContent = 'center';
-    globalLoadingOverlay.style.alignItems = 'center';
-    globalLoadingOverlay.innerHTML = `<div class="text-white p-3 rounded bg-dark"><span class="spinner-border spinner-border-sm me-2"></span>${escapeHtml(message)}</div>`;
-    document.body.appendChild(globalLoadingOverlay);
-}
-
-function hideGlobalLoading() {
-    if (globalLoadingOverlay && globalLoadingOverlay.parentNode) {
-        globalLoadingOverlay.remove();
-    }
-    globalLoadingOverlay = null;
+    reader.readAsDataURL(file); // Start reading the selected file
 }
 
 function generateStructuredOcrTemplate(rawText) {
@@ -6008,19 +5935,21 @@ function generateRecipeDisplayHTML(recipe) {
 
 
 function showChatbotModal() {
-    // Stop any previous speech recognition and remove old modal
     if (window.chefBotSpeechRecognition && window.chefBotIsListening) {
         window.chefBotSpeechRecognition.stop();
-        window.chefBotIsListening = false;
     }
     if (chatbotModalElement && chatbotModalElement.parentNode) {
         chatbotModalElement.remove();
     }
     currentChatbotRecipe = null;
-    let conversationHistory = [];
-    const MAX_HISTORY_TURNS = 4;
+    let conversationHistory = []; // Initialize history for this session
+    const MAX_HISTORY_TURNS = 4; // Max user+bot turn pairs (e.g., 4 pairs = 8 messages)
 
     chatbotModalElement = document.createElement('div');
+    // ... (rest of chatbotModalElement and card creation as in your last full version)
+    // ... (Make sure the HTML for the modal is the same as your last full function)
+    // The HTML needs: chatbotQueryInput, chefBotMicButton, chefBotListeningStatus,
+    // askChefBotBtn, chatbotRecipeDisplayArea, saveChatbotRecipeBtn, closeChatbotModalBtn
     chatbotModalElement.className = 'position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-75 d-flex justify-content-center align-items-start overflow-auto';
     chatbotModalElement.style.zIndex = "2050";
     chatbotModalElement.style.padding = '2rem';
@@ -6069,153 +5998,111 @@ function showChatbotModal() {
     document.body.classList.add('modal-open-custom');
 
     const closeButtonX = card.querySelector('.btn-close');
-    const askChefBotBtn = document.getElementById('askChefBotBtn'); // Use getElementById for reliability
-    const saveChatbotRecipeBtn = document.getElementById('saveChatbotRecipeBtn');
-    const closeChatbotModalBtn = card.querySelector('#closeChatbotModalBtn'); // Query within card is fine
+    const askChefBotBtn = card.querySelector('#askChefBotBtn');
+    const saveChatbotRecipeBtn = card.querySelector('#saveChatbotRecipeBtn');
+    const closeChatbotModalBtn = card.querySelector('#closeChatbotModalBtn');
     const chatbotQueryInput = document.getElementById('chatbotQueryInput');
     const chatbotRecipeDisplayArea = document.getElementById('chatbotRecipeDisplayArea');
     const chefBotMicButton = document.getElementById('chefBotMicButton');
     const chefBotListeningStatus = document.getElementById('chefBotListeningStatus');
 
-    const closeModal = () => {
+    const closeModal = () => { /* ... same as your last version ... */ 
         if (window.chefBotSpeechRecognition && window.chefBotIsListening) {
-            window.chefBotSpeechRecognition.stop();
+            window.chefBotSpeechRecognition.stop(); 
             window.chefBotIsListening = false;
         }
         if (chatbotModalElement && chatbotModalElement.parentNode) {
             chatbotModalElement.remove();
         }
         chatbotModalElement = null;
-        currentChatbotRecipe = null;
-        document.body.classList.remove('modal-open-custom');
+        currentChatbotRecipe = null; 
+        document.body.classList.remove('modal-open-custom'); 
     };
 
-    if (closeButtonX) closeButtonX.onclick = closeModal;
-    if (closeChatbotModalBtn) closeChatbotModalBtn.onclick = closeModal;
+    if(closeButtonX) closeButtonX.onclick = closeModal;
+    if(closeChatbotModalBtn) closeChatbotModalBtn.onclick = closeModal;
     chatbotModalElement.addEventListener('click', (e) => {
         if (e.target === chatbotModalElement) closeModal();
     });
 
-    if (askChefBotBtn && chatbotQueryInput && chatbotRecipeDisplayArea && saveChatbotRecipeBtn) {
+    if (askChefBotBtn) {
         askChefBotBtn.onclick = async () => {
-            console.log("--- askChefBotBtn CLICKED ---"); // Log 1
             const userQuery = chatbotQueryInput.value.trim();
             if (!userQuery) {
-                if (chefBotListeningStatus) chefBotListeningStatus.textContent = "Please describe the recipe you want.";
-                chatbotQueryInput.focus();
+                if (chefBotListeningStatus) chefBotListeningStatus.textContent = "Please describe the recipe.";
+                if (window.innerWidth >= 576) { // Larger than typical mobile portrait
+                    chatbotQueryInput.focus();
+                } else {
+                    // On smaller screens, don't autofocus, let the user tap if they want to type.
+                    // The placeholder text or label should guide them.
+                }
                 return;
             }
             if (chefBotListeningStatus) chefBotListeningStatus.textContent = "";
 
+            // Add user query to history
             conversationHistory.push({ role: "user", text: userQuery });
             if (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
                 conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS * 2);
             }
 
             askChefBotBtn.disabled = true;
-            askChefBotBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...';
-            chatbotRecipeDisplayArea.innerHTML = '<p class="text-muted text-center mt-3">Chef Bot is concocting a recipe... <i class="bi bi-hourglass-split"></i></p>';
-            saveChatbotRecipeBtn.disabled = true;
+            askChefBotBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Generating...';
+            if(chatbotRecipeDisplayArea) chatbotRecipeDisplayArea.innerHTML = '<p class="text-muted text-center mt-3">Chef Bot is thinking... <i class="bi bi-hourglass-split"></i></p>';
+            if(saveChatbotRecipeBtn) saveChatbotRecipeBtn.disabled = true;
             currentChatbotRecipe = null;
-            console.log("askChefBotBtn: State set to generating."); // Log 2
 
             try {
-                console.log("askChefBotBtn: About to fetch Netlify function 'generate-recipe-chat'."); // Log 3
                 const response = await fetch("/.netlify/functions/generate-recipe-chat", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        prompt: userQuery,
-                        history: conversationHistory
+                    body: JSON.stringify({ 
+                        prompt: userQuery, // 'prompt' is what your current function expects
+                        history: conversationHistory // Send the history
                     })
                 });
-                console.log("askChefBotBtn: Fetch response received, status:", response.status); // Log 4
-
-                const responseText = await response.text(); // Get raw text first
-                console.log("askChefBotBtn: Raw response text (first 300):", responseText.substring(0, 300)); // Log 5
-
-                if (!response.ok) {
-                    let errorData = { error: `Server error ${response.status}.` };
-                    try {
-                        errorData = JSON.parse(responseText); // Try to parse error from server
-                    } catch (e) {
-                        console.warn("Could not parse error response as JSON from generate-recipe-chat");
-                        errorData.details = responseText.substring(0,200);
-                    }
-                    console.error("Chatbot API error response:", errorData);
-                    throw new Error(errorData.error || `Chef Bot had an issue (Status: ${response.status}).`);
+                // ... (rest of your response handling)
+                if (!response.ok) { /* ... throw error ... */ 
+                    const errorData = await response.json().catch(() => ({ error: `HTTP error ${response.status}` }));
+                    throw new Error(errorData.error || `Chef Bot had an issue: ${response.statusText}`);
                 }
+                currentChatbotRecipe = await response.json();
 
-                currentChatbotRecipe = JSON.parse(responseText);
-                console.log("askChefBotBtn: Parsed currentChatbotRecipe:", currentChatbotRecipe); // Log 6
+                // Add bot response to history (assuming the whole recipe JSON is the "text" for history here)
+                // Or, if Gemini returns a conversational part + recipe, use the conversational part.
+                // For now, we'll assume the AI directly returns the recipe JSON.
+                // In this "generate" context, the "bot response" is the recipe itself.
+                // So, history might not be as useful for *this specific function* unless the AI also chats.
+                // Let's assume for generate-recipe-chat, the history is mainly to inform the *next* generation if the user refines.
+                // We won't add the full recipe JSON to history to avoid making it too large.
+                // conversationHistory.push({ role: "model", text: "Generated a recipe based on your request."}); 
 
-                // Add bot response to history (actual recipe JSON for generation context)
-                // For history, we might want to store a simpler confirmation or just the recipe name
-                conversationHistory.push({ role: "model", text: `Generated recipe: ${currentChatbotRecipe.name}` });
-                 if (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
-                    conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS * 2);
-                }
+                if (currentChatbotRecipe && currentChatbotRecipe.name /* ...and other fields... */) {
+                    if(chatbotRecipeDisplayArea) chatbotRecipeDisplayArea.innerHTML = generateRecipeDisplayHTML(currentChatbotRecipe);
+                    if(saveChatbotRecipeBtn) saveChatbotRecipeBtn.disabled = false;
+                } else { /* ... handle error ... */ }
 
-
-                if (currentChatbotRecipe && currentChatbotRecipe.name && currentChatbotRecipe.ingredients && currentChatbotRecipe.instructions && Array.isArray(currentChatbotRecipe.tags)) {
-                    chatbotRecipeDisplayArea.innerHTML = generateRecipeDisplayHTML(currentChatbotRecipe);
-                    saveChatbotRecipeBtn.disabled = false; // <<<< ENABLE SAVE BUTTON
-                    console.log("askChefBotBtn: Recipe displayed, save button enabled."); // Log 7
-                } else {
-                    console.error("Received unexpected recipe structure:", currentChatbotRecipe);
-                    chatbotRecipeDisplayArea.innerHTML = `<div class="alert alert-warning text-center mt-3">Sorry, Chef Bot couldn't generate a complete recipe. ${currentChatbotRecipe.error || ''}</div>`;
-                }
-            } catch (error) {
-                console.error("Chatbot fetch error:", error);
-                chatbotRecipeDisplayArea.innerHTML = `<div class="alert alert-danger text-center mt-3">An error occurred: ${error.message}. Please try again.</div>`;
-            } finally {
-                askChefBotBtn.disabled = false;
-                askChefBotBtn.innerHTML = '<i class="bi bi-magic"></i> Ask Chef Bot to Generate';
-                console.log("askChefBotBtn: Reset after fetch (in finally block)."); // Log 8
-            }
+            } catch (error) { /* ... */ } 
+            finally { /* ... reset askChefBotBtn ... */ }
         };
-    } else {
-        console.error("askChefBotBtn or its dependencies not found!");
     }
 
-    if (saveChatbotRecipeBtn && chatbotQueryInput) { // Ensure chatbotQueryInput exists for save logic as well
-        console.log("saveChatbotRecipeBtn found, attaching onclick listener."); // Log A
-        saveChatbotRecipeBtn.onclick = () => {
-            console.log("--- saveChatbotRecipeBtn CLICKED! ---"); // Log B
-            if (!currentChatbotRecipe || !currentChatbotRecipe.name) {
-                alert("No valid recipe generated by Chef Bot to save.");
-                console.log("saveChatbotRecipeBtn: No valid currentChatbotRecipe."); // Log C
-                return;
-            }
-            console.log("saveChatbotRecipeBtn: Proceeding to save recipe:", currentChatbotRecipe.name); // Log D
+    if (saveChatbotRecipeBtn) { /* ... your existing save logic ... */ }
 
-            if (currentUser) {
-                saveCurrentChatbotRecipeToFirestore();
-            } else {
-                if (!localDB) { alert("Local storage is not available."); return; }
-                const recipeToSaveLocally = { ...currentChatbotRecipe, localId: generateLocalUUID(), timestamp: new Date().toISOString() };
-                delete recipeToSaveLocally.uid;
-                localDB.recipes.add(recipeToSaveLocally)
-                    .then(() => {
-                        showSuccessMessage("✅ Chef Bot recipe saved locally!");
-                        closeModal();
-                        loadInitialRecipes();
-                        showDelayedCloudSavePrompt("Chef Bot recipe saved! Sign up/in to save to cloud.");
-                    })
-                    .catch(err => { console.error("Error saving Chef Bot recipe locally:", err); alert("Failed to save locally: " + err.message); });
-            }
-        };
-        console.log("saveChatbotRecipeBtn: onclick listener ATTACHED."); // Log E
-    } else {
-        console.error("saveChatbotRecipeBtn or chatbotQueryInput not found for save logic!");
+    // --- Speech Recognition Logic (remains largely the same) ---
+    // ... (Ensure chefBotMicButton, chatbotQueryInput, chefBotListeningStatus are used) ...
+    // ... (The speech recognition will populate chatbotQueryInput.value) ...
+    // ... (Your full speech recognition setup as previously provided) ...
+
+    if (chatbotQueryInput)
+    {
+        if (window.innerWidth >= 576) { // Larger than typical mobile portrait
+            chatbotQueryInput.focus();
+        } else {
+            // On smaller screens, don't autofocus, let the user tap if they want to type.
+            // The placeholder text or label should guide them.
+        }
     }
-
-    // --- Speech Recognition Logic ---
-    // (Your existing full speech recognition setup - ensure all element variables
-    // like chefBotMicButton, chatbotQueryInput, chefBotListeningStatus are correctly referenced)
-    // ... (Ensure it's placed here) ...
-
-    if (chatbotQueryInput) chatbotQueryInput.focus();
 }
 
 // Mock function to simulate chatbot response
