@@ -77,6 +77,35 @@ function selectAddRecipeMethod(method) {
                 }
             }, 100); // Small delay
             break;
+        case 'photo-of-food': // This is our new "guess recipe from food" method
+            console.log(`Photo method selected (${method}). Triggering dedicated photo input.`);
+            
+            if (dedicatedRecipePhotoInput && dedicatedRecipePhotoInput.parentNode) {
+                dedicatedRecipePhotoInput.remove();
+            }
+            
+            dedicatedRecipePhotoInput = document.createElement('input');
+            dedicatedRecipePhotoInput.type = 'file';
+            dedicatedRecipePhotoInput.accept = 'image/*';
+            
+            if (navigator.userAgent.match(/Android/i) || navigator.userAgent.match(/iPhone|iPad|iPod/i)) {
+                dedicatedRecipePhotoInput.capture = 'environment';
+            }
+            
+            dedicatedRecipePhotoInput.style.display = 'none';
+            dedicatedRecipePhotoInput.onchange = (event) => {
+                // Determine the prompt type based on which button was clicked
+                const promptType = (method === 'photo-of-food') ? 'generate-from-food' : 'extract';
+                handleRecipePhoto(event, true, promptType); // Pass the correct promptType
+                
+                if (dedicatedRecipePhotoInput && dedicatedRecipePhotoInput.parentNode) {
+                    dedicatedRecipePhotoInput.remove();
+                }
+                dedicatedRecipePhotoInput = null;
+            };
+            document.body.appendChild(dedicatedRecipePhotoInput);
+            dedicatedRecipePhotoInput.click();
+            break;
         case 'paste':
             // Similar to photo, open the #recipeForm and the "Paste Text" accordion.
             toggleRecipeForm(true);
@@ -902,9 +931,11 @@ async function handleRecipePhoto(event) {
 
             const payload = {
                 image: base64ImageData,
-                mimeType: file.type || 'image/jpeg' // Defaulting to image/jpeg if file.type is falsy
+                mimeType: file.type || 'image/jpeg',
+                promptType: promptType // <<< ADD THIS LINE
             };
-            console.log("Mobile - Payload to be sent (base64 image truncated for log):",
+            
+            console.log("Payload to be sent (base64 image truncated for log):",
                 JSON.stringify({ ...payload, image: payload.image ? payload.image.substring(0,50) + "..." : "N/A" }, null, 2)
             );
 
