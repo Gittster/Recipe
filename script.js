@@ -831,7 +831,7 @@ function createHighlightRegex(term) {
     return new RegExp(`(${escapedTerm})`, 'gi');
 }
 
-async function handleRecipePhoto(event) {
+async function handleRecipePhoto(event, promptType = 'extract') {
     console.log("--- handleRecipePhoto DEBUG START ---");
     console.log("handleRecipePhoto triggered at:", new Date().toISOString(), "Event type:", event.type);
 
@@ -865,6 +865,8 @@ async function handleRecipePhoto(event) {
         }
         console.log("--- handleRecipePhoto DEBUG END (FileReader error) ---");
     };
+
+    const currentPromptType = promptType;
 
     reader.onload = function (e) {
         const originalImgSrc = e.target.result;
@@ -930,11 +932,12 @@ async function handleRecipePhoto(event) {
             
             const base64ImageData = processedDataUrl.split(',')[1];
             console.log("Mobile - base64ImageData length:", base64ImageData ? base64ImageData.length : "N/A");
+            console.log("Inside img.onload - promptType is:", currentPromptType);
 
             const payload = {
                 image: base64ImageData,
                 mimeType: file.type || 'image/jpeg',
-                promptType: promptType // <<< ADD THIS LINE
+                promptType: currentPromptType // <<< ADD THIS LINE
             };
             
             console.log("Payload to be sent (base64 image truncated for log):",
