@@ -37,6 +37,8 @@ function openAddRecipeMethodChoiceModal() {
     }
 }
 
+let dedicatedRecipePhotoInput = null;
+
 function selectAddRecipeMethod(method) {
     currentAddRecipeMethod = method;
     console.log("Selected add recipe method:", method);
