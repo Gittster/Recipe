@@ -5935,21 +5935,19 @@ function generateRecipeDisplayHTML(recipe) {
 
 
 function showChatbotModal() {
+    // Stop any previous speech recognition and remove old modal
     if (window.chefBotSpeechRecognition && window.chefBotIsListening) {
         window.chefBotSpeechRecognition.stop();
+        window.chefBotIsListening = false;
     }
     if (chatbotModalElement && chatbotModalElement.parentNode) {
         chatbotModalElement.remove();
     }
     currentChatbotRecipe = null;
-    let conversationHistory = []; // Initialize history for this session
-    const MAX_HISTORY_TURNS = 4; // Max user+bot turn pairs (e.g., 4 pairs = 8 messages)
+    let conversationHistory = [];
+    const MAX_HISTORY_TURNS = 4;
 
     chatbotModalElement = document.createElement('div');
-    // ... (rest of chatbotModalElement and card creation as in your last full version)
-    // ... (Make sure the HTML for the modal is the same as your last full function)
-    // The HTML needs: chatbotQueryInput, chefBotMicButton, chefBotListeningStatus,
-    // askChefBotBtn, chatbotRecipeDisplayArea, saveChatbotRecipeBtn, closeChatbotModalBtn
     chatbotModalElement.className = 'position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-75 d-flex justify-content-center align-items-start overflow-auto';
     chatbotModalElement.style.zIndex = "2050";
     chatbotModalElement.style.padding = '2rem';
@@ -5998,111 +5996,153 @@ function showChatbotModal() {
     document.body.classList.add('modal-open-custom');
 
     const closeButtonX = card.querySelector('.btn-close');
-    const askChefBotBtn = card.querySelector('#askChefBotBtn');
-    const saveChatbotRecipeBtn = card.querySelector('#saveChatbotRecipeBtn');
-    const closeChatbotModalBtn = card.querySelector('#closeChatbotModalBtn');
+    const askChefBotBtn = document.getElementById('askChefBotBtn'); // Use getElementById for reliability
+    const saveChatbotRecipeBtn = document.getElementById('saveChatbotRecipeBtn');
+    const closeChatbotModalBtn = card.querySelector('#closeChatbotModalBtn'); // Query within card is fine
     const chatbotQueryInput = document.getElementById('chatbotQueryInput');
     const chatbotRecipeDisplayArea = document.getElementById('chatbotRecipeDisplayArea');
     const chefBotMicButton = document.getElementById('chefBotMicButton');
     const chefBotListeningStatus = document.getElementById('chefBotListeningStatus');
 
-    const closeModal = () => { /* ... same as your last version ... */ 
+    const closeModal = () => {
         if (window.chefBotSpeechRecognition && window.chefBotIsListening) {
-            window.chefBotSpeechRecognition.stop(); 
+            window.chefBotSpeechRecognition.stop();
             window.chefBotIsListening = false;
         }
         if (chatbotModalElement && chatbotModalElement.parentNode) {
             chatbotModalElement.remove();
         }
         chatbotModalElement = null;
-        currentChatbotRecipe = null; 
-        document.body.classList.remove('modal-open-custom'); 
+        currentChatbotRecipe = null;
+        document.body.classList.remove('modal-open-custom');
     };
 
-    if(closeButtonX) closeButtonX.onclick = closeModal;
-    if(closeChatbotModalBtn) closeChatbotModalBtn.onclick = closeModal;
+    if (closeButtonX) closeButtonX.onclick = closeModal;
+    if (closeChatbotModalBtn) closeChatbotModalBtn.onclick = closeModal;
     chatbotModalElement.addEventListener('click', (e) => {
         if (e.target === chatbotModalElement) closeModal();
     });
 
-    if (askChefBotBtn) {
+    if (askChefBotBtn && chatbotQueryInput && chatbotRecipeDisplayArea && saveChatbotRecipeBtn) {
         askChefBotBtn.onclick = async () => {
+            console.log("--- askChefBotBtn CLICKED ---"); // Log 1
             const userQuery = chatbotQueryInput.value.trim();
             if (!userQuery) {
-                if (chefBotListeningStatus) chefBotListeningStatus.textContent = "Please describe the recipe.";
-                if (window.innerWidth >= 576) { // Larger than typical mobile portrait
-                    chatbotQueryInput.focus();
-                } else {
-                    // On smaller screens, don't autofocus, let the user tap if they want to type.
-                    // The placeholder text or label should guide them.
-                }
+                if (chefBotListeningStatus) chefBotListeningStatus.textContent = "Please describe the recipe you want.";
+                chatbotQueryInput.focus();
                 return;
             }
             if (chefBotListeningStatus) chefBotListeningStatus.textContent = "";
 
-            // Add user query to history
             conversationHistory.push({ role: "user", text: userQuery });
             if (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
                 conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS * 2);
             }
 
             askChefBotBtn.disabled = true;
-            askChefBotBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Generating...';
-            if(chatbotRecipeDisplayArea) chatbotRecipeDisplayArea.innerHTML = '<p class="text-muted text-center mt-3">Chef Bot is thinking... <i class="bi bi-hourglass-split"></i></p>';
-            if(saveChatbotRecipeBtn) saveChatbotRecipeBtn.disabled = true;
+            askChefBotBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...';
+            chatbotRecipeDisplayArea.innerHTML = '<p class="text-muted text-center mt-3">Chef Bot is concocting a recipe... <i class="bi bi-hourglass-split"></i></p>';
+            saveChatbotRecipeBtn.disabled = true;
             currentChatbotRecipe = null;
+            console.log("askChefBotBtn: State set to generating."); // Log 2
 
             try {
+                console.log("askChefBotBtn: About to fetch Netlify function 'generate-recipe-chat'."); // Log 3
                 const response = await fetch("/.netlify/functions/generate-recipe-chat", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ 
-                        prompt: userQuery, // 'prompt' is what your current function expects
-                        history: conversationHistory // Send the history
+                    body: JSON.stringify({
+                        prompt: userQuery,
+                        history: conversationHistory
                     })
                 });
-                // ... (rest of your response handling)
-                if (!response.ok) { /* ... throw error ... */ 
-                    const errorData = await response.json().catch(() => ({ error: `HTTP error ${response.status}` }));
-                    throw new Error(errorData.error || `Chef Bot had an issue: ${response.statusText}`);
+                console.log("askChefBotBtn: Fetch response received, status:", response.status); // Log 4
+
+                const responseText = await response.text(); // Get raw text first
+                console.log("askChefBotBtn: Raw response text (first 300):", responseText.substring(0, 300)); // Log 5
+
+                if (!response.ok) {
+                    let errorData = { error: `Server error ${response.status}.` };
+                    try {
+                        errorData = JSON.parse(responseText); // Try to parse error from server
+                    } catch (e) {
+                        console.warn("Could not parse error response as JSON from generate-recipe-chat");
+                        errorData.details = responseText.substring(0,200);
+                    }
+                    console.error("Chatbot API error response:", errorData);
+                    throw new Error(errorData.error || `Chef Bot had an issue (Status: ${response.status}).`);
                 }
-                currentChatbotRecipe = await response.json();
 
-                // Add bot response to history (assuming the whole recipe JSON is the "text" for history here)
-                // Or, if Gemini returns a conversational part + recipe, use the conversational part.
-                // For now, we'll assume the AI directly returns the recipe JSON.
-                // In this "generate" context, the "bot response" is the recipe itself.
-                // So, history might not be as useful for *this specific function* unless the AI also chats.
-                // Let's assume for generate-recipe-chat, the history is mainly to inform the *next* generation if the user refines.
-                // We won't add the full recipe JSON to history to avoid making it too large.
-                // conversationHistory.push({ role: "model", text: "Generated a recipe based on your request."}); 
+                currentChatbotRecipe = JSON.parse(responseText);
+                console.log("askChefBotBtn: Parsed currentChatbotRecipe:", currentChatbotRecipe); // Log 6
 
-                if (currentChatbotRecipe && currentChatbotRecipe.name /* ...and other fields... */) {
-                    if(chatbotRecipeDisplayArea) chatbotRecipeDisplayArea.innerHTML = generateRecipeDisplayHTML(currentChatbotRecipe);
-                    if(saveChatbotRecipeBtn) saveChatbotRecipeBtn.disabled = false;
-                } else { /* ... handle error ... */ }
+                // Add bot response to history (actual recipe JSON for generation context)
+                // For history, we might want to store a simpler confirmation or just the recipe name
+                conversationHistory.push({ role: "model", text: `Generated recipe: ${currentChatbotRecipe.name}` });
+                 if (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
+                    conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS * 2);
+                }
 
-            } catch (error) { /* ... */ } 
-            finally { /* ... reset askChefBotBtn ... */ }
+
+                if (currentChatbotRecipe && currentChatbotRecipe.name && currentChatbotRecipe.ingredients && currentChatbotRecipe.instructions && Array.isArray(currentChatbotRecipe.tags)) {
+                    chatbotRecipeDisplayArea.innerHTML = generateRecipeDisplayHTML(currentChatbotRecipe);
+                    saveChatbotRecipeBtn.disabled = false; // <<<< ENABLE SAVE BUTTON
+                    console.log("askChefBotBtn: Recipe displayed, save button enabled."); // Log 7
+                } else {
+                    console.error("Received unexpected recipe structure:", currentChatbotRecipe);
+                    chatbotRecipeDisplayArea.innerHTML = `<div class="alert alert-warning text-center mt-3">Sorry, Chef Bot couldn't generate a complete recipe. ${currentChatbotRecipe.error || ''}</div>`;
+                }
+            } catch (error) {
+                console.error("Chatbot fetch error:", error);
+                chatbotRecipeDisplayArea.innerHTML = `<div class="alert alert-danger text-center mt-3">An error occurred: ${error.message}. Please try again.</div>`;
+            } finally {
+                askChefBotBtn.disabled = false;
+                askChefBotBtn.innerHTML = '<i class="bi bi-magic"></i> Ask Chef Bot to Generate';
+                console.log("askChefBotBtn: Reset after fetch (in finally block)."); // Log 8
+            }
         };
+    } else {
+        console.error("askChefBotBtn or its dependencies not found!");
     }
 
-    if (saveChatbotRecipeBtn) { /* ... your existing save logic ... */ }
+    if (saveChatbotRecipeBtn && chatbotQueryInput) { // Ensure chatbotQueryInput exists for save logic as well
+        console.log("saveChatbotRecipeBtn found, attaching onclick listener."); // Log A
+        saveChatbotRecipeBtn.onclick = () => {
+            console.log("--- saveChatbotRecipeBtn CLICKED! ---"); // Log B
+            if (!currentChatbotRecipe || !currentChatbotRecipe.name) {
+                alert("No valid recipe generated by Chef Bot to save.");
+                console.log("saveChatbotRecipeBtn: No valid currentChatbotRecipe."); // Log C
+                return;
+            }
+            console.log("saveChatbotRecipeBtn: Proceeding to save recipe:", currentChatbotRecipe.name); // Log D
 
-    // --- Speech Recognition Logic (remains largely the same) ---
-    // ... (Ensure chefBotMicButton, chatbotQueryInput, chefBotListeningStatus are used) ...
-    // ... (The speech recognition will populate chatbotQueryInput.value) ...
-    // ... (Your full speech recognition setup as previously provided) ...
-
-    if (chatbotQueryInput)
-    {
-        if (window.innerWidth >= 576) { // Larger than typical mobile portrait
-            chatbotQueryInput.focus();
-        } else {
-            // On smaller screens, don't autofocus, let the user tap if they want to type.
-            // The placeholder text or label should guide them.
-        }
+            if (currentUser) {
+                saveCurrentChatbotRecipeToFirestore();
+            } else {
+                if (!localDB) { alert("Local storage is not available."); return; }
+                const recipeToSaveLocally = { ...currentChatbotRecipe, localId: generateLocalUUID(), timestamp: new Date().toISOString() };
+                delete recipeToSaveLocally.uid;
+                localDB.recipes.add(recipeToSaveLocally)
+                    .then(() => {
+                        showSuccessMessage("✅ Chef Bot recipe saved locally!");
+                        closeModal();
+                        loadInitialRecipes();
+                        showDelayedCloudSavePrompt("Chef Bot recipe saved! Sign up/in to save to cloud.");
+                    })
+                    .catch(err => { console.error("Error saving Chef Bot recipe locally:", err); alert("Failed to save locally: " + err.message); });
+            }
+        };
+        console.log("saveChatbotRecipeBtn: onclick listener ATTACHED."); // Log E
+    } else {
+        console.error("saveChatbotRecipeBtn or chatbotQueryInput not found for save logic!");
     }
+
+    // --- Speech Recognition Logic ---
+    // (Your existing full speech recognition setup - ensure all element variables
+    // like chefBotMicButton, chatbotQueryInput, chefBotListeningStatus are correctly referenced)
+    // ... (Ensure it's placed here) ...
+
+    if (chatbotQueryInput) chatbotQueryInput.focus();
 }
 
 // Mock function to simulate chatbot response
