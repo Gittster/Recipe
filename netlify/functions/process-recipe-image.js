@@ -72,24 +72,58 @@ exports.handler = async (event) => {
     const genAI = new GoogleGenerativeAI(API_KEY); // Assuming this is correctly imported
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
-    const fullPrompt = `
-        You are an expert recipe transcriber. Analyze the provided image which contains a recipe.
-        Extract the following information:
-        1. Recipe Name (string)
-        2. Ingredients (array of objects, where each object has "name": string, "quantity": string, "unit": string. If quantity or unit are not clearly separable or present, make a reasonable interpretation or use an empty string.)
-        3. Instructions (string, preferably with numbered steps or clear separation between steps).
-        4. Tags (array of strings, generate 3-5 relevant keywords for the recipe like cuisine type, main ingredient, or dish type).
+    const promptType = body.promptType || 'extract';
+        console.log("process-recipe-image.js: Using promptType:", promptType);
+        
+        let fullPrompt;
 
-        Format your response strictly as a JSON object with the following structure:
-        {
-          "name": "The extracted recipe name",
-          "ingredients": [ /* ... examples ... */ ],
-          "instructions": "1. First instruction. 2. Second instruction.",
-          "tags": ["dessert", "baking", "easy"]
+        if (promptType === 'generate-from-food') {
+            fullPrompt = `
+                You are a creative and experienced chef. Analyze the provided image of a finished dish.
+                Based on the visual appearance of the food, generate a plausible recipe for it.
+                Your goal is to create a complete, usable recipe.
+
+                1.  Invent an appealing and descriptive Recipe Name (string).
+                2.  List the likely Ingredients as an array of objects. Each object *must* have "name" (string), "quantity" (string), and "unit" (string) fields.
+                    * For "name": Identify the core ingredients visible or strongly implied by the dish.
+                    * For "quantity" and "unit": Provide your best culinary estimate for a standard preparation of this dish (e.g., serving 2-4 people). Examples: "1", "1/2", "200", "to taste". If a precise numeric quantity is impossible to guess, use descriptive terms like "1 large" for an onion, or "a pinch" for salt, but still try to populate the quantity field. If the unit is obvious (e.g., "1" for "onion", the unit could be "medium" or "large" or even an empty string if implied by quantity). For spices, "1 tsp" or "to taste" is acceptable. Do your best to provide a value for both quantity and unit for every ingredient. If truly indeterminable, quantity can be an empty string and unit can be an empty string or a general term like "piece(s)".
+                3.  Write clear, step-by-step Instructions (string) on how to prepare the dish.
+                4.  Generate 3-5 relevant Tags (array of strings) for the dish (e.g., "dinner", "chicken", "roasted", "comfort food").
+
+                Format your response strictly as a JSON object with the structure:
+                {
+                  "name": "Generated Recipe Name",
+                  "ingredients": [
+                    { "name": "Example Ingredient", "quantity": "1", "unit": "cup" },
+                    { "name": "Another Ingredient", "quantity": "2-3", "unit": "cloves" },
+                    { "name": "Spice", "quantity": "a pinch", "unit": "" }
+                  ],
+                  "instructions": "1. First instruction detailing the preparation. 2. Second instruction involving cooking.",
+                  "tags": ["tagA", "tagB", "tagC"]
+                }
+                If the image does not appear to be food or a recognizable dish, return JSON with an error field: {"error": "No recognizable food detected in the image."}.
+                Ensure the output is ONLY the JSON object, with no surrounding text or markdown.
+            `;
+        } else { // Default to the original 'extract' prompt (for extracting text from recipe images)
+            fullPrompt = `
+                You are an expert recipe transcriber. Analyze the provided image which contains a recipe (likely text).
+                Extract the following information:
+                1. Recipe Name (string)
+                2. Ingredients (array of objects, where each object has "name": string, "quantity": string, "unit": string. If quantity or unit are not clearly separable or present, make a reasonable interpretation or use an empty string.)
+                3. Instructions (string, preferably with numbered steps or clear separation between steps).
+                4. Tags (array of strings, generate 3-5 relevant keywords for the recipe like cuisine type, main ingredient, or dish type).
+
+                Format your response strictly as a JSON object with the following structure:
+                {
+                  "name": "The extracted recipe name",
+                  "ingredients": [ { "name": "Ingredient 1", "quantity": "1", "unit": "cup" } ],
+                  "instructions": "1. First instruction. 2. Second instruction.",
+                  "tags": ["dessert", "baking", "easy"]
+                }
+                If any part of the recipe is unreadable or unclear, make your best guess or use a placeholder like "UNKNOWN" or an empty string for that specific part. If no recipe is detected in the image, return an error field in the JSON like {"error": "No recipe detected in the image."}.
+                Ensure the output is ONLY the JSON object, with no surrounding text or markdown.
+            `;
         }
-        If any part of the recipe is unreadable or unclear, make your best guess or use a placeholder like "UNKNOWN" or an empty string for that specific part. If no recipe is detected in the image, return an error field in the JSON like {"error": "No recipe detected in the image."}.
-        Ensure the output is ONLY the JSON object, with no surrounding text or markdown.
-    `;
 
     const imagePart = {
         inlineData: {
