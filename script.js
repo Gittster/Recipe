@@ -71,34 +71,279 @@ function openRecipeFormModal(recipeDataToLoad = null, mode = 'new') {
     }
 }
 
-function clearRecipeFormModal(recipeData = null) { 
+/**
+ * Clears or populates the #recipeFormModal fields.
+ * If recipeData is provided, it populates. Otherwise, it clears for a new entry.
+ * @param {object|null} recipeData - Recipe data to load into the form, or null to clear.
+ */
+function clearRecipeFormModal(recipeData = null) {
     const nameInput = document.getElementById('modalRecipeNameInput');
     const ingredientsTable = document.getElementById('modalIngredientsTable');
     const instructionsInput = document.getElementById('modalRecipeInstructionsInput');
     const tagInput = document.getElementById('modalTagInput');
-    const errorDiv = document.getElementById('manualEntryError'); // Assuming this ID is in your modal
+    const errorDiv = document.getElementById('recipeFormModalError'); // Ensure this ID is in your modal HTML
 
     if (nameInput) nameInput.value = recipeData?.name || '';
     if (instructionsInput) instructionsInput.value = recipeData?.instructions || '';
-    if (errorDiv) errorDiv.style.display = 'none';
+    if (errorDiv) {
+        errorDiv.textContent = '';
+        errorDiv.style.display = 'none';
+    }
 
-    currentModalTags = recipeData?.tags ? [...recipeData.tags] : []; // Ensure currentModalTags is used
-    if (typeof renderModalTags === "function") renderModalTags();
+    currentModalTags = recipeData?.tags ? [...recipeData.tags] : [];
+    if (typeof renderModalTags === "function") {
+        renderModalTags();
+    } else {
+        console.warn("renderModalTags function is not defined for recipeFormModal.");
+    }
     if (tagInput) tagInput.value = '';
 
     if (ingredientsTable) {
-        ingredientsTable.innerHTML = '';
+        ingredientsTable.innerHTML = ''; // Clear existing ingredient rows
         if (recipeData && recipeData.ingredients && Array.isArray(recipeData.ingredients)) {
             recipeData.ingredients.forEach(ing => {
                 if (typeof createIngredientRowForModal === "function") {
                     createIngredientRowForModal(ing.name, ing.quantity, ing.unit);
-                }
+                } else { console.warn("createIngredientRowForModal is not defined, cannot populate ingredients.");}
             });
         }
         // Always add one blank row for manual entry, or if AI returns no ingredients
         if (typeof createIngredientRowForModal === "function") {
-             createIngredientRowForModal();
+             createIngredientRowForModal(); // Add a blank row for new input
         }
+    }
+}
+
+function renderModalTags() {
+    const tagsContainer = document.getElementById('modalTagsContainer');
+    const placeholder = document.getElementById('modalTagsPlaceholder');
+    if (!tagsContainer) {
+        console.warn("renderModalTags: #modalTagsContainer not found.");
+        return;
+    }
+
+    // Clear existing badges but preserve placeholder if it's a direct child
+    let placeholderKept = null;
+    if (placeholder && tagsContainer.contains(placeholder)) {
+        placeholderKept = placeholder;
+        tagsContainer.innerHTML = ''; // Clear
+        tagsContainer.appendChild(placeholderKept); // Add placeholder back immediately
+    } else {
+        tagsContainer.innerHTML = ''; // Clear all
+    }
+
+
+    if (currentModalTags.length === 0) {
+        if (placeholder) placeholder.style.display = 'block';
+    } else {
+        if (placeholder) placeholder.style.display = 'none';
+    }
+
+    currentModalTags.forEach(tag => {
+        const tagBadge = document.createElement('span');
+        tagBadge.className = 'badge bg-primary text-white me-1 mb-1 py-1 px-2 small';
+        tagBadge.textContent = tag;
+        tagBadge.style.cursor = 'pointer';
+        tagBadge.title = 'Click to remove tag';
+        tagBadge.onclick = (e) => {
+            e.stopPropagation();
+            currentModalTags = currentModalTags.filter(t => t !== tag);
+            renderModalTags();
+        };
+        tagsContainer.appendChild(tagBadge);
+    });
+}
+
+/**
+ * Handles keypress events for the tag input in the recipe form modal.
+ * @param {Event} e - The keypress event.
+ */
+function handleModalTagInputKeypress(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const addButton = document.getElementById('modalTagAddButton');
+        if (addButton) addButton.click();
+    }
+}
+
+/**
+ * Initializes the tag input functionality within the #recipeFormModal.
+ */
+function initializeModalRecipeFormTagInput() {
+    const tagInput = document.getElementById('modalTagInput');
+    const tagAddButton = document.getElementById('modalTagAddButton');
+
+    if (tagInput && tagAddButton) {
+        const addTagFromModalForm = () => {
+            const value = tagInput.value.trim().toLowerCase();
+            if (value && !currentModalTags.includes(value)) {
+                currentModalTags.push(value);
+                renderModalTags();
+            }
+            tagInput.value = '';
+            tagInput.focus();
+        };
+        
+        tagAddButton.onclick = addTagFromModalForm;
+        // Remove previous listener before adding a new one to prevent duplication
+        tagInput.removeEventListener('keypress', handleModalTagInputKeypress);
+        tagInput.addEventListener('keypress', handleModalTagInputKeypress);
+    } else {
+        console.warn("Tag input elements for recipe form modal not found.");
+    }
+}
+
+
+/**
+ * Creates a new ingredient input row in the #modalIngredientsTable.
+ * @param {string} [name=''] - Initial name for the ingredient.
+ * @param {string} [qty=''] - Initial quantity.
+ * @param {string} [unit=''] - Initial unit.
+ */
+function createIngredientRowForModal(name = '', qty = '', unit = '') {
+    const ingredientsTable = document.getElementById('modalIngredientsTable');
+    if (!ingredientsTable) {
+        console.error("createIngredientRowForModal: #modalIngredientsTable not found!");
+        return;
+    }
+
+    const row = document.createElement('div');
+    row.className = 'row g-2 align-items-center mb-2 ingredient-form-row';
+
+    const nameCol = document.createElement('div');
+    nameCol.className = 'col-sm-6 col-12';
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text'; nameInput.placeholder = 'Ingredient';
+    nameInput.className = 'form-control form-control-sm'; nameInput.value = name;
+    nameCol.appendChild(nameInput);
+
+    const qtyCol = document.createElement('div');
+    qtyCol.className = 'col-sm-2 col-4';
+    const qtyInput = document.createElement('input');
+    qtyInput.type = 'text'; qtyInput.placeholder = 'Qty';
+    qtyInput.className = 'form-control form-control-sm'; qtyInput.value = qty;
+    qtyCol.appendChild(qtyInput);
+
+    const unitCol = document.createElement('div');
+    unitCol.className = 'col-sm-3 col-6';
+    const unitInput = document.createElement('input');
+    unitInput.type = 'text'; unitInput.placeholder = 'Unit';
+    unitInput.className = 'form-control form-control-sm'; unitInput.value = unit;
+    unitCol.appendChild(unitInput);
+
+    const deleteCol = document.createElement('div');
+    deleteCol.className = 'col-sm-1 col-2 d-flex justify-content-end align-items-center';
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'btn btn-outline-danger btn-sm py-0 px-1';
+    deleteBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
+    deleteBtn.title = 'Remove ingredient';
+    deleteBtn.onclick = () => row.remove();
+    deleteCol.appendChild(deleteBtn);
+
+    row.appendChild(nameCol);
+    row.appendChild(qtyCol);
+    row.appendChild(unitCol);
+    row.appendChild(deleteCol);
+    ingredientsTable.appendChild(row);
+
+    if (name === '' && qty === '' && unit === '') nameInput.focus();
+}
+
+/**
+ * Prepares and shows the recipe form modal (#recipeFormModal).
+ * If recipeDataToLoad is provided, it populates the form. Otherwise, sets up a blank form.
+ * @param {object|null} recipeDataToLoad - Recipe data to load, or null for a new recipe.
+ * @param {string} [mode='new'] - 'new', 'review-ai', or 'edit'.
+ */
+function openRecipeFormModal(recipeDataToLoad = null, mode = 'new') {
+    const modalLabel = document.getElementById('recipeFormModalLabel');
+    const saveButton = document.getElementById('saveRecipeFromModalBtn');
+
+    if (mode === 'review-ai' && recipeDataToLoad) {
+        if(modalLabel) modalLabel.innerHTML = '<i class="bi bi-magic me-2"></i>Review AI Generated Recipe';
+        if(saveButton) saveButton.textContent = 'Save This AI Recipe';
+        clearRecipeFormModal(recipeDataToLoad); // Populate with AI data
+    } else { // Default to new manual entry
+        if(modalLabel) modalLabel.innerHTML = '<i class="bi bi-keyboard me-2"></i>Add Recipe Manually';
+        if(saveButton) saveButton.textContent = 'Save Recipe';
+        clearRecipeFormModal(null); // Clear for new manual entry
+    }
+
+    if (typeof initializeModalRecipeFormTagInput === "function") {
+        initializeModalRecipeFormTagInput();
+    } else {
+        console.warn("initializeModalRecipeFormTagInput is not defined.");
+    }
+
+    if (recipeFormModalInstance) {
+        recipeFormModalInstance.show();
+        const nameInput = document.getElementById('modalRecipeNameInput');
+        if(nameInput) nameInput.focus();
+    } else {
+        console.error("Recipe Form Modal (#recipeFormModal) not initialized.");
+    }
+}
+
+/**
+ * Reads data from the #recipeFormModal and saves it as a new recipe.
+ */
+async function saveRecipeFromModal() {
+    const name = document.getElementById('modalRecipeNameInput')?.value.trim();
+    const instructions = document.getElementById('modalRecipeInstructionsInput')?.value.trim();
+    const ingredients = [];
+    const errorDiv = document.getElementById('recipeFormModalError');
+    
+    if(errorDiv) {
+        errorDiv.textContent = '';
+        errorDiv.style.display = 'none';
+    }
+
+    document.querySelectorAll('#modalIngredientsTable .ingredient-form-row').forEach(row => {
+        const inputs = row.querySelectorAll('input');
+        if (inputs.length >= 3) {
+            const ingName = inputs[0].value.trim();
+            const qty = inputs[1].value.trim();
+            const unit = inputs[2].value.trim();
+            if (ingName) {
+                ingredients.push({ name: ingName, quantity: qty, unit: unit });
+            }
+        }
+    });
+
+    if (!name) {
+        const msg = "Recipe name cannot be empty.";
+        if(errorDiv) { errorDiv.textContent = msg; errorDiv.style.display = 'block'; } else { alert(msg); }
+        document.getElementById('modalRecipeNameInput')?.focus();
+        return;
+    }
+    // Optionally, check for ingredients:
+    // if (ingredients.length === 0) {
+    //     const msg = "Please add at least one ingredient.";
+    //     if(errorDiv) { errorDiv.textContent = msg; errorDiv.style.display = 'block'; } else { alert(msg); }
+    //     return;
+    // }
+
+    const recipeData = {
+        name,
+        ingredients,
+        instructions: instructions || "", // Ensure instructions is at least an empty string
+        tags: [...currentModalTags],    // Use tags from the modal's state
+        rating: 0,                      // Default for new recipes
+    };
+
+    const success = await saveNewRecipeToStorage(recipeData); // Your generic save function
+
+    if (success) {
+        if (recipeFormModalInstance) recipeFormModalInstance.hide(); 
+        // clearRecipeFormModal() will be called by 'hidden.bs.modal' event listener for #recipeFormModal
+    } else {
+        const msg = "Failed to save recipe. Please try again.";
+        if(errorDiv && (!errorDiv.textContent || errorDiv.style.display === 'none')) { // Don't overwrite specific error from saveNewRecipeToStorage
+            errorDiv.textContent = msg; 
+            errorDiv.style.display = 'block'; 
+        }
+        // saveNewRecipeToStorage likely showed an alert already
     }
 }
 
