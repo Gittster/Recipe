@@ -51,7 +51,7 @@ function openRecipeFormModal(recipeDataToLoad = null, mode = 'new') {
     if (mode === 'review-ai' && recipeDataToLoad) {
         if(modalLabel) modalLabel.innerHTML = '<i class="bi bi-magic me-2"></i>Review AI Generated Recipe';
         if(saveButton) saveButton.textContent = 'Save AI Recipe';
-        populateRecipeFormModal(recipeDataToLoad); // Populate with AI data
+        clearRecipeFormModal(recipeDataToLoad);
     } else { // Default to new manual entry
         if(modalLabel) modalLabel.innerHTML = '<i class="bi bi-keyboard me-2"></i>Add Recipe Manually';
         if(saveButton) saveButton.textContent = 'Save Recipe';
@@ -71,7 +71,7 @@ function openRecipeFormModal(recipeDataToLoad = null, mode = 'new') {
     }
 }
 
-function clearRecipeFormModal(recipeData = null) { // Now also acts as populateRecipeFormModal
+function clearRecipeFormModal(recipeData = null) { 
     const nameInput = document.getElementById('modalRecipeNameInput');
     const ingredientsTable = document.getElementById('modalIngredientsTable');
     const instructionsInput = document.getElementById('modalRecipeInstructionsInput');
