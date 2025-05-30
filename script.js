@@ -40,34 +40,138 @@ document.addEventListener('DOMContentLoaded', () => {
 /**
  * Prepares and shows the recipe form modal.
  * If recipeData is provided, it populates the form for review/editing.
- * Otherwise, it sets up a blank form for new manual entry.
- * @param {object|null} recipeDataToLoad - Optional. Recipe data to populate the form.
- * @param {string} [mode='new'] - 'new' for blank manual entry, 'review-ai' for AI data.
+ * Otherwise, sets up a blank form or a loading state.
+ * @param {object|null} recipeDataToLoad - Recipe data to populate the form.
+ * @param {string} [mode='new'] - 'new', 'review-ai', 'loading-ai', or 'edit'.
  */
 function openRecipeFormModal(recipeDataToLoad = null, mode = 'new') {
+    const modalElement = document.getElementById('recipeFormModal');
+    if (!modalElement) {
+        console.error("Recipe Form Modal element (#recipeFormModal) not found!");
+        return;
+    }
     const modalLabel = document.getElementById('recipeFormModalLabel');
-    const saveButton = document.getElementById('saveRecipeFromModalBtn'); // Give your save button this ID
+    const saveButton = document.getElementById('saveRecipeFromModalBtn');
+    const modalBody = document.getElementById('recipeFormModalBody'); // Get modal body
 
-    if (mode === 'review-ai' && recipeDataToLoad) {
+    // Ensure the modal's innerHTML (the form structure) is present if it's not already.
+    // This assumes the modal-body will be populated by clearRecipeFormModal.
+    // The static part of the modal (header, footer, initial modal-body div) is in index.html.
+    
+    if (mode === 'loading-ai') {
+        if(modalLabel) modalLabel.innerHTML = '<i class="bi bi-images me-2"></i>Processing Photo with AI';
+        if(saveButton) {
+            saveButton.textContent = 'Processing...';
+            saveButton.disabled = true;
+        }
+        if (modalBody) { // Set loading message in the body
+            modalBody.innerHTML = `
+                <div class="text-center p-4">
+                    <p><span class="spinner-border spinner-border-lg text-primary mb-3" role="status" aria-hidden="true"></span></p>
+                    <h5>Analyzing your recipe image...</h5>
+                    <p class="text-muted small">This may take a few moments.</p>
+                </div>
+            `;
+        }
+    } else if (mode === 'review-ai' && recipeDataToLoad) {
         if(modalLabel) modalLabel.innerHTML = '<i class="bi bi-magic me-2"></i>Review AI Generated Recipe';
-        if(saveButton) saveButton.textContent = 'Save AI Recipe';
-        clearRecipeFormModal(recipeDataToLoad);
+        if(saveButton) {
+            saveButton.textContent = 'Save This AI Recipe';
+            saveButton.disabled = false; // Enable save after loading
+        }
+        clearRecipeFormModal(recipeDataToLoad); // Populate with AI data
     } else { // Default to new manual entry
         if(modalLabel) modalLabel.innerHTML = '<i class="bi bi-keyboard me-2"></i>Add Recipe Manually';
-        if(saveButton) saveButton.textContent = 'Save Recipe';
+        if(saveButton) {
+            saveButton.textContent = 'Save Recipe';
+            saveButton.disabled = false; // Enable for new manual entry
+        }
         clearRecipeFormModal(null); // Clear for new manual entry
     }
 
-    if (typeof initializeModalRecipeFormTagInput === "function") {
-        initializeModalRecipeFormTagInput(); // Ensure tag input is ready
+    if (typeof initializeModalRecipeFormTagInput === "function" && (mode === 'new' || mode === 'review-ai')) {
+        initializeModalRecipeFormTagInput(); // Setup tags only when form fields are present
     }
 
     if (recipeFormModalInstance) {
         recipeFormModalInstance.show();
-        const nameInput = document.getElementById('modalRecipeNameInput');
-        if(nameInput) nameInput.focus();
+        if (mode !== 'loading-ai') { // Don't focus input if just showing loading spinner
+            const nameInput = document.getElementById('modalRecipeNameInput');
+            if(nameInput) nameInput.focus();
+        }
     } else {
-        console.error("Recipe Form Modal not initialized.");
+        console.error("Recipe Form Modal instance not initialized.");
+    }
+}
+
+// Ensure clearRecipeFormModal sets up the form structure if modalBody was cleared
+function clearRecipeFormModal(recipeData = null) {
+    const modalBody = document.getElementById('recipeFormModalBody');
+    if (!modalBody) {
+        console.error("clearRecipeFormModal: Modal body not found!");
+        return;
+    }
+
+    // Set the FULL form HTML structure into modalBody
+    // This ensures that even if it was showing "Loading...", it now has the form fields.
+    modalBody.innerHTML = `
+        <div class="mb-3">
+            <label for="modalRecipeNameInput" class="form-label fw-semibold">Recipe Name</label>
+            <input type="text" class="form-control form-control-sm" id="modalRecipeNameInput" placeholder="Enter recipe name">
+        </div>
+        <div class="mb-3">
+            <label class="form-label fw-semibold">Ingredients</label>
+            <div id="modalIngredientsTable" class="mb-2"></div>
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="createIngredientRowForModal()">
+                <i class="bi bi-plus-circle"></i> Add Ingredient Row
+            </button>
+        </div>
+        <div class="mb-3">
+            <label for="modalRecipeInstructionsInput" class="form-label fw-semibold">Instructions</label>
+            <textarea class="form-control form-control-sm" id="modalRecipeInstructionsInput" rows="5" placeholder="Enter instructions"></textarea>
+        </div>
+        <div class="mb-3">
+            <label class="form-label fw-semibold">Tags</label>
+            <div id="modalTagsContainer" class="form-control form-control-sm d-flex flex-wrap align-items-center gap-1 p-2 position-relative" style="min-height: 38px; background-color: #f8f9fa; border: 1px dashed #ced4da;">
+                <span id="modalTagsPlaceholder" class="text-muted position-absolute small" style="left: 10px; top: 50%; transform: translateY(-50%); pointer-events: none;">Add tags...</span>
+            </div>
+            <div class="input-group input-group-sm mt-2">
+                <input type="text" id="modalTagInput" class="form-control" placeholder="Type a tag & press Enter">
+                <button type="button" id="modalTagAddButton" class="btn btn-outline-secondary"><i class="bi bi-plus"></i> Add</button>
+            </div>
+        </div>
+        <div id="recipeFormModalError" class="alert alert-danger small p-2" style="display:none;"></div>
+    `;
+
+    // Now get references to the newly created form elements
+    const nameInput = document.getElementById('modalRecipeNameInput');
+    const ingredientsTable = document.getElementById('modalIngredientsTable'); // already got above
+    const instructionsInput = document.getElementById('modalRecipeInstructionsInput');
+    const tagInput = document.getElementById('modalTagInput');
+    const errorDiv = document.getElementById('recipeFormModalError'); // already got above
+
+    if (nameInput) nameInput.value = recipeData?.name || '';
+    if (instructionsInput) instructionsInput.value = recipeData?.instructions || '';
+    if (errorDiv) errorDiv.style.display = 'none';
+
+    currentModalTags = recipeData?.tags ? [...recipeData.tags] : [];
+    if (typeof renderModalTags === "function") renderModalTags();
+
+    if (tagInput) tagInput.value = '';
+
+    // ingredientsTable was already cleared by modalBody.innerHTML above.
+    if (recipeData && recipeData.ingredients && Array.isArray(recipeData.ingredients)) {
+        recipeData.ingredients.forEach(ing => {
+            if (typeof createIngredientRowForModal === "function") {
+                createIngredientRowForModal(ing.name, ing.quantity, ing.unit);
+            }
+        });
+    }
+    if (typeof createIngredientRowForModal === "function") {
+         createIngredientRowForModal(); // Always add one blank row
+    }
+     if (typeof initializeModalRecipeFormTagInput === "function") { // Re-init after full re-render
+        initializeModalRecipeFormTagInput();
     }
 }
 
@@ -1236,7 +1340,7 @@ async function handlePastedRecipeTextFromModal() {
     }
 }
 
-async function handleRecipePhoto(event, directFill = true, promptType = 'extract') { // directFill is true by default in the new flow
+async function handleRecipePhoto(event, directFill = true, promptType = 'extract') {
     console.log("--- handleRecipePhoto Invoked ---");
     console.log("Parameters - directFill:", directFill, "| Prompt Type:", promptType);
 
@@ -1248,21 +1352,53 @@ async function handleRecipePhoto(event, directFill = true, promptType = 'extract
 
     console.log("File details - Name:", file.name, "| Size:", file.size, "| Type:", file.type);
 
-    // Since this function now leads to a modal, we might not have a dedicated photoPreviewContainer
-    // in the same way as when it was part of an accordion.
-    // We'll use a global loading indicator or simple alerts for feedback during processing.
-    if (typeof showGlobalLoading === "function") {
-        showGlobalLoading("Reading image file...");
-    } else {
-        console.log("Reading image file..."); // Fallback if no global loader
+    // --- Immediately open the Recipe Form Modal for feedback ---
+    // We'll populate it with a loading state.
+    // The 'directFill' parameter is less about *if* we fill the form,
+    // and more about whether the initiation came from a flow that expects immediate form display.
+    // Since this whole function is now about populating that modal, directFill is effectively always true.
+
+    if (typeof openRecipeFormModal !== "function") {
+        console.error("openRecipeFormModal is not defined! Cannot proceed.");
+        alert("An error occurred. Please try again.");
+        return;
     }
+
+    // Open the modal with a loading state.
+    // We pass null for recipeData initially, and a special mode.
+    openRecipeFormModal(null, 'loading-ai'); // New mode: 'loading-ai'
+
+    // Get a reference to the modal's body or a specific area for the loading message
+    // This assumes openRecipeFormModal has made #recipeFormModalLabel and #recipeFormModalBody available.
+    const modalBody = document.getElementById('recipeFormModalBody'); // Or a more specific div inside it
+    const modalLabel = document.getElementById('recipeFormModalLabel');
+    const saveRecipeBtnModal = document.getElementById('saveRecipeFromModalBtn');
+
+    if (modalLabel) modalLabel.innerHTML = `<i class="bi bi-images me-2"></i>Processing Photo with AI`;
+    if (saveRecipeBtnModal) saveRecipeBtnModal.disabled = true; // Disable save while processing
+
+    // Display loading message inside the modal body
+    if (modalBody) {
+        modalBody.innerHTML = `
+            <div class="text-center p-4">
+                <p><span class="spinner-border spinner-border-lg text-primary mb-3" role="status" aria-hidden="true"></span></p>
+                <h5>Analyzing your recipe image...</h5>
+                <p class="text-muted small">This may take a few moments, especially for larger images.</p>
+            </div>
+        `;
+    }
+
 
     const reader = new FileReader();
 
     reader.onerror = (error) => {
         console.error("FileReader error:", error);
-        if (typeof hideGlobalLoading === "function") hideGlobalLoading();
-        alert("Error reading the selected file. Please try again.");
+        if (modalBody) {
+            modalBody.innerHTML = '<p class="alert alert-danger text-center">Error reading the selected file. Please close this and try again.</p>';
+        } else {
+            alert("Error reading the selected file. Please try again.");
+        }
+        if (saveRecipeBtnModal) saveRecipeBtnModal.disabled = false; // Re-enable on error
     };
 
     reader.onload = function (e) {
@@ -1271,73 +1407,57 @@ async function handleRecipePhoto(event, directFill = true, promptType = 'extract
 
         if (!originalImgSrc || originalImgSrc.length === 0) {
             console.error("handleRecipePhoto: FileReader result (originalImgSrc) is empty.");
-            if (typeof hideGlobalLoading === "function") hideGlobalLoading();
-            alert("Error: Could not read image data from the file.");
+            if (modalBody) modalBody.innerHTML = '<p class="alert alert-danger text-center">Error: Could not read image data from file. Please close and try again.</p>';
+            else alert("Error: Could not read image data from the file.");
+            if (saveRecipeBtnModal) saveRecipeBtnModal.disabled = false;
             return;
         }
         
-        if (typeof showGlobalLoading === "function") {
-            showGlobalLoading("Processing image for AI...");
-        } else {
-            console.log("Processing image for AI...");
-        }
-
         const imgForPreprocessing = document.createElement('img');
 
         imgForPreprocessing.onerror = () => {
             console.error("Error loading image into temporary img element for preprocessing.");
-            if (typeof hideGlobalLoading === "function") hideGlobalLoading();
-            alert("Could not load image for processing. Please try a different image or ensure it's a standard format (JPG, PNG).");
+            if (modalBody) modalBody.innerHTML = '<p class="alert alert-danger text-center">Could not load image for processing. Please try a different image or format. Close and try again.</p>';
+            else alert("Could not load image for processing.");
+            if (saveRecipeBtnModal) saveRecipeBtnModal.disabled = false;
         };
 
         imgForPreprocessing.onload = async () => {
             console.log("--- Temporary image loaded. Dimensions:", imgForPreprocessing.naturalWidth, "x", imgForPreprocessing.naturalHeight);
             
-            if (typeof showGlobalLoading === "function") {
-                showGlobalLoading("Analyzing recipe with AI... This may take a moment.");
-            } else {
-                console.log("Analyzing recipe with AI...");
-            }
-
+            // The "Analyzing recipe with AI..." message is already shown in modalBody.
+            
             let processedDataUrl;
             try {
-                console.log("handleRecipePhoto: Attempting to preprocess image.");
-                processedDataUrl = preprocessImage(imgForPreprocessing); // Your existing preprocessImage function
+                processedDataUrl = preprocessImage(imgForPreprocessing);
                 if (!processedDataUrl || !processedDataUrl.includes(',')) {
-                    throw new Error("Preprocessing returned an invalid or empty data URL.");
+                    throw new Error("Preprocessing returned an invalid data URL.");
                 }
                 console.log("Processed image data URL length:", processedDataUrl.length);
             } catch (preprocessError) {
                 console.error("Error during image preprocessing:", preprocessError);
-                if (typeof hideGlobalLoading === "function") hideGlobalLoading();
-                alert(`Error preprocessing image: ${preprocessError.message}`);
+                if (modalBody) modalBody.innerHTML = `<p class="alert alert-danger text-center">Error preprocessing image: ${escapeHtml(preprocessError.message)}. Close and try again.</p>`;
+                else alert(`Error preprocessing image: ${preprocessError.message}`);
+                if (saveRecipeBtnModal) saveRecipeBtnModal.disabled = false;
                 return;
             }
             
             const base64ImageData = processedDataUrl.split(',')[1];
             const payload = {
                 image: base64ImageData,
-                mimeType: file.type || 'image/jpeg', // Default MIME type
+                mimeType: file.type || 'image/jpeg',
                 promptType: promptType 
             };
-            console.log("Payload ready. Base64 length (approx):", base64ImageData.length, "PromptType:", promptType);
-
+            
             try {
                 console.log("Fetching /.netlify/functions/process-recipe-image");
-                const response = await fetch("/.netlify/functions/process-recipe-image", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
-                });
-
-                if (typeof hideGlobalLoading === "function") hideGlobalLoading(); // Hide loader after fetch starts or finishes
-                
+                const response = await fetch("/.netlify/functions/process-recipe-image", { /* ... */ });
                 const responseText = await response.text();
-                console.log("Raw response from Netlify function (first 500 chars):", responseText.substring(0, 500));
+                console.log("Raw response from Netlify function:", responseText.substring(0, 500));
 
                 if (!response.ok) {
                     let errorData = { error: `Server error ${response.status}.` };
-                    try { errorData = JSON.parse(responseText); } catch (e) { /* Keep default */ }
+                    try { errorData = JSON.parse(responseText); } catch (e) { /* use default */ }
                     throw new Error(errorData.error || `Failed to process image with AI.`);
                 }
 
@@ -1348,27 +1468,29 @@ async function handleRecipePhoto(event, directFill = true, promptType = 'extract
 
                 console.log("AI Extracted/Generated Recipe Data:", recipeData);
                 
-                // Instead of filling an inline form or showing a "Fill Form" button,
-                // open the new recipeFormModal with the data for review.
-                if (typeof openRecipeFormModal === "function") {
-                    openRecipeFormModal(recipeData, 'review-ai');
-                } else {
-                    console.error("openRecipeFormModal function is not defined! Cannot display AI results.");
-                    alert("Recipe data processed, but cannot display it for review.");
+                // Now, repopulate the modal with the form fields and the AI data
+                // The openRecipeFormModal was already called to show the modal with 'loading-ai'
+                // So, we call clearRecipeFormModal to set up the form structure and populate it.
+                clearRecipeFormModal(recipeData); // This will set up the form fields AND populate them
+                if (modalLabel) modalLabel.innerHTML = `<i class="bi bi-magic me-2"></i>Review AI Recipe`; // Update title
+                if (saveRecipeBtnModal) {
+                    saveRecipeBtnModal.textContent = 'Save This AI Recipe';
+                    saveRecipeBtnModal.disabled = false; // Enable save button
                 }
+                
+                const recipeNameField = document.getElementById('modalRecipeNameInput');
+                if (recipeNameField) recipeNameField.focus(); // Focus on the first field for review
+
 
             } catch (err) {
-                console.error("Error during fetch to Netlify function or processing AI response:", err);
-                if (typeof hideGlobalLoading === "function") hideGlobalLoading();
-                alert(`AI Processing Error: ${err.message}`);
+                console.error("Error during fetch to Netlify or processing AI response:", err);
+                if (modalBody) modalBody.innerHTML = `<div class="alert alert-danger text-center"><strong>AI Processing Error:</strong><br>${escapeHtml(err.message)}<br><small>Please close and try a different image or prompt.</small></div>`;
+                else alert(`AI Processing Error: ${err.message}`);
+                 if (saveRecipeBtnModal) saveRecipeBtnModal.disabled = true; // Keep save disabled on error
             }
-            console.log("--- handleRecipePhoto DEBUG END (img.onload finished) ---");
-        }; // End of imgForPreprocessing.onload
-
+        }; 
         imgForPreprocessing.src = originalImgSrc;
-        console.log("handleRecipePhoto: imgForPreprocessing.src assigned. Waiting for onload/onerror.");
-    }; // End of reader.onload
-
+    }; 
     reader.readAsDataURL(file);
 }
 
