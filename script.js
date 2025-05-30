@@ -312,12 +312,6 @@ function initializeModalRecipeFormTagInput() {
 }
 
 
-/**
- * Creates a new ingredient input row in the #modalIngredientsTable.
- * @param {string} [name=''] - Initial name for the ingredient.
- * @param {string} [qty=''] - Initial quantity.
- * @param {string} [unit=''] - Initial unit.
- */
 function createIngredientRowForModal(name = '', qty = '', unit = '') {
     const ingredientsTable = document.getElementById('modalIngredientsTable');
     if (!ingredientsTable) {
@@ -325,47 +319,65 @@ function createIngredientRowForModal(name = '', qty = '', unit = '') {
         return;
     }
 
-    const row = document.createElement('div');
-    row.className = 'row g-2 align-items-center mb-2 ingredient-form-row';
+    const mainRowDiv = document.createElement('div');
+    // mb-3 for spacing between full ingredient entries, or mb-2 if too much
+    mainRowDiv.className = 'ingredient-form-entry border-bottom pb-2 mb-2'; 
 
-    const nameCol = document.createElement('div');
-    nameCol.className = 'col-sm-6 col-12';
+    // Name Input (takes full width)
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'mb-1'; // Small margin below name input
     const nameInput = document.createElement('input');
-    nameInput.type = 'text'; nameInput.placeholder = 'Ingredient';
-    nameInput.className = 'form-control form-control-sm'; nameInput.value = name;
-    nameCol.appendChild(nameInput);
+    nameInput.type = 'text';
+    nameInput.placeholder = 'Ingredient Name';
+    nameInput.className = 'form-control form-control-sm ingredient-name-input';
+    nameInput.value = name;
+    nameDiv.appendChild(nameInput);
+    mainRowDiv.appendChild(nameDiv);
 
+    // Row for Quantity, Unit, and Delete button
+    const controlsRowDiv = document.createElement('div');
+    controlsRowDiv.className = 'row g-2 align-items-center'; // g-2 for small gap
+
+    // Quantity Column
     const qtyCol = document.createElement('div');
-    qtyCol.className = 'col-sm-2 col-4';
+    qtyCol.className = 'col'; // Let Bootstrap decide based on content, or specify (e.g., col-4)
     const qtyInput = document.createElement('input');
-    qtyInput.type = 'text'; qtyInput.placeholder = 'Qty';
-    qtyInput.className = 'form-control form-control-sm'; qtyInput.value = qty;
+    qtyInput.type = 'text'; // Allow "1/2", "to taste"
+    qtyInput.placeholder = 'Qty';
+    qtyInput.className = 'form-control form-control-sm ingredient-qty-input';
+    qtyInput.value = qty;
     qtyCol.appendChild(qtyInput);
+    controlsRowDiv.appendChild(qtyCol);
 
+    // Unit Column
     const unitCol = document.createElement('div');
-    unitCol.className = 'col-sm-3 col-6';
+    unitCol.className = 'col'; // Let Bootstrap decide, or specify (e.g., col-5)
     const unitInput = document.createElement('input');
-    unitInput.type = 'text'; unitInput.placeholder = 'Unit';
-    unitInput.className = 'form-control form-control-sm'; unitInput.value = unit;
+    unitInput.type = 'text';
+    unitInput.placeholder = 'Unit';
+    unitInput.className = 'form-control form-control-sm ingredient-unit-input';
+    unitInput.value = unit;
     unitCol.appendChild(unitInput);
+    controlsRowDiv.appendChild(unitCol);
 
+    // Delete Button Column
     const deleteCol = document.createElement('div');
-    deleteCol.className = 'col-sm-1 col-2 d-flex justify-content-end align-items-center';
+    deleteCol.className = 'col-auto'; // Take only needed width for the button
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
     deleteBtn.className = 'btn btn-outline-danger btn-sm py-0 px-1';
     deleteBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
-    deleteBtn.title = 'Remove ingredient';
-    deleteBtn.onclick = () => row.remove();
+    deleteBtn.title = 'Remove this ingredient';
+    deleteBtn.onclick = () => mainRowDiv.remove(); // Remove the entire mainRowDiv
     deleteCol.appendChild(deleteBtn);
+    controlsRowDiv.appendChild(deleteCol);
 
-    row.appendChild(nameCol);
-    row.appendChild(qtyCol);
-    row.appendChild(unitCol);
-    row.appendChild(deleteCol);
-    ingredientsTable.appendChild(row);
+    mainRowDiv.appendChild(controlsRowDiv);
+    ingredientsTable.appendChild(mainRowDiv);
 
-    if (name === '' && qty === '' && unit === '') nameInput.focus();
+    if (name === '' && qty === '' && unit === '') { // If it's a new blank row
+        nameInput.focus();
+    }
 }
 
 /**
