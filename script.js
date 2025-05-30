@@ -1450,8 +1450,15 @@ async function handleRecipePhoto(event, directFill = true, promptType = 'extract
             };
             
             try {
-                console.log("Fetching /.netlify/functions/process-recipe-image");
-                const response = await fetch("/.netlify/functions/process-recipe-image", { /* ... */ });
+                console.log("Fetching /.netlify/functions/process-recipe-image with payload:", payload); // Log payload for good measure
+                const response = await fetch("/.netlify/functions/process-recipe-image", {
+                    method: "POST", // <<<< THIS LINE IS CRUCIAL
+                    headers: {
+                        "Content-Type": "application/json"
+                        // Add any other headers your function might expect, though usually not needed for this
+                    },
+                    body: JSON.stringify(payload)
+                });
                 const responseText = await response.text();
                 console.log("Raw response from Netlify function:", responseText.substring(0, 500));
 
