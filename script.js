@@ -931,17 +931,15 @@ function toggleSidebar() {
     }
 }
 
-async function showRecipeFilter() {
+function showRecipeFilter() {
     updatePageTitle("Recipes");
     setActiveNavButton("recipes");
 
-    const sidebarToggle = document.getElementById('sidebarToggleButton');
-    if (sidebarToggle) {
-        sidebarToggle.style.display = 'block'; // Or 'inline-block', 'flex', etc., depending on styling
-    }
-
     const view = document.getElementById('mainView');
-    if (!view) return;
+    if (!view) {
+        console.error("mainView element not found for showRecipeFilter");
+        return;
+    }
     view.className = 'section-recipes container-fluid py-3';
 
     view.innerHTML = `
@@ -951,18 +949,51 @@ async function showRecipeFilter() {
                 <span id="currentFolderName" class="text-muted fw-normal fs-5"></span>
             </h4>
             <div>
-                </div>
-        </div>
-        <div class="collapse mb-3" id="recipeFiltersCollapse">
+                <button class="btn btn-outline-warning btn-sm me-2" type="button" onclick="showChatbotModal()" title="Ask Chef Bot to create a new recipe">
+                    <i class="bi bi-robot"></i> Chef Bot
+                </button>
+                <button class="btn btn-outline-info btn-sm me-2" type="button" data-bs-toggle="collapse" data-bs-target="#recipeFiltersCollapse" aria-expanded="false" aria-controls="recipeFiltersCollapse" title="Toggle filters">
+                    <i class="bi bi-funnel-fill"></i> Filters
+                </button>
+                <button class="btn btn-primary btn-sm" onclick="openAddRecipeMethodChoiceModal()">
+                    <i class="bi bi-plus-circle-fill me-1"></i>Add Recipe
+                </button>
             </div>
-        <div id="recipeResults">
-            <p class="text-center p-5 text-muted">Loading recipes...</p>
         </div>
+
+        <div class="collapse mb-3" id="recipeFiltersCollapse">
+            <div class="filter-section card card-body bg-light-subtle">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0">Filter & Search</h6>
+                    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearAllRecipeFilters()" title="Clear all filters">
+                        <i class="bi bi-x-lg"></i> Clear All
+                    </button>
+                </div>
+                <div class="row g-2 align-items-end">
+                    <div class="col-lg-4 col-md-12">
+                        <label for="recipeNameSearch" class="form-label small mb-1">By Name:</label>
+                        <input type="text" class="form-control form-control-sm" id="recipeNameSearch" placeholder="Search by recipe name..." oninput="applyAllRecipeFilters()" />
+                    </div>
+                    <div class="col-lg-4 col-md-6">
+                        <label for="recipeIngredientSearch" class="form-label small mb-1">By Ingredient(s):</label>
+                        <input type="text" class="form-control form-control-sm" id="recipeIngredientSearch" placeholder="Filter by ingredient..." oninput="applyAllRecipeFilters()" />
+                    </div>
+                    <div class="col-lg-4 col-md-6">
+                        <label for="recipeTagSearch" class="form-label small mb-1">By Tag(s):</label>
+                        <input type="text" class="form-control form-control-sm" id="recipeTagSearch" placeholder="Filter by tag..." oninput="applyAllRecipeFilters()" />
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="recipeResults"></div>
     `;
 
-    // New Flow: Load all data first, then render UI that depends on it
-    await loadAllUserRecipes();
-    renderFoldersInSidebar();
+    if (typeof renderFoldersInSidebar === "function") {
+        renderFoldersInSidebar();
+    } else {
+        console.error("renderFoldersInSidebar function is not defined!");
+    }
 }
 
 async function renderFolderTabs() {
