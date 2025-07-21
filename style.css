@@ -1,476 +1,364 @@
 /* ===============================
-   General Layout
+    General Layout & App Container
    =============================== */
-
-   body, html {
+body, html {
     height: 100%;
     margin: 0;
-  }
-  
-  #menuBar {
-    border-bottom: 1px solid #ccc;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    background-color: white;
-  }
-  
-  .card {
-    margin-bottom: 1rem;
-  }
-  
-  .collapsible-form {
-    display: none;
-  }
-  
-  .collapsible-form.open {
-    display: block;
-  }
-  
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    overscroll-behavior-y: contain;
+}
+
+.app-wrapper {
+    display: flex;
+    min-height: 100vh;
+}
+
+.main-content-wrapper {
+    overflow: hidden;
+    height: 100vh;
+}
+
 #mainView {
     width: 100%;
     margin: 0 auto;
-    padding: 1rem; /* Default padding for content (top, left, right) */
-    /* === CRUCIAL FOR MOBILE === */
-    /* Add padding-bottom equal to or slightly more than the bottomNavBar height */
-    /* This ensures content can scroll above the fixed bottom navigation bar */
-    padding-bottom: 80px !important; /* Example: 65px (nav height) + 15px extra space */
-    /* overflow-auto is set in your HTML via JS or should be here if not */
-    overflow-y: auto; /* Ensure vertical scrolling is enabled */
+    padding: 1rem; /* Sets default top, left, right padding */
+    padding-bottom: 80px !important; /* Creates space for the 65px nav bar + extra room */
+    overflow-y: auto;
 }
-  
-  @media screen and (orientation: landscape) and (min-width: 768px) {
-    #mainView {
-      max-width: 700px;
-      margin: 0 auto;
-      border-left: 1px solid #ddd;
-      border-right: 1px solid #ddd;
-      border-radius: 6px;
-      box-shadow: 0 0 15px rgba(0,0,0,0.05);
-      background: #fff;
-    }
-  }
 
-  @media (min-width: 768px) { /* Bootstrap's md breakpoint and up (tablets and desktops) */
-    #mainView {
-        max-width: 750px; 
-        margin: 1.5rem auto; 
-        padding: 1.5rem;   /* Reset all padding for desktop if desired */
-        /* No extra padding-bottom needed here because #bottomNavBar is hidden on desktop */
-        /* If #mainView still had the mobile padding-bottom, it would look too large on desktop */
-    }
+
+/* ===============================
+    Navigation (Top Bar, Desktop Menu, Mobile Bottom Nav)
+   =============================== */
+#topBar {
+    min-height: 56px;
+    display: flex;
+    align-items: center;
+}
+#topBar .container-fluid {
+    width: 100%;
+}
+#currentPageTitle {
+    font-weight: 500;
+    font-size: 1.1rem;
+    /* The flex-grow-1 class in the HTML helps it take up space */
+}
+#menuBar button.btn.active {
+    font-weight: bold;
 }
 
 #bottomNavBar {
-    /* Bootstrap class d-md-none makes it visible only on screens smaller than md */
-    height: 65px; /* Your actual nav bar height */
+    height: 65px;
     box-shadow: 0 -2px 5px rgba(0,0,0,0.08);
-    background-color: #ffffff; 
-    z-index: 1030; 
-    /* fixed-bottom is handled by Bootstrap class */
+    background-color: #ffffff;
+    z-index: 1030;
 }
 
-@media (min-width: 768px) { /* Corresponds to Bootstrap's 'md' breakpoint */
+.btn-nav {
+    border: none;
+    border-radius: 0;
+    padding-top: 0.5rem;
+    padding-bottom: 0.25rem;
+    color: #495057;
+    transition: color 0.15s ease-in-out, transform 0.1s ease-in-out;
+    font-size: 0.9rem;
+}
+.btn-nav:hover, .btn-nav:focus {
+    color: #0056b3;
+    background-color: transparent;
+    outline: none;
+    box-shadow: none;
+}
+.btn-nav:active {
+    transform: scale(0.95);
+}
+.btn-nav.active {
+    color: #0d6efd;
+}
+.btn-nav .nav-label {
+    font-size: 0.65rem;
+    margin-top: -2px;
+    line-height: 1.2;
+    font-weight: 500;
+}
+.btn-nav.active .nav-label {
+    font-weight: 600;
+}
+
+
+/* ===============================
+    Sidebar (Folders)
+   =============================== */
+.sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 280px;
+    height: 100%;
+    background-color: #fff;
+    border-right: 1px solid #dee2e6;
+    z-index: 1045;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease-in-out;
+}
+.sidebar.open {
+    transform: translateX(0);
+    box-shadow: 0 0 1rem rgba(0,0,0,0.15);
+}
+.sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid #dee2e6;
+}
+.sidebar-body {
+    padding: 1rem 1.25rem;
+    overflow-y: auto;
+}
+
+.sidebar-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 1040;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+}
+.sidebar-backdrop.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+#folderList .nav-link {
+    color: #333;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+    border-radius: 0.375rem;
+}
+#folderList .nav-link:hover {
+    background-color: #e9ecef;
+}
+#folderList .nav-link.active {
+    font-weight: 600;
+    color: #fff;
+    background-color: #0d6efd;
+}
+
+
+/* ===============================
+    Desktop Layout Adjustments (Media Queries)
+   =============================== */
+@media (min-width: 768px) { /* md breakpoint and up */
     #mainView {
-        /* Your desktop-specific styles: max-width, margin, border, shadow etc. */
-        max-width: 750px; 
+        max-width: 750px;
         margin: 1.5rem auto;
-        padding: 1.5rem; /* Reset padding to desktop default */
-        /* padding-bottom is implicitly reset by the above if not specified,
-           or you can explicitly set it: */
-        padding-bottom: 1.5rem; 
+        padding: 1.5rem;
+        border: 1px solid #dee2e6;
+        border-radius: 0.5rem;
+        box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,.075);
+        background: #fff;
     }
 }
-  
-  /* ===============================
-     Tables, Forms, and Animations
-     =============================== */
-  
-  .table-sm th,
-  .table-sm td {
+
+@media (min-width: 992px) { /* lg breakpoint and up */
+    .sidebar {
+        position: sticky;
+        transform: translateX(0);
+        box-shadow: none;
+    }
+    .main-content-wrapper {
+        width: calc(100% - 280px);
+    }
+    .sidebar-backdrop {
+        display: none !important;
+    }
+}
+
+
+/* ===============================
+    General Card, Form, Table Styling
+   =============================== */
+.card {
+    margin-bottom: 1rem;
+}
+
+.collapsible-form { display: none; }
+.collapsible-form.open { display: block; }
+
+.table-sm th, .table-sm td { padding: 0.25rem 0.5rem; font-size: 0.9rem; vertical-align: middle; }
+.table { margin-bottom: 1rem; }
+.table-ingredients-editor th, .table-ingredients-editor td { font-size: 0.85rem; padding: 0.3rem 0.4rem; }
+
+#tagsContainer, [id^="inlineTagsContainer-"] {
+    background-color: #f8f9fa;
+    border: 1px dashed #ced4da;
+    min-height: 38px;
     padding: 0.25rem 0.5rem;
-    font-size: 0.9rem;
-    vertical-align: middle;
-  }
-  
-  .table {
-    margin-bottom: 0.75rem;
-  }
-  
-  #tagsContainer {
-    background-color: #f8f9fa;
-    border: 1px dashed #ced4da;
-  }
-  
-  #tagsPlaceholder {
+}
+#tagsPlaceholder, [id^="inlineTagsPlaceholder-"] {
     opacity: 0.6;
     font-style: italic;
-  }
-  
-  .rating-stars i {
-    transition: transform 0.2s ease, color 0.2s ease;
-  }
-  
-  .rating-stars i:hover {
-    transform: scale(1.2);
-  }
-  
-  #photoPreviewContainer {
-    width: 100%;
-    overflow-x: auto;
-    margin-top: 1rem;
-  }
-  
-  #photoPreviewContainer img {
-    max-height: 300px;
-    margin-top: 10px;
-  }
-  
-  .success-message {
-    transition: opacity 0.4s ease;
-  }
-  
-  .dropdown-menu {
-    background-color: white;
-    border: 1px solid #ddd;
-    border-radius: 0.5rem;
-    font-size: 0.9rem;
-    z-index: 1000;
-  }
-  .dropdown-item {
-    background: none;
-    border: none;
-    width: 100%;
-    text-align: left;
-    padding: 0.5rem;
-    cursor: pointer;
-  }
-  .dropdown-item:hover {
-    background-color: #f8f9fa;
-  }
-  
-  .confirm-delete {
-    font-size: 0.9rem;
-    white-space: nowrap;
-  }
-  
-  [id^="inlineTagsContainer"] {
-    background-color: #f8f9fa;
-    border: 1px dashed #ced4da;
-  }
-  
-  [id^="inlineTagsPlaceholder"] {
-    opacity: 0.6;
-    font-style: italic;
-  }
-  
-  /* style.css */
-
-/* Login Modal Specifics */
-#loginModal .modal-dialog {
-    max-width: 380px; /* As in your example image */
-}
-
-#loginModal .modal-header {
-    border-bottom: none; /* Remove default border */
-    padding-top: 1.5rem;
-    padding-bottom: 0;
-}
-
-#loginModal .modal-title {
-    font-size: 1.75rem; /* Larger title */
-    font-weight: 600;   /* Bolder title */
-}
-
-#loginModal .modal-body {
-    padding-top: 1rem;
-    padding-bottom: 1rem;
-}
-
-#loginModal .form-control-lg { /* For the initial email input */
-    padding: .75rem 1rem;
-    font-size: 1rem;
-}
-
-#loginModal .btn-lg { /* For the initial "Continue" button */
-    padding: .75rem 1rem;
-    font-size: 1rem;
-}
-
-#loginModal .btn-outline-secondary.d-flex img,
-#loginModal .btn-outline-primary.d-flex img {
-    height: 20px; /* For social icons */
-    width: 20px;
-    margin-right: 0.75rem;
-}
-
-#loginModal .or-divider {
-    display: flex;
-    align-items: center;
-    text-align: center;
-    color: #6c757d; /* muted text color */
-    margin: 1.5rem 0;
-}
-
-#loginModal .or-divider hr {
-    flex-grow: 1;
-    background-color: #dee2e6; /* light border color */
-    height: 1px;
-    border: none;
-}
-
-#loginModal .or-divider span {
-    padding: 0 0.75rem;
-    font-size: 0.9rem;
-}
-
-#loginModal .modal-footer {
-    border-top: none;
-    justify-content: center;
-    padding-bottom: 1.5rem;
-}
-
-#loginModal .modal-footer a {
-    font-size: 0.8rem;
-}
-
-/* Ensure error messages are visible */
-#loginErrorMessage, #signUpErrorMessage {
     font-size: 0.875rem;
 }
 
-/* style.css */
+.rating-stars i { transition: transform 0.2s ease, color 0.2s ease; }
+.rating-stars i:hover { transform: scale(1.2); }
+
+#photoPreviewContainer { width: 100%; overflow-x: auto; margin-top: 1rem; }
+#photoPreviewContainer img { max-height: 250px; margin-top: 10px; }
+
+
+/* ===============================
+    Modals (Login, User Dropdown, etc.)
+   =============================== */
+/* General modal open scroll lock */
+.modal-open-custom {
+  overflow: hidden;
+}
+
+/* Login Modal Specifics */
+#loginModal .modal-dialog { max-width: 380px; }
+#loginModal .modal-header { border-bottom: none; padding-top: 1.5rem; padding-bottom: 0.5rem; }
+#loginModal .modal-title { font-size: 1.6rem; font-weight: 600; }
+#loginModal .modal-body { padding-top: 1rem; padding-bottom: 1.5rem; }
+#loginModal .form-control-lg { padding: .7rem 1rem; font-size: 0.95rem; }
+#loginModal .btn-lg { padding: .7rem 1rem; font-size: 0.95rem; }
+#loginModal .or-divider { display: flex; align-items: center; text-align: center; color: #6c757d; margin: 1.25rem 0; }
+#loginModal .or-divider hr { flex-grow: 1; background-color: #dee2e6; height: 1px; border: none; }
+#loginModal .or-divider span { padding: 0 0.75rem; font-size: 0.85rem; }
+#loginModal .modal-footer { border-top: none; justify-content: center; padding-bottom: 1.5rem; padding-top: 0; }
+#loginModal .modal-footer a, #loginModal .small a { font-size: 0.8rem; text-decoration: none; }
+#loginModal .small a:hover { text-decoration: underline; }
+#loginErrorMessage, #signUpErrorMessage, #initialLoginError {
+    font-size: 0.875rem;
+    margin-top: 0.75rem;
+    margin-bottom: 0.75rem;
+    padding: 0.5rem 0.75rem;
+}
+
+/* User Info Dropdown (Desktop Top Bar) */
 .user-info-dropdown {
-    /* You can add more specific styles here if needed */
-    box-shadow: 0 .5rem 1rem rgba(0,0,0,.15) !important; /* Bootstrap's shadow-sm */
-    /* Consider transitions for smoother show/hide if you prefer */
+    min-width: 250px;
+    max-width: 300px;
+    border-radius: 0.375rem;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+    border: 1px solid rgba(0,0,0,.15);
+    box-shadow: 0 .5rem 1rem rgba(0,0,0,.15) !important;
+    background-color: white;
 }
-
-.user-info-dropdown .btn-link.text-danger:hover,
-.user-info-dropdown .btn-link.text-danger:focus {
-    color: #a71d2a !important; /* Darker red on hover/focus */
-    text-decoration: underline !important;
-}
-
-/* style.css */
-
-/* User Info Dropdown Styling */
-.user-info-dropdown {
-    min-width: 260px; /* Adjust as needed */
-    max-width: 320px;
-    border-radius: 0.5rem; /* Slightly more rounded corners */
-    /* box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.1); */ /* Custom shadow if Bootstrap's is not enough */
-    padding-top: 0.25rem;  /* Overall top padding */
-    padding-bottom: 0.25rem; /* Overall bottom padding */
-}
-
-.user-info-dropdown .px-3 { /* Standardize horizontal padding for items */
-    padding-left: 1rem !important;
-    padding-right: 1rem !important;
-}
-
-.user-info-dropdown .text-muted.small {
-    font-size: 0.8em; /* Make "Signed in as:" a bit smaller */
-}
-
-.user-info-dropdown .fw-medium { /* For the email */
-    font-weight: 500 !important; 
-}
-
-/* Styling for the Log Out "menu item" */
-.user-info-dropdown .dropdown-item {
+.user-info-dropdown .px-3 { padding-left: 1rem !important; padding-right: 1rem !important; }
+.user-info-dropdown .text-muted.small { font-size: 0.8em; padding-bottom: 0.25rem; }
+.user-info-dropdown .fw-medium { font-weight: 500 !important; font-size: 0.9rem; }
+.user-info-dropdown .dropdown-item, a.dropdown-item.user-info-logout-link {
     font-weight: 500;
-    transition: background-color 0.15s ease-in-out;
+    transition: background-color 0.15s ease-in-out, color 0.15s ease-in-out;
+    font-size: 0.9rem;
+    padding: 0.5rem 1rem;
+    color: #212529;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
 }
-
-.user-info-dropdown .dropdown-item:hover,
-.user-info-dropdown .dropdown-item:focus {
-    background-color: #f8f9fa; /* Light grey hover, Bootstrap's $gray-100 */
-    color: #b02a37 !important; /* Darker red on hover for logout */
+.user-info-dropdown .dropdown-item:hover, .user-info-dropdown .dropdown-item:focus,
+a.dropdown-item.user-info-logout-link:hover, a.dropdown-item.user-info-logout-link:focus {
+    background-color: #f0f0f0;
+    color: #000;
 }
-
-/* Subtle Divider - if you keep it */
-.user-info-dropdown hr.my-1,
-.user-info-dropdown div[style*="margin: 0.5rem 1rem"] /* Targeting the JS-styled divider */
-{ 
-    margin-top: 0.4rem !important;
-    margin-bottom: 0.4rem !important;
-    border: 0; /* Remove default hr border if using background-color for the line */
+.user-info-dropdown a.dropdown-item.user-info-logout-link {
+    color: #dc3545 !important;
+}
+.user-info-dropdown a.dropdown-item.user-info-logout-link:hover,
+.user-info-dropdown a.dropdown-item.user-info-logout-link:focus {
+    color: #b02a37 !important;
+    background-color: #f8d7da;
+}
+.user-info-dropdown .dropdown-divider-custom {
+    margin: 0.4rem 1rem !important;
+    border: 0;
     height: 1px;
-    background-color: #e9ecef; /* Bootstrap's $gray-200 */
-    margin-left: 1rem;  /* Indent the divider */
-    margin-right: 1rem; /* Indent the divider */
-}
-
-/* Avatar Button (if you want to tweak its hover/focus) */
-/* #userAuthArea .btn.rounded-circle:hover,
-#userAuthArea .btn.rounded-circle:focus {
     background-color: #e9ecef;
-} */
-
-mark {
-    padding: 0.1em 0; /* Adjust vertical padding, remove horizontal if it's an issue */
-    margin: 0;        /* Reset any default margins */
-    background-color: #FFD700; /* Or your preferred highlight yellow/color */
-    color: inherit;   /* Ensure text color remains consistent with surrounding text */
-    line-height: inherit; /* Helps maintain consistent line height */
-    /* letter-spacing: normal; */ /* Usually not needed, but can explicitly set if there's an issue */
-    /* display: inline; */ /* Default, but ensures it doesn't try to be a block */
-    border-radius: 2px; /* Optional: slightly rounded corners can look nice */
 }
 
-.btn-nav.active {
-    color: #0d6efd; /* Bootstrap primary color - makes icon and text colored */
-    /* Optional: Add a top border or a background indication */
-    /* border-top: 3px solid #0d6efd; */
-    /* background-color: rgba(13, 110, 253, 0.08); */ /* Very subtle background */
-}
-
-.btn-nav .nav-label {
-    font-size: 0.65rem; 
-    margin-top: -2px;   
-    line-height: 1.2;
-    font-weight: 600; /* Or bolder */
-}
-
-#menuBar button.btn.active {
-    /* Example: Make it look like a solid button or just bolder */
-    /* This will be applied if the JS adds btn-primary, btn-info etc. */
-    /* If you want a custom active style distinct from solid buttons: */
-    font-weight: bold;
-    /* background-color: #e9ecef; */ /* A subtle highlight */
-    /* color: #000; */
-}
-
+/* Add Recipe Method Choice Modal */
 #addRecipeMethodModal .list-group-item {
     cursor: pointer;
     padding: 1rem 1.25rem;
 }
-
 #addRecipeMethodModal .list-group-item i {
-    color: #0d6efd; /* Bootstrap primary color for icons */
+    color: #0d6efd;
 }
-
 #addRecipeMethodModal .list-group-item:hover {
-    background-color: #f8f9fa; /* Light hover */
+    background-color: #f8f9fa;
 }
 
-/* style.css */
 
-/* Shopping List Specifics */
-.shopping-list-header .d-flex {
-    /* On extra-small screens, allow buttons to stack if needed */
-}
-
-@media (max-width: 575.98px) { /* xs screens */
-    .shopping-list-header .d-flex.justify-content-between {
-        flex-direction: column;
-        align-items: stretch !important; /* Override align-items-sm-center */
-    }
-    .shopping-list-header .d-flex.gap-2 { /* The div wrapping the buttons */
-        flex-direction: column; /* Stack buttons vertically */
-        width: 100%;
-    }
-    .shopping-list-header .d-flex.gap-2 .btn {
-        width: 100%; /* Make buttons full width when stacked */
-        margin-bottom: 0.5rem; /* Add space between stacked buttons */
-    }
-    .shopping-list-header .d-flex.gap-2 .btn:last-child {
-        margin-bottom: 0;
-    }
-    .shopping-list-header h5 {
-        text-align: center; /* Center title on mobile */
-        margin-bottom: 0.75rem !important; /* Ensure space below title */
-    }
-}
-
-#shoppingListResults .list-group-item {
-    padding: 0.75rem 1rem; /* Adjust padding for touch targets */
-    align-items: flex-start; /* Align items to top if text wraps */
-}
-
-#shoppingListResults .form-check-input {
-    width: 1.25em; /* Slightly larger checkbox */
-    height: 1.25em;
-    margin-top: 0.2em; /* Adjust vertical alignment with text */
-}
-
-#shoppingListResults .shopping-item-label {
-    font-size: 0.95rem; /* Slightly larger item text */
-    word-break: break-word; /* Allow long item names to wrap */
-}
-
-#shoppingListResults .shopping-item-label[style*="line-through"] {
-    color: #6c757d; /* Muted color for checked items */
-}
-
-#shoppingListResults .shopping-item-delete-btn {
-    padding: 0.25rem 0.5rem; /* Ensure delete button is easy to tap */
-}
-
-.shopping-list-header h5 {
-    /* Ensure title is well-spaced, especially if buttons stack below it on very small screens */
-}
-
-/* Styling for the action buttons in the shopping list header */
+/* ===============================
+    Shopping List
+   =============================== */
 .shopping-list-actions .btn-group .btn {
-    /* If you want more control over how buttons in the group behave on xs screens */
-    /* For example, to ensure they don't get too squished or wrap awkwardly */
-    white-space: nowrap; /* Prevents text inside button from wrapping */
+    white-space: nowrap;
 }
-@media (max-width: 380px) { /* Very small screens */
-    .shopping-list-actions .btn-group {
-        /* flex-direction: column; */ /* Uncomment to stack buttons vertically */
-    }
-    /* .shopping-list-actions .btn-group .btn { */
-        /* width: 100%; */ /* Make buttons full width if stacked */
-        /* margin-bottom: 0.5rem; */
-    /* } */
-    /* .shopping-list-actions .btn-group .btn:last-child { */
-        /* margin-bottom: 0; */
-    /* } */
-}
-
 
 #shoppingListResults .list-group-item.shopping-list-item {
-    padding: 0.75rem 1rem;        /* Good touch padding */
-    align-items: center;          /* Vertically align checkbox/text with delete button */
-    border-radius: 0.375rem;      /* Rounded corners for items */
-    margin-bottom: 0.5rem;        /* Space between items */
-    box-shadow: 0 1px 2px rgba(0,0,0,0.05); /* Subtle shadow for item separation */
+    padding: 0.75rem 1rem;
+    align-items: center;
+    border-radius: 0.375rem;
+    margin-bottom: 0.5rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
-
 #shoppingListResults .form-check-input {
-    width: 1.3em; /* Make checkbox a bit larger for easier tapping */
+    width: 1.3em;
     height: 1.3em;
-    margin-top: 0.1em; /* Fine-tune vertical alignment if needed */
-    flex-shrink: 0; /* Prevent checkbox from shrinking */
+    margin-top: 0.1em;
+    flex-shrink: 0;
 }
-
 #shoppingListResults .shopping-item-label {
     font-size: 0.95rem;
-    word-break: break-word; /* Allow long item names to wrap nicely */
-    margin-left: 0.5rem; /* Space between checkbox and label */
+    word-break: break-word;
+    margin-left: 0.5rem;
     line-height: 1.4;
 }
-
 #shoppingListResults .shopping-item-label[style*="line-through"] {
-    color: #6c757d; /* Muted color for checked items */
-    opacity: 0.7;   /* Slightly more opacity than before */
+    color: #6c757d;
+    opacity: 0.7;
 }
-
 #shoppingListResults .shopping-item-delete-btn {
-    padding: 0.25rem 0.6rem; /* Slightly larger padding for easier tap */
-    line-height: 1; /* Ensure icon is centered in button */
-    flex-shrink: 0; /* Prevent delete button from shrinking */
+    padding: 0.25rem 0.6rem;
+    line-height: 1;
+    flex-shrink: 0;
 }
 #shoppingListResults .shopping-item-delete-btn i {
     vertical-align: middle;
 }
-
-/* Empty state for shopping list */
-#shoppingListResults .list-group-item.text-muted {
+#shoppingListResults .list-group-item.text-muted { /* Empty state */
     border: none;
     box-shadow: none;
     background-color: transparent;
+}
+
+
+/* ===============================
+    Misc & Overrides
+   =============================== */
+mark {
+    padding: 0.1em 0;
+    margin: 0;
+    background-color: #FFD700;
+    color: inherit;
+    line-height: inherit;
+    border-radius: 2px;
+}
+
+.confirm-delete-controls .btn-link {
+    text-decoration: none;
+}
+.confirm-delete-controls .btn-link:hover,
+.confirm-delete-controls .btn-link:focus {
+    box-shadow: none;
 }

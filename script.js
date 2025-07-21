@@ -593,10 +593,17 @@ function selectAddRecipeMethod(method) {
  * If null or empty, a default "Close" button is shown.
  */
 function showInfoConfirmModal(title, bodyContent, buttons = []) {
+    // Lazy initialization: if the instance doesn't exist, try to create it now.
     if (!infoConfirmModalInstance) {
-        console.error("Info/Confirm Modal instance not initialized!");
-        alert(bodyContent); // Fallback to alert if modal isn't ready
-        return;
+        const infoModalElement = document.getElementById('infoConfirmModal');
+        if (infoModalElement) {
+            infoConfirmModalInstance = new bootstrap.Modal(infoModalElement);
+        } else {
+            // If the HTML for the modal is completely missing, we can't proceed.
+            console.error("Fatal: The HTML for #infoConfirmModal is missing from index.html.");
+            alert(bodyContent); // Fallback to a simple alert
+            return;
+        }
     }
 
     const modalTitle = document.getElementById('infoConfirmModalLabel');
@@ -604,7 +611,7 @@ function showInfoConfirmModal(title, bodyContent, buttons = []) {
     const modalFooter = document.getElementById('infoConfirmModalFooter');
 
     if (modalTitle) modalTitle.textContent = title;
-    if (modalBody) modalBody.innerHTML = bodyContent; // Use innerHTML to allow basic HTML in the message
+    if (modalBody) modalBody.innerHTML = bodyContent;
     if (modalFooter) {
         modalFooter.innerHTML = ''; // Clear previous buttons
 
@@ -614,18 +621,17 @@ function showInfoConfirmModal(title, bodyContent, buttons = []) {
                 button.type = 'button';
                 button.className = `btn ${btnConfig.class || 'btn-secondary'}`;
                 button.textContent = btnConfig.text;
-                if (btnConfig.dismiss) { // If true, button will dismiss the modal
+
+                if (btnConfig.dismiss) {
                     button.setAttribute('data-bs-dismiss', 'modal');
                 }
+
                 button.onclick = () => {
-                    if (btnConfig.onClick) {
+                    if (typeof btnConfig.onClick === 'function') {
                         btnConfig.onClick();
                     }
-                    // Only auto-dismiss if not explicitly handled by onClick or if dismiss flag not set to false
-                    if (btnConfig.autoClose !== false && !btnConfig.onClick && !btnConfig.dismiss) {
-                         infoConfirmModalInstance.hide();
-                    } else if (btnConfig.autoClose !== false && btnConfig.onClick && btnConfig.dismissOnClick !== false) {
-                        // If there's an onClick, and dismissOnClick is not explicitly false, then hide.
+                    // Only auto-hide if dismissOnClick is not explicitly false
+                    if (btnConfig.dismissOnClick !== false && !btnConfig.dismiss) {
                         infoConfirmModalInstance.hide();
                     }
                 };
@@ -641,6 +647,7 @@ function showInfoConfirmModal(title, bodyContent, buttons = []) {
             modalFooter.appendChild(closeButton);
         }
     }
+    
     infoConfirmModalInstance.show();
 }
 
@@ -654,14 +661,15 @@ function initializeLocalDB() {
     // Increment the version number if you're changing the schema after users might have version 1
     // For development, you can clear your browser's IndexedDB for the site to start fresh with a new schema.
     // Or, handle upgrades: https://dexie.org/docs/Tutorial/Design#database-versioning
-    localDB.version(3).stores({ // Increment version if 'shoppingList' store is new or changing structure
+    localDB.version(4).stores({ // Increment version if 'shoppingList' store is new or changing structure
         recipes: '++localId, name, timestamp, *tags',
         history: '++localId, recipeName, timestamp, *tags',
         planning: '++localId, date, recipeLocalId, recipeName',
-        shoppingList: '++id, name, ingredients' // NEW or UPDATED: for local shopping list
+        shoppingList: '++id, name, ingredients', // NEW or UPDATED: for local shopping list
                                                 // '++id' simple auto-incrementing key
                                                 // 'name' could be a generic name like "localShoppingList"
                                                 // 'ingredients' will be an array of ingredient objects
+        folders: '++id, name' // NEW: The folders table. 'id' is the auto-incrementing primary key.
     }).upgrade(tx => {
         console.log("Upgrading RecipeAppDB to version 3, ensuring 'shoppingList' store is present/updated.");
         // If version 2 didn't have shoppingList or had a different structure,
@@ -911,81 +919,139 @@ async function loadRecipes() {
   showRecipeFilter();
 }
 
-function showRecipeFilter() {
-    // If using page titles and active nav states from responsive navigation:
+function toggleSidebar() {
+    const sidebar = document.getElementById('recipeFoldersSidebar');
+    const backdrop = document.getElementById('sidebarBackdrop');
+
+    if (sidebar && backdrop) {
+        sidebar.classList.toggle('open');
+        backdrop.classList.toggle('show');
+    } else {
+        console.error("Sidebar or backdrop element not found!");
+    }
+}
+
+async function showRecipeFilter() {
     updatePageTitle("Recipes");
     setActiveNavButton("recipes");
 
-    const view = document.getElementById('mainView');
-    if (!view) {
-        console.error("mainView element not found for showRecipeFilter");
-        return;
+    const sidebarToggle = document.getElementById('sidebarToggleButton');
+    if (sidebarToggle) {
+        sidebarToggle.style.display = 'block'; // Or 'inline-block', 'flex', etc., depending on styling
     }
-    view.className = 'section-recipes container py-3';
+
+    const view = document.getElementById('mainView');
+    if (!view) return;
+    view.className = 'section-recipes container-fluid py-3';
 
     view.innerHTML = `
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <div> 
-                <button class="btn btn-outline-warning btn-sm me-2" type="button" onclick="showChatbotModal()" title="Ask Chef Bot to create a new recipe">
-                    <i class="bi bi-robot"></i> Chef Bot
-                </button>
-                <button class="btn btn-outline-info btn-sm me-2" type="button" data-bs-toggle="collapse" data-bs-target="#recipeFiltersCollapse" aria-expanded="false" aria-controls="recipeFiltersCollapse" title="Toggle filters">
-                    <i class="bi bi-funnel-fill"></i> Filters
-                </button>
-                <button class="btn btn-primary btn-sm" onclick="openAddRecipeMethodChoiceModal()">
-                    <i class="bi bi-plus-circle-fill me-1"></i>Add Recipe
-                </button>
-            </div>
+            <h4 class="mb-0">
+                <span class="d-none d-lg-inline"><i class="bi bi-journal-richtext me-2"></i>Recipes</span>
+                <span id="currentFolderName" class="text-muted fw-normal fs-5"></span>
+            </h4>
+            <div>
+                </div>
         </div>
-
         <div class="collapse mb-3" id="recipeFiltersCollapse">
-            <div class="filter-section card card-body bg-light-subtle">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h6 class="mb-0">Filter & Search</h6>
-                    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearAllRecipeFilters()" title="Clear all filters">
-                        <i class="bi bi-x-lg"></i> Clear All
-                    </button>
-                </div>
-                <div class="row g-2 align-items-end">
-                    <div class="col-lg-4 col-md-12">
-                        <label for="nameSearch" class="form-label small mb-1">By Name:</label>
-                        <input type="text" class="form-control form-control-sm" id="nameSearch" placeholder="Search by recipe name..." oninput="applyAllRecipeFilters()" />
-                    </div>
-                    <div class="col-lg-4 col-md-6">
-                        <label for="recipeSearch" class="form-label small mb-1">By Ingredient(s):</label>
-                        <input type="text" class="form-control form-control-sm" id="recipeSearch" placeholder="e.g., chicken,tomato" oninput="applyAllRecipeFilters()" />
-                    </div>
-                    <div class="col-lg-4 col-md-6">
-                        <label for="tagSearch" class="form-label small mb-1">By Tag(s):</label>
-                        <input type="text" class="form-control form-control-sm" id="tagSearch" placeholder="e.g., dinner,quick" oninput="applyAllRecipeFilters()" />
-                    </div>
-                </div>
             </div>
+        <div id="recipeResults">
+            <p class="text-center p-5 text-muted">Loading recipes...</p>
         </div>
-
-        <div id="recipeForm" class="collapsible-form mb-4">
-            ${getAddRecipeFormHTML()}
-        </div>
-
-        <div id="recipeResults"></div>
     `;
 
-    initializeMainRecipeFormTagInput();
+    // New Flow: Load all data first, then render UI that depends on it
+    await loadAllUserRecipes();
+    renderFoldersInSidebar();
+}
 
-    if (typeof recipes !== 'undefined' && typeof applyAllRecipeFilters === "function") {
-        applyAllRecipeFilters();
-    } else {
-        const recipeResultsContainer = document.getElementById('recipeResults');
-        if (recipeResultsContainer) {
-            recipeResultsContainer.innerHTML = '<p class="text-center text-muted">Loading recipes or no recipes found...</p>';
+async function renderFolderTabs() {
+    const navContainer = document.querySelector('#folderNav .nav');
+    if (!navContainer) return;
+
+    let folders = [];
+    try {
+        if (currentUser) {
+            const snapshot = await db.collection('folders')
+                .where('uid', '==', currentUser.uid)
+                .orderBy('name')
+                .get();
+            folders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        } else if (localDB) {
+            folders = await localDB.folders.orderBy('name').toArray();
         }
-        if (typeof recipes === 'undefined') {
-            console.warn("Global 'recipes' array not defined when showRecipeFilter was called. Ensure loadInitialRecipes() has run or will run.");
-        }
-        if (typeof applyAllRecipeFilters !== "function") {
-            console.error("CRITICAL: applyAllRecipeFilters function is not defined!");
-        }
+    } catch (error) {
+        console.error("Error fetching folders:", error);
     }
+
+    let folderTabsHTML = `
+        <a class="nav-link" href="#" data-folder-id="unsorted">Unsorted</a>
+        <a class="nav-link" href="#" data-folder-id="all">All Recipes</a>
+    `;
+    folders.forEach(folder => {
+        folderTabsHTML += `<a class="nav-link" href="#" data-folder-id="${folder.id}">${escapeHtml(folder.name)}</a>`;
+    });
+    navContainer.innerHTML = folderTabsHTML;
+
+    navContainer.querySelectorAll('.nav-link').forEach(tab => {
+        tab.onclick = (e) => {
+            e.preventDefault();
+            const newFolderId = tab.dataset.folderId;
+            console.log(`Folder tab clicked. Changing folder from '${currentFolderId}' to '${newFolderId}'`);
+            currentFolderId = newFolderId;
+            renderFolderTabs(); // Re-render tabs to set the new active one and trigger recipe load
+        };
+        if (tab.dataset.folderId === currentFolderId) {
+            tab.classList.add('active');
+        }
+    });
+
+    // After rendering tabs, load the recipes for the currently selected folder
+    loadRecipesByFolder(currentFolderId);
+}
+
+function openCreateFolderModal() {
+    // Use your generic infoConfirmModal for this
+    const bodyContent = `
+        <label for="newFolderNameInput" class="form-label">Folder Name:</label>
+        <input type="text" id="newFolderNameInput" class="form-control" placeholder="e.g., Weeknight Dinners">
+        <div id="folderCreateError" class="text-danger small mt-2"></div>
+    `;
+    const buttons = [
+        { text: 'Cancel', class: 'btn-secondary btn-sm', dismiss: true },
+        { 
+            text: 'Save Folder', 
+            class: 'btn-primary btn-sm',
+            onClick: async () => {
+                const nameInput = document.getElementById('newFolderNameInput');
+                const errorDiv = document.getElementById('folderCreateError');
+                const folderName = nameInput.value.trim();
+                if (!folderName) {
+                    errorDiv.textContent = 'Folder name cannot be empty.';
+                    return;
+                }
+                
+                try {
+                    const folderData = { name: folderName };
+                    if (currentUser) {
+                        folderData.uid = currentUser.uid;
+                        folderData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+                        await db.collection('folders').add(folderData);
+                    } else if (localDB) {
+                        await localDB.folders.add(folderData);
+                    }
+                    showSuccessMessage(`Folder "${folderName}" created!`);
+                    infoConfirmModalInstance.hide();
+                    renderFolderTabs(); // Re-render the tabs to include the new folder
+                } catch (error) {
+                    console.error("Error creating folder:", error);
+                    errorDiv.textContent = 'Failed to create folder. Please try again.';
+                }
+            },
+            dismissOnClick: false // Keep modal open on error
+        }
+    ];
+    showInfoConfirmModal("Create New Folder", bodyContent, buttons);
 }
 
 /**
@@ -1000,7 +1066,6 @@ function updatePageTitle(title) {
         console.warn("Element with ID 'currentPageTitle' not found in the DOM.");
     }
 }
-
 function clearAllRecipeFilters() {
     const nameSearch = document.getElementById('nameSearch');
     const ingredientSearch = document.getElementById('recipeSearch'); // Uses 'recipeSearch' for ingredients
@@ -2118,33 +2183,152 @@ async function saveRecipe() { // Changed to async to handle potential async loca
     }
 }
 
-async function loadRecipesFromLocal() {
-    if (!localDB) {
-        console.warn("LocalDB not initialized, cannot load local recipes.");
-        recipes = []; // Clear recipes array
-        displayRecipes(recipes, 'recipeResults'); // Update UI
+// This global variable is still useful
+let currentFolderId = 'unsorted'; 
+
+// This function now populates the sidebar instead of the old top tabs
+async function renderFoldersInSidebar() {
+    const sidebar = document.getElementById('recipeFoldersSidebar');
+    const standardListContainer = document.getElementById('standardFolderList');
+    const userListContainer = document.getElementById('userFolderList');
+
+    if (!sidebar || !standardListContainer || !userListContainer) {
+        console.error("Sidebar list containers (#standardFolderList or #userFolderList) not found.");
         return;
     }
+
+    // Set a loading state for user folders
+    userListContainer.innerHTML = `<li class="nav-item text-muted small p-2">Loading...</li>`;
+
+    // 1. Render the static, standard folders immediately
+    const unsortedCount = recipes.filter(r => !r.folderId).length;
+    const allCount = recipes.length;
+    standardListContainer.innerHTML = `
+        <li class="nav-item">
+            <a class="nav-link d-flex justify-content-between align-items-center" href="#" data-folder-id="unsorted">
+                Unsorted <span class="badge bg-secondary rounded-pill">${unsortedCount}</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link d-flex justify-content-between align-items-center" href="#" data-folder-id="all">
+                All Recipes <span class="badge bg-secondary rounded-pill">${allCount}</span>
+            </a>
+        </li>
+    `;
+
+    // 2. Fetch and render the user's custom folders
+    let folders = [];
     try {
-        const localRecipes = await localDB.recipes.orderBy('timestamp').reverse().toArray();
-        recipes = localRecipes.map(r => ({ ...r, id: r.localId })); // Use localId as id for consistency in displayRecipes
-        console.log("Loaded recipes from LocalDB:", recipes);
-        showRecipeFilter(); // This function usually calls displayRecipes
+        if (currentUser) {
+            const snapshot = await db.collection('folders').where('uid', '==', currentUser.uid).orderBy('name').get();
+            folders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        } else if (localDB) {
+            folders = await localDB.folders.orderBy('name').toArray();
+        }
     } catch (error) {
-        console.error("❌ Error loading recipes from LocalDB:", error.stack || error);
+        console.error("Error fetching folders:", error);
+        userListContainer.innerHTML = `<li class="nav-item text-danger small p-2">Could not load folders.</li>`;
+        // We still proceed to attach listeners to the standard folders.
+    }
+    
+    // Calculate counts for user-created folders
+    const folderCounts = new Map();
+    recipes.forEach(recipe => {
+        if (recipe.folderId) {
+            const folderIdStr = recipe.folderId.toString();
+            folderCounts.set(folderIdStr, (folderCounts.get(folderIdStr) || 0) + 1);
+        }
+    });
+
+    let userFolderListHTML = "";
+    if (folders.length === 0) {
+        userFolderListHTML = `<li class="nav-item text-muted small p-2">No folders created yet.</li>`;
+    } else {
+        folders.forEach(folder => {
+            const count = folderCounts.get(folder.id.toString()) || 0;
+            userFolderListHTML += `
+                <li class="nav-item">
+                    <a class="nav-link d-flex justify-content-between align-items-center" href="#" data-folder-id="${folder.id}">
+                        ${escapeHtml(folder.name)}
+                        <span class="badge bg-secondary rounded-pill">${count}</span>
+                    </a>
+                </li>
+            `;
+        });
+    }
+    userListContainer.innerHTML = userFolderListHTML;
+
+    // 3. Add click listeners and set the active class across the ENTIRE sidebar
+    sidebar.querySelectorAll('.nav-link').forEach(link => {
+        if (link.dataset.folderId === currentFolderId) {
+            link.classList.add('active');
+        }
+        
+        link.onclick = (e) => {
+            e.preventDefault();
+            const newFolderId = link.dataset.folderId;
+            if (newFolderId !== currentFolderId) {
+                currentFolderId = newFolderId;
+                // Since the global 'recipes' array is already loaded, we don't need to re-fetch.
+                // We just need to re-render the sidebar to update the active class,
+                // and re-apply the filters for the recipe list.
+                renderFoldersInSidebar(); 
+            }
+            
+            if (window.innerWidth < 992) {
+                if (typeof toggleSidebar === "function") toggleSidebar();
+            }
+        };
+    });
+
+    // 4. Update the displayed recipe list based on the selected folder
+    // This call is now at the end of the function that renders the sidebar
+    applyAllRecipeFilters();
+}
+
+async function loadRecipesFromLocal(folderId = 'unsorted') {
+    if (!localDB) { recipes = []; return; }
+
+    console.log(`loadRecipesFromLocal: Building query for folder: '${folderId}'`);
+    try {
+        let query;
+        if (folderId === 'all') {
+            // Get all recipes
+            query = localDB.recipes;
+        } else if (folderId === 'unsorted') {
+            // Dexie can query for records where a key is null or undefined
+            query = localDB.recipes.where('folderId').equals(null).or('folderId').equals(undefined);
+        } else {
+            // Dexie keys from '++id' are numbers, so we parse the folderId
+            query = localDB.recipes.where('folderId').equals(parseInt(folderId, 10));
+        }
+        
+        const localRecipes = await query.reverse().sortBy('timestamp');
+        recipes = localRecipes.map(r => ({ ...r, id: r.localId, isLocal: true }));
+        
+        console.log(`loadRecipesFromLocal: Global 'recipes' array updated. New count: ${recipes.length}`);
+    } catch (error) {
+        console.error("Error loading recipes from LocalDB:", error);
         recipes = [];
-        showRecipeFilter(); // Display empty state
     }
 }
 
 // New main function to decide where to load recipes from
-function loadInitialRecipes() {
+async function loadInitialRecipes() {
+    console.log("loadInitialRecipes: Starting data load. User logged in:", !!currentUser);
     if (currentUser) {
-        console.log("User is logged in, loading recipes from Firestore.");
-        loadRecipesFromFirestore(); // Your existing function
+        await loadRecipesFromFirestore();
     } else {
-        console.log("User is not logged in, loading recipes from LocalDB.");
-        loadRecipesFromLocal();
+        await loadRecipesFromLocal();
+    }
+    
+    // After the await above is complete, the `recipes` array is populated.
+    // Now, we can render the default view.
+    console.log("loadInitialRecipes: Data load complete. Rendering default view.");
+    if (typeof showRecipeFilter === "function") {
+        showRecipeFilter();
+    } else {
+        console.error("loadInitialRecipes: showRecipeFilter function is not defined, cannot render initial view.");
     }
 }
 
@@ -2367,6 +2551,11 @@ function viewHistory() {
     // If using page titles and active nav states:
     updatePageTitle("History");
     setActiveNavButton("history");
+
+    const sidebarToggle = document.getElementById('sidebarToggleButton');
+    if (sidebarToggle) {
+        sidebarToggle.style.display = 'none';
+    }
 
     const view = document.getElementById('mainView');
     if (!view) {
@@ -2661,26 +2850,29 @@ function escapeHtml(unsafe) {
 }
 
 function applyAllRecipeFilters() {
-    // Use the IDs that are actually in your showRecipeFilter's innerHTML
-    const nameSearchInput = document.getElementById('nameSearch'); 
-    const ingredientSearchInput = document.getElementById('recipeSearch'); 
-    const tagSearchInput = document.getElementById('tagSearch');    
+    // Get filter input values from the text boxes
+    const nameSearchTerm = document.getElementById('recipeNameSearch')?.value.toLowerCase().trim() || "";
+    const ingredientSearchValue = document.getElementById('recipeIngredientSearch')?.value.toLowerCase().trim() || "";
+    const ingredientSearchTermsArray = ingredientSearchValue.split(',').map(term => term.trim()).filter(Boolean);
+    const tagSearchValue = document.getElementById('recipeTagSearch')?.value.toLowerCase().trim() || "";
+    const tagTermsArray = tagSearchValue.split(',').map(t => t.trim()).filter(Boolean);
 
-    const nameSearchTerm = nameSearchInput ? nameSearchInput.value.toLowerCase().trim() : "";
-    const ingredientSearchValue = ingredientSearchInput ? ingredientSearchInput.value.toLowerCase().trim() : "";
-    const ingredientSearchTermsArray = ingredientSearchValue.split(',')
-                                         .map(term => term.trim().toLowerCase())
-                                         .filter(Boolean);
-    const tagSearchValue = tagSearchInput ? tagSearchInput.value.toLowerCase().trim() : "";
-    const tagTermsArray = tagSearchValue.split(',')
-                            .map(t => t.trim().toLowerCase())
-                            .filter(Boolean);
-
-    console.log("Applying filters. Name:", `"${nameSearchTerm}"`, "Ingredients:", ingredientSearchTermsArray, "Tags:", tagTermsArray);
-    console.log("Based on master recipes count:", recipes.length);
-
-
-    let filteredList = [...recipes]; 
+    // --- Step 1: Filter by the currently selected folder ---
+    // The global `currentFolderId` variable holds the state of the selected folder.
+    let recipesInCurrentFolder;
+    if (currentFolderId === 'all') {
+        recipesInCurrentFolder = [...recipes]; // Use all recipes
+    } else if (currentFolderId === 'unsorted') {
+        recipesInCurrentFolder = recipes.filter(r => !r.folderId); // Get recipes with no folderId
+    } else {
+        // Get recipes where the folderId matches the selected folder's ID.
+        // Using '==' allows for flexible comparison (e.g., number vs string for LocalDB IDs).
+        recipesInCurrentFolder = recipes.filter(r => r.folderId == currentFolderId);
+    }
+    
+    // --- Step 2: Apply text/tag filters to the folder-specific list ---
+    // Now, start the filtering process from this smaller, folder-specific list.
+    let filteredList = [...recipesInCurrentFolder];
 
     // Filter by Recipe Name
     if (nameSearchTerm) {
@@ -2714,18 +2906,12 @@ function applyAllRecipeFilters() {
         });
     }
     
+    // Prepare options for highlighting
     const displayOptions = {};
-    if (nameSearchTerm) {
-        displayOptions.highlightNameTerm = nameSearchTerm;
-    }
-    if (ingredientSearchTermsArray.length > 0) {
-        displayOptions.highlightIngredients = ingredientSearchTermsArray;
-    }
-    if (tagTermsArray.length > 0) {
-        displayOptions.highlightTags = tagTermsArray;
-    }
+    if (nameSearchTerm) displayOptions.highlightNameTerm = nameSearchTerm;
+    if (ingredientSearchTermsArray.length > 0) displayOptions.highlightIngredients = ingredientSearchTermsArray;
+    if (tagTermsArray.length > 0) displayOptions.highlightTags = tagTermsArray;
 
-    console.log("Final filtered list count:", filteredList.length);
     displayRecipes(filteredList, 'recipeResults', displayOptions);
 }
 
@@ -3155,6 +3341,13 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
         editBtn.onclick = () => openInlineEditor(recipe.id, card);
         buttonGroup.appendChild(editBtn);
 
+        const moveBtn = document.createElement('button');
+        moveBtn.className = 'btn btn-outline-secondary btn-sm';
+        moveBtn.innerHTML = '<i class="bi bi-folder-symlink"></i>';
+        moveBtn.title = "Move to folder";
+        moveBtn.onclick = () => openMoveToFolderModal(recipe.id);
+        buttonGroup.appendChild(moveBtn);
+
         // ** NEW: Chef Bot Button for This Specific Recipe **
         const chefBotRecipeBtn = document.createElement('button');
         chefBotRecipeBtn.className = 'btn btn-outline-warning btn-sm ask-chef-bot-recipe';
@@ -3304,6 +3497,128 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
         card.appendChild(body);
         container.appendChild(card);
     });
+}
+
+async function openMoveToFolderModal(recipeId) {
+    let folders = [];
+    try {
+        if (currentUser) {
+            const snapshot = await db.collection('folders').where('uid', '==', currentUser.uid).orderBy('name').get();
+            folders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        } else if (localDB) {
+            folders = await localDB.folders.orderBy('name').toArray();
+        }
+    } catch (error) {
+        console.error("Error fetching folders for move modal:", error);
+        alert("Could not load folders.");
+        return;
+    }
+
+    let folderOptionsHTML = '<option value="unsorted">Unsorted</option>'; // Option to move back to unsorted
+    folders.forEach(folder => {
+        folderOptionsHTML += `<option value="${folder.id}">${escapeHtml(folder.name)}</option>`;
+    });
+
+    const bodyContent = `
+        <label for="moveToFolderSelect" class="form-label">Select a folder:</label>
+        <select id="moveToFolderSelect" class="form-select">${folderOptionsHTML}</select>
+    `;
+    const buttons = [
+        { text: 'Cancel', class: 'btn-secondary btn-sm', dismiss: true },
+        {
+            text: 'Move Recipe',
+            class: 'btn-primary btn-sm',
+            onClick: () => {
+                const select = document.getElementById('moveToFolderSelect');
+                const newFolderId = select.value;
+                moveRecipeToFolder(recipeId, newFolderId);
+                infoConfirmModalInstance.hide();
+            }
+        }
+    ];
+    showInfoConfirmModal("Move Recipe", bodyContent, buttons);
+}
+
+async function moveRecipeToFolder(recipeId, folderId) {
+    console.log(`Moving recipe ${recipeId} to folder ${folderId} (Type: ${typeof folderId})`); // Debugging log
+
+    try {
+        if (currentUser) {
+            // Firestore handles string IDs, so this is fine.
+            // A value of 'undefined' is how we represent "remove this field".
+            const firestoreUpdateData = {
+                folderId: (folderId === 'unsorted' || folderId === 'all') ? firebase.firestore.FieldValue.delete() : folderId
+            };
+            await db.collection('recipes').doc(recipeId).update(firestoreUpdateData);
+        } else if (localDB) {
+            // LocalDB (Dexie) uses number IDs for folders. The folderId from HTML is a string.
+            // We MUST parse it to a number before saving/querying.
+            const localUpdateData = {
+                folderId: (folderId === 'unsorted' || folderId === 'all') ? null : parseInt(folderId, 10)
+            };
+            await localDB.recipes.update(recipeId, localUpdateData);
+        }
+        showSuccessMessage("Recipe moved successfully!");
+        // Refresh the current view to reflect the change
+        loadRecipesByFolder(currentFolderId);
+    } catch (error) {
+        console.error("Error moving recipe:", error);
+        alert("Failed to move recipe.");
+    }
+}
+
+async function loadAllUserRecipes() {
+    console.log("Loading all user recipes...");
+    if (currentUser) {
+        // This is essentially your old loadRecipesFromFirestore('all')
+        try {
+            const snapshot = await db.collection('recipes')
+                .where('uid', '==', currentUser.uid)
+                .orderBy('timestamp', 'desc')
+                .get();
+            recipes = snapshot.docs.map(doc => ({ id: doc.id, firestoreId: doc.id, ...doc.data() }));
+        } catch (error) {
+            console.error("Error loading all recipes from Firestore:", error);
+            recipes = [];
+        }
+    } else if (localDB) {
+        // This is your old loadRecipesFromLocal('all')
+        try {
+            const localRecipes = await localDB.recipes.orderBy('timestamp').reverse().toArray();
+            recipes = localRecipes.map(r => ({ ...r, id: r.localId, isLocal: true }));
+        } catch (error) {
+            console.error("Error loading all recipes from LocalDB:", error);
+            recipes = [];
+        }
+    } else {
+        recipes = []; // No user and no localDB
+    }
+    console.log(`Finished loading. Total recipes in memory: ${recipes.length}`);
+}
+
+async function loadRecipesByFolder(folderId) {
+    console.log(`Loading recipes for folderId: '${folderId}'`);
+    
+    // Update the folder name title in the main view
+    const folderNameTitle = document.getElementById('currentFolderName');
+    if (folderNameTitle) {
+        if (folderId === 'unsorted') {
+            folderNameTitle.textContent = "Unsorted";
+        } else if (folderId === 'all') {
+            folderNameTitle.textContent = "All Recipes";
+        } else {
+            // Find folder name from the DOM or from data if you have it loaded
+            const folderLink = document.querySelector(`#folderList .nav-link[data-folder-id="${folderId}"]`);
+            folderNameTitle.textContent = folderLink ? `${folderLink.textContent}` : "";
+        }
+    }
+    
+    if (currentUser) {
+        await loadRecipesFromFirestore(folderId);
+    } else {
+        await loadRecipesFromLocal(folderId);
+    }
+    applyAllRecipeFilters();
 }
 
 async function saveNewRecipeToStorage(recipeDataObject) {
@@ -4137,27 +4452,32 @@ function saveMadeNote() {
   });
 }
 
-function loadRecipesFromFirestore() {
-  if (!currentUser) {
-    recipes = [];
-    showRecipeFilter();
-    return;
-  }
+async function loadRecipesFromLocal(folderId = 'unsorted') {
+    if (!localDB) { recipes = []; return; }
 
-  db.collection('recipes')
-    .where('uid', '==', currentUser.uid) // 🔥 Only pull user’s own recipes
-    .get()
-    .then(snapshot => {
-      recipes = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      console.log("Loaded recipes:", recipes);
-      showRecipeFilter();
-    })
-    .catch(err => {
-      console.error("❌ Error loading recipes from Firestore:", err);
-    });
+    console.log(`loadRecipesFromLocal: Building query for folder: '${folderId}'`);
+    try {
+        let query;
+        if (folderId === 'all') {
+            query = localDB.recipes;
+        } else if (folderId === 'unsorted') {
+            // This correctly finds recipes where folderId is null or undefined.
+            query = localDB.recipes.where('folderId').equals(null).or('folderId').equals(undefined);
+        } else {
+            // This correctly converts the string folderId from the tab's dataset to a number for the query.
+            const numericFolderId = parseInt(folderId, 10);
+            console.log(`loadRecipesFromLocal: Querying where folderId equals the NUMBER ${numericFolderId}`);
+            query = localDB.recipes.where('folderId').equals(numericFolderId);
+        }
+        
+        const localRecipes = await query.reverse().sortBy('timestamp');
+        recipes = localRecipes.map(r => ({ ...r, id: r.localId, isLocal: true }));
+        
+        console.log(`loadRecipesFromLocal: Global 'recipes' array updated. New count: ${recipes.length}`);
+    } catch (error) {
+        console.error("Error loading recipes from LocalDB:", error);
+        recipes = [];
+    }
 }
 
 
@@ -4280,6 +4600,12 @@ function loadIngredientsFromFirestore() {
 }
 
 function showPlanning() {
+
+    const sidebarToggle = document.getElementById('sidebarToggleButton');
+    if (sidebarToggle) {
+        sidebarToggle.style.display = 'none';
+    }
+
     updatePageTitle("Meal Plan & Shopping");
     setActiveNavButton("plan");
 
@@ -5789,24 +6115,27 @@ function signOut() {
 
 // ... (your existing Firebase initialization, currentUser, localDB, etc.)
 
-auth.onAuthStateChanged(user => {
-    const previousUser = currentUser; // Capture previous state
+auth.onAuthStateChanged(async (user) => {
+    const previousUser = currentUser;
     currentUser = user;
-    updateAuthUI(user);
-    loadInitialRecipes(); // This will load from Firestore if 'user' is truthy, or local if 'user' is null
+    
+    // Update auth UI elements first, as this is quick
+    if (typeof updateAuthUI === "function") {
+        updateAuthUI(user);
+    }
 
+    // Wait for the entire data loading and initial view rendering process to complete
+    await loadInitialRecipes(); 
+
+    // Now, with the app fully initialized and the default view shown,
+    // you can run logic that might show modals, like the data migration prompt.
     if (user) {
         console.log("User authenticated:", user.uid);
-
-        // Check if this is a login/signup event AFTER an anonymous session with data
-        // We can set a flag when local data is saved, or simply check if local stores have data.
-        if (!previousUser && user) { // User just logged in (was previously null)
+        if (!previousUser) { // This means user just logged in
             checkAndPromptForLocalDataMigration(user);
         }
-
     } else {
         console.log("User is not authenticated. Operating in 'Local Mode'.");
-        // loadInitialRecipes() already handles loading local data
     }
 });
 
@@ -6453,7 +6782,6 @@ function generateRecipeDisplayHTML(recipe) {
     `;
 }
 
-
 function showChatbotModal() {
     // Stop any previous speech recognition and remove old modal
     if (window.chefBotSpeechRecognition && window.chefBotIsListening) {
@@ -6757,7 +7085,6 @@ function saveCurrentChatbotRecipe() {
         });
 }
 
-
 function saveSharedRecipe(recipe) {
   if (!currentUser) {
     alert("Please sign in first.");
@@ -6781,7 +7108,6 @@ function saveSharedRecipe(recipe) {
 
   history.replaceState({}, document.title, window.location.pathname);
 }
-
 
 window.onload = () => {
     // The initial recipe load is now handled by onAuthStateChanged.
@@ -6817,3 +7143,59 @@ window.onload = () => {
     // Removed loadRecipesFromFirestore() from here as onAuthStateChanged handles it.
 };
 
+async function loadRecipesFromFirestore(folderId = 'all') {
+    if (!currentUser) {
+        recipes = [];
+        return;
+    }
+    console.log(`Loading recipes from Firestore for folder: '${folderId}'`);
+    try {
+        let query = db.collection('recipes').where('uid', '==', currentUser.uid);
+
+        if (folderId && folderId !== 'all' && folderId !== 'unsorted') {
+            query = query.where('folderId', '==', folderId);
+        }
+
+        const snapshot = await query.orderBy('timestamp', 'desc').get();
+        let allDocs = snapshot.docs.map(doc => ({ id: doc.id, firestoreId: doc.id, ...doc.data() }));
+
+        if (folderId === 'unsorted') {
+            recipes = allDocs.filter(recipe => !recipe.folderId);
+        } else {
+            recipes = allDocs;
+        }
+        
+        console.log(`Firestore recipes loaded. New count: ${recipes.length}`);
+    } catch (error) {
+        console.error("Error loading recipes from Firestore:", error);
+        recipes = [];
+    }
+}
+
+async function loadRecipesFromLocal(folderId = 'all') {
+    if (!localDB) {
+        console.warn("LocalDB not initialized.");
+        recipes = [];
+        return;
+    }
+    console.log(`Loading recipes from LocalDB for folder: '${folderId}'`);
+    try {
+        let query;
+        if (folderId === 'all') {
+            query = localDB.recipes;
+        } else if (folderId === 'unsorted') {
+            query = localDB.recipes.where('folderId').equals(null).or('folderId').equals(undefined);
+        } else {
+            const numericFolderId = parseInt(folderId, 10);
+            query = localDB.recipes.where('folderId').equals(numericFolderId);
+        }
+        
+        const localRecipes = await query.reverse().sortBy('timestamp');
+        recipes = localRecipes.map(r => ({ ...r, id: r.localId, isLocal: true }));
+        
+        console.log(`Local recipes loaded. New count: ${recipes.length}`);
+    } catch (error) {
+        console.error("Error loading recipes from LocalDB:", error);
+        recipes = [];
+    }
+}
