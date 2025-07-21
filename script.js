@@ -12,6 +12,7 @@ let currentAddRecipeMethod = null;
 let recipeFormModalInstance = null; // for #recipeFormModal
 let pasteTextModalInstance = null;  // for #pasteTextModal
 let dedicatedRecipePhotoInput = null; // <<< ADD THIS DECLARATION HERE
+let isFolderEditMode = false;
 
 document.addEventListener('DOMContentLoaded', () => {
     const loginModalElement = document.getElementById('loginModal');
@@ -1042,11 +1043,13 @@ async function renderFolderTabs() {
 }
 
 function openCreateFolderModal() {
-    // Use your generic infoConfirmModal for this
+    // This function uses your generic infoConfirmModal
     const bodyContent = `
-        <label for="newFolderNameInput" class="form-label">Folder Name:</label>
-        <input type="text" id="newFolderNameInput" class="form-control" placeholder="e.g., Weeknight Dinners">
-        <div id="folderCreateError" class="text-danger small mt-2"></div>
+        <div class="form-group">
+            <label for="newFolderNameInput" class="form-label">Folder Name:</label>
+            <input type="text" id="newFolderNameInput" class="form-control" placeholder="e.g., Weeknight Dinners">
+            <div id="folderCreateError" class="text-danger small mt-2"></div>
+        </div>
     `;
     const buttons = [
         { text: 'Cancel', class: 'btn-secondary btn-sm', dismiss: true },
@@ -1057,9 +1060,10 @@ function openCreateFolderModal() {
                 const nameInput = document.getElementById('newFolderNameInput');
                 const errorDiv = document.getElementById('folderCreateError');
                 const folderName = nameInput.value.trim();
+
                 if (!folderName) {
-                    errorDiv.textContent = 'Folder name cannot be empty.';
-                    return;
+                    if(errorDiv) errorDiv.textContent = 'Folder name cannot be empty.';
+                    return; // Keep modal open
                 }
                 
                 try {
@@ -1071,18 +1075,152 @@ function openCreateFolderModal() {
                     } else if (localDB) {
                         await localDB.folders.add(folderData);
                     }
+                    
                     showSuccessMessage(`Folder "${folderName}" created!`);
                     infoConfirmModalInstance.hide();
-                    renderFolderTabs(); // Re-render the tabs to include the new folder
+
+                    // **** THIS LINE REFRESHES THE SIDEBAR ****
+                    // After successfully saving, re-render the sidebar to show the new folder.
+                    renderFoldersInSidebar(); 
+
                 } catch (error) {
                     console.error("Error creating folder:", error);
-                    errorDiv.textContent = 'Failed to create folder. Please try again.';
+                    if(errorDiv) errorDiv.textContent = 'Failed to create folder. Please try again.';
                 }
             },
-            dismissOnClick: false // Keep modal open on error
+            dismissOnClick: false // Keep modal open if validation or save fails
         }
     ];
     showInfoConfirmModal("Create New Folder", bodyContent, buttons);
+}
+
+function toggleFolderEditMode() {
+    isFolderEditMode = !isFolderEditMode;
+    const editBtn = document.getElementById('folderEditBtn');
+    if (editBtn) {
+        // Toggle button style to indicate it's active
+        editBtn.classList.toggle('active', isFolderEditMode);
+        editBtn.classList.toggle('btn-primary', isFolderEditMode);
+        editBtn.classList.toggle('btn-outline-secondary', !isFolderEditMode);
+    }
+    renderFoldersInSidebar(); // Re-render the sidebar to show/hide edit icons
+}
+
+/**
+ * Opens a modal to rename a folder.
+ * @param {string} folderId - The ID of the folder to rename.
+ * @param {string} currentName - The current name of the folder.
+ */
+function openRenameFolderModal(folderId, currentName) {
+    const bodyContent = `
+        <label for="renameFolderNameInput" class="form-label">New Folder Name:</label>
+        <input type="text" id="renameFolderNameInput" class="form-control" value="${escapeHtml(currentName)}">
+        <div id="folderRenameError" class="text-danger small mt-2"></div>
+    `;
+    const buttons = [
+        { text: 'Cancel', class: 'btn-secondary btn-sm', dismiss: true },
+        { 
+            text: 'Save Name', 
+            class: 'btn-primary btn-sm',
+            onClick: async () => {
+                const nameInput = document.getElementById('renameFolderNameInput');
+                const errorDiv = document.getElementById('folderRenameError');
+                const newName = nameInput.value.trim();
+                if (!newName) {
+                    errorDiv.textContent = 'Folder name cannot be empty.';
+                    return;
+                }
+                await renameFolder(folderId, newName);
+                infoConfirmModalInstance.hide();
+            },
+            dismissOnClick: false
+        }
+    ];
+    showInfoConfirmModal(`Rename "${currentName}"`, bodyContent, buttons);
+    // Focus the input after a short delay for the modal to appear
+    setTimeout(() => document.getElementById('renameFolderNameInput')?.focus(), 200);
+}
+
+/**
+ * Updates a folder's name in the database.
+ * @param {string} folderId - The ID of the folder to rename.
+ * @param {string} newName - The new name for the folder.
+ */
+async function renameFolder(folderId, newName) {
+    try {
+        if (currentUser) {
+            await db.collection('folders').doc(folderId).update({ name: newName });
+        } else if (localDB) {
+            await localDB.folders.update(parseInt(folderId, 10), { name: newName });
+        }
+        showSuccessMessage("Folder renamed successfully!");
+        renderFoldersInSidebar();
+    } catch (error) {
+        console.error("Error renaming folder:", error);
+        alert("Failed to rename folder.");
+    }
+}
+
+/**
+ * Shows a confirmation modal before deleting a folder.
+ * @param {string} folderId - The ID of the folder to delete.
+ * @param {string} folderName - The name of the folder to delete.
+ */
+function confirmDeleteFolder(folderId, folderName) {
+    const body = `<p>Are you sure you want to delete the folder "<strong>${escapeHtml(folderName)}</strong>"?</p>
+                  <p class="text-danger small">All recipes inside this folder will be moved to "Unsorted". This action cannot be undone.</p>`;
+    const buttons = [
+        { text: 'Cancel', class: 'btn-secondary btn-sm', dismiss: true },
+        { 
+            text: 'Yes, Delete Folder', 
+            class: 'btn-danger btn-sm',
+            onClick: async () => {
+                infoConfirmModalInstance.hide();
+                await deleteFolder(folderId);
+            },
+            dismissOnClick: false
+        }
+    ];
+    showInfoConfirmModal(`Delete Folder`, body, buttons);
+}
+
+/**
+ * Deletes a folder and moves its recipes to "Unsorted".
+ * @param {string} folderId - The ID of the folder to delete.
+ */
+async function deleteFolder(folderId) {
+    try {
+        if (currentUser) {
+            // Firestore: Use a batch write for atomicity
+            const batch = db.batch();
+            const recipesToUpdateQuery = db.collection('recipes').where('uid', '==', currentUser.uid).where('folderId', '==', folderId);
+            const snapshot = await recipesToUpdateQuery.get();
+
+            snapshot.forEach(doc => {
+                batch.update(doc.ref, { folderId: firebase.firestore.FieldValue.delete() });
+            });
+
+            const folderRef = db.collection('folders').doc(folderId);
+            batch.delete(folderRef);
+
+            await batch.commit();
+
+        } else if (localDB) {
+            // LocalDB (Dexie): Use a transaction
+            const numericFolderId = parseInt(folderId, 10);
+            await localDB.transaction('rw', localDB.recipes, localDB.folders, async () => {
+                await localDB.recipes.where({ folderId: numericFolderId }).modify({ folderId: null });
+                await localDB.folders.delete(numericFolderId);
+            });
+        }
+        showSuccessMessage("Folder deleted successfully.");
+        // After deletion, reset edit mode and refresh the UI
+        isFolderEditMode = false;
+        showRecipeFilter(); // This reloads recipes and re-renders the sidebar
+    } catch (error) {
+        console.error("Error deleting folder:", error);
+        alert("Failed to delete folder.");
+    }
 }
 
 /**
@@ -2277,11 +2415,28 @@ async function renderFoldersInSidebar() {
     } else {
         folders.forEach(folder => {
             const count = folderCounts.get(folder.id.toString()) || 0;
+            
+            // --- NEW: Add edit controls if in edit mode ---
+            let editControlsHTML = '';
+            if (isFolderEditMode) {
+                // Use single quotes for the string to easily use double quotes inside for attributes
+                const escapedName = folder.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                editControlsHTML = `
+                    <span class="folder-edit-controls ms-auto">
+                        <i class="bi bi-pencil-square" title="Rename Folder" onclick="event.stopPropagation(); openRenameFolderModal('${folder.id}', '${escapedName}')"></i>
+                        <i class="bi bi-trash3" title="Delete Folder" onclick="event.stopPropagation(); confirmDeleteFolder('${folder.id}', '${escapedName}')"></i>
+                    </span>
+                `;
+            }
+
             userFolderListHTML += `
                 <li class="nav-item">
                     <a class="nav-link d-flex justify-content-between align-items-center" href="#" data-folder-id="${folder.id}">
-                        ${escapeHtml(folder.name)}
-                        <span class="badge bg-secondary rounded-pill">${count}</span>
+                        <span>${escapeHtml(folder.name)}</span>
+                        <div class="d-flex align-items-center">
+                            ${editControlsHTML}
+                            <span class="badge bg-secondary rounded-pill ms-2">${count}</span>
+                        </div>
                     </a>
                 </li>
             `;
@@ -6146,27 +6301,24 @@ function signOut() {
 
 // ... (your existing Firebase initialization, currentUser, localDB, etc.)
 
-auth.onAuthStateChanged(async (user) => {
-    const previousUser = currentUser;
+auth.onAuthStateChanged(user => {
+    const previousUser = currentUser; // Capture previous state
     currentUser = user;
-    
-    // Update auth UI elements first, as this is quick
-    if (typeof updateAuthUI === "function") {
-        updateAuthUI(user);
-    }
+    updateAuthUI(user);
+    loadInitialRecipes(); // This will load from Firestore if 'user' is truthy, or local if 'user' is null
 
-    // Wait for the entire data loading and initial view rendering process to complete
-    await loadInitialRecipes(); 
-
-    // Now, with the app fully initialized and the default view shown,
-    // you can run logic that might show modals, like the data migration prompt.
     if (user) {
         console.log("User authenticated:", user.uid);
-        if (!previousUser) { // This means user just logged in
+
+        // Check if this is a login/signup event AFTER an anonymous session with data
+        // We can set a flag when local data is saved, or simply check if local stores have data.
+        if (!previousUser && user) { // User just logged in (was previously null)
             checkAndPromptForLocalDataMigration(user);
         }
+
     } else {
         console.log("User is not authenticated. Operating in 'Local Mode'.");
+        // loadInitialRecipes() already handles loading local data
     }
 });
 
