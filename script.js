@@ -2923,8 +2923,8 @@ function openRecipeSpecificChatModal(recipe) {
                 if (data.answer) {
                     addChatMessage(data.answer, 'bot');
                     conversationHistory.push({ role: "model", text: data.answer });
-                    if (conversationHistory.length > MAX_HISTORY_TURNS_RECIPE_CHAT * 2) {
-                        conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS_RECIPE_CHAT * 2);
+                    if (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
+                        conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS * 2);
                     }
                     await saveChatHistoryToRecipe(recipe.id, conversationHistory, !!recipe.isLocal);
                 } else {
