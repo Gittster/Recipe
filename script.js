@@ -654,8 +654,8 @@ function initializeLocalDB() {
     // Increment the version number if you're changing the schema after users might have version 1
     // For development, you can clear your browser's IndexedDB for the site to start fresh with a new schema.
     // Or, handle upgrades: https://dexie.org/docs/Tutorial/Design#database-versioning
-    localDB.version(3).stores({ // Increment version if 'shoppingList' store is new or changing structure
-        recipes: '++localId, name, timestamp, *tags',
+    localDB.version(5).stores({ // Increment version if 'shoppingList' store is new or changing structure
+        recipes: '++localId, name, timestamp, *tags, folderId, chatHistory', // Add chatHistory
         history: '++localId, recipeName, timestamp, *tags',
         planning: '++localId, date, recipeLocalId, recipeName',
         shoppingList: '++id, name, ingredients' // NEW or UPDATED: for local shopping list
@@ -2754,8 +2754,8 @@ function openRecipeSpecificChatModal(recipe) {
         return;
     }
 
-    let conversationHistory = [];
-    const MAX_HISTORY_TURNS_RECIPE_CHAT = 5;
+    let conversationHistory = recipe.chatHistory ? [...recipe.chatHistory] : [];
+    const MAX_HISTORY_TURNS = 10; // Can increase this now that it's persisted
 
     const existingChatModalElement = document.getElementById('recipeChatModal');
     if (existingChatModalElement) {
@@ -2865,15 +2865,33 @@ function openRecipeSpecificChatModal(recipe) {
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     };
 
+    const renderExistingHistory = () => {
+        const initialPlaceholderMessage = messagesContainer.querySelector('p.text-muted.small');
+        if (conversationHistory.length > 0 && initialPlaceholderMessage) {
+            initialPlaceholderMessage.remove();
+        }
+        conversationHistory.forEach(turn => {
+            // 'model' is what the Gemini API uses, but your client might see 'bot'
+            const sender = turn.role === 'user' ? 'user' : 'bot';
+            addChatMessage(turn.text, sender);
+        });
+    };
+    renderExistingHistory(); // Call this to display history when the modal opens
+
     if (sendBtn && chatInput) {
         const handleSend = async () => {
             const userQuestion = chatInput.value.trim();
             if (!userQuestion) return;
 
             addChatMessage(userQuestion, 'user');
+            chatInput.value = '';
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Sending...';
+
+            // Add user question to history
             conversationHistory.push({ role: "user", text: userQuestion });
-            if (conversationHistory.length > MAX_HISTORY_TURNS_RECIPE_CHAT * 2) {
-                conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS_RECIPE_CHAT * 2);
+            if (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
+                conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS * 2);
             }
 
             chatInput.value = '';
@@ -2908,6 +2926,7 @@ function openRecipeSpecificChatModal(recipe) {
                     if (conversationHistory.length > MAX_HISTORY_TURNS_RECIPE_CHAT * 2) {
                         conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS_RECIPE_CHAT * 2);
                     }
+                    await saveChatHistoryToRecipe(recipe.id, conversationHistory, !!recipe.isLocal);
                 } else {
                     throw new Error("AI response was missing an answer.");
                 }
@@ -3040,6 +3059,41 @@ function openRecipeSpecificChatModal(recipe) {
             window.recipeSpecificChatIsListening = false;
         }
     });
+}
+
+/**
+ * Saves the updated conversation history to a specific recipe.
+ * @param {string} recipeId - The ID (Firestore or localId) of the recipe.
+ * @param {Array<Object>} historyToSave - The full conversation history array to save.
+ * @param {boolean} isLocal - True if the recipe is in LocalDB, false for Firestore.
+ */
+async function saveChatHistoryToRecipe(recipeId, historyToSave, isLocal) {
+    console.log(`Saving chat history for recipe ID: ${recipeId}`);
+    try {
+        if (currentUser && !isLocal) {
+            // Save to Firestore
+            const recipeRef = db.collection('recipes').doc(recipeId);
+            await recipeRef.update({
+                chatHistory: historyToSave
+            });
+            console.log("✅ Chat history saved to Firestore.");
+        } else if (localDB) {
+            // Save to LocalDB
+            await localDB.recipes.update(recipeId, {
+                chatHistory: historyToSave
+            });
+            console.log("✅ Chat history saved to LocalDB.");
+        }
+        // Also update the in-memory 'recipes' array so the change is reflected immediately
+        const recipeInMemory = recipes.find(r => r.id === recipeId);
+        if (recipeInMemory) {
+            recipeInMemory.chatHistory = historyToSave;
+        }
+    } catch (error) {
+        console.error("Error saving chat history:", error);
+        // Optionally, inform the user that history could not be saved
+        // showInfoConfirmModal("Warning", "Could not save chat history for this recipe.");
+    }
 }
 
 // You'll need a generic function to save a NEW recipe object
