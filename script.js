@@ -6269,35 +6269,31 @@ function handleForgotPassword(emailToReset) {
 // Google Sign In
 function signInWithGoogle() {
     const provider = new firebase.auth.GoogleAuthProvider();
+    console.log("Starting Google sign-in with POP-UP...");
 
-    // Simple check to see if we're on a mobile device
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-    if (isMobile) {
-        // --- On Mobile: Use the redirect method ---
-        console.log("Mobile device detected. Starting Google sign-in with REDIRECT...");
-        auth.signInWithRedirect(provider).catch((error) => {
-            console.error("❌ Error initiating Google sign-in redirect:", error);
-            // This will only catch errors that happen before the redirect starts.
-            // Other errors are handled by getRedirectResult.
-            displayLoginError('initial', "Could not start Google Sign-In process: " + error.message);
-        });
-    } else {
-        // --- On Desktop: Use the pop-up method ---
-        console.log("Desktop device detected. Starting Google sign-in with POP-UP...");
-        auth.signInWithPopup(provider)
-            .then((result) => {
-                console.log("✅ Signed in with Google:", result.user.displayName);
-                if (loginModalInstance) {
-                    hideLoginModal(); // Hide the login modal on success
+    auth.signInWithPopup(provider)
+        .then((result) => {
+            console.log("✅ Signed in with Google:", result.user.displayName);
+            // The onAuthStateChanged listener will handle the UI updates.
+            if (loginModalInstance) {
+                hideLoginModal(); // Hide the login modal on success
+            }
+        })
+        .catch((error) => {
+            console.error("❌ Google Sign-in error:", error);
+            // Display the error in the currently open login modal.
+            if (document.getElementById('loginModal')?.classList.contains('show')) {
+                // Assuming 'initialLoginError' is the ID for the error div in the first modal view
+                const errorDiv = document.getElementById('initialLoginError');
+                if(errorDiv) {
+                    errorDiv.textContent = error.message;
+                    errorDiv.style.display = 'block';
                 }
-            })
-            .catch((error) => {
-                console.error("❌ Google Sign-in error:", error);
-                // Display error in the login modal
-                displayLoginError('initial', error.message);
-            });
-    }
+            } else {
+                // Fallback if the modal isn't open for some reason
+                alert("Could not sign in with Google: " + error.message);
+            }
+        });
 }
 
 // Sign Out
@@ -6317,43 +6313,24 @@ function signOut() {
 
 // ... (your existing Firebase initialization, currentUser, localDB, etc.)
 
-auth.onAuthStateChanged(async (user) => {
-    // --- ADD THIS BLOCK BACK AT THE TOP ---
-    // This code handles the result of a signInWithRedirect flow.
-    // It runs when the page loads after coming back from Google.
-    try {
-        const result = await auth.getRedirectResult();
-        if (result && result.user) {
-            // User has successfully signed in or linked via redirect.
-            console.log("✅ Successfully handled Google sign-in redirect for user:", result.user.displayName);
-            if (loginModalInstance && document.getElementById('loginModal')?.classList.contains('show')) {
-                hideLoginModal();
-            }
-        }
-    } catch (error) {
-        // Handle redirect errors, e.g., user cancels, account exists with different credential, etc.
-        console.error("❌ Error processing Google sign-in redirect:", error);
-        showInfoConfirmModal(
-            "Sign-In Problem",
-            `<p>There was an issue with the Google Sign-In process.</p><p class="text-danger small mt-2">${escapeHtml(error.message)}</p>`,
-            [{ text: 'OK', class: 'btn-primary', dismiss: true }]
-        );
-    }
-    // --- END OF NEW/RESTORED BLOCK ---
-
-    const previousUser = currentUser;
+auth.onAuthStateChanged(user => {
+    const previousUser = currentUser; // Capture previous state
     currentUser = user;
-    
     updateAuthUI(user);
-    await loadInitialRecipes(); 
+    loadInitialRecipes(); // This will load from Firestore if 'user' is truthy, or local if 'user' is null
 
     if (user) {
         console.log("User authenticated:", user.uid);
-        if (!previousUser) {
+
+        // Check if this is a login/signup event AFTER an anonymous session with data
+        // We can set a flag when local data is saved, or simply check if local stores have data.
+        if (!previousUser && user) { // User just logged in (was previously null)
             checkAndPromptForLocalDataMigration(user);
         }
+
     } else {
         console.log("User is not authenticated. Operating in 'Local Mode'.");
+        // loadInitialRecipes() already handles loading local data
     }
 });
 
