@@ -357,11 +357,6 @@ mark {
 
 /* style.css */
 
-/* Shopping List Specifics */
-.shopping-list-header .d-flex {
-    /* On extra-small screens, allow buttons to stack if needed */
-}
-
 @media (max-width: 575.98px) { /* xs screens */
     .shopping-list-header .d-flex.justify-content-between {
         flex-direction: column;
@@ -408,10 +403,6 @@ mark {
     padding: 0.25rem 0.5rem; /* Ensure delete button is easy to tap */
 }
 
-.shopping-list-header h5 {
-    /* Ensure title is well-spaced, especially if buttons stack below it on very small screens */
-}
-
 /* Styling for the action buttons in the shopping list header */
 .shopping-list-actions .btn-group .btn {
     /* If you want more control over how buttons in the group behave on xs screens */
@@ -419,9 +410,7 @@ mark {
     white-space: nowrap; /* Prevents text inside button from wrapping */
 }
 @media (max-width: 380px) { /* Very small screens */
-    .shopping-list-actions .btn-group {
-        /* flex-direction: column; */ /* Uncomment to stack buttons vertically */
-    }
+
     /* .shopping-list-actions .btn-group .btn { */
         /* width: 100%; */ /* Make buttons full width if stacked */
         /* margin-bottom: 0.5rem; */
@@ -473,4 +462,34 @@ mark {
     border: none;
     box-shadow: none;
     background-color: transparent;
+}
+
+.recipe-header-bar .btn {
+    /* Make icon buttons square */
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0; /* Prevent buttons from shrinking */
+}
+
+.search-bar-wrapper .bi-search {
+    /* Position the search icon inside the input field */
+    position: absolute;
+    top: 50%;
+    left: 1rem;
+    transform: translateY(-50%);
+    color: #6c757d; /* Muted color */
+    pointer-events: none; /* Make the icon non-clickable */
+}
+
+.search-bar-wrapper input.form-control {
+    border-radius: 30px; /* Pill shape */
+    background-color: #f0f2f5; /* Light grey background */
+    border: none; /* No border */
+    padding-left: 3rem; /* Make space for the search icon */
+    font-size: 1rem;
+}
+.search-bar-wrapper input.form-control:focus {
+    background-color: #fff;
+    border: 1px solid #0d6efd;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
 }

@@ -924,47 +924,22 @@ function showRecipeFilter() {
     view.className = 'section-recipes container py-3';
 
     view.innerHTML = `
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <div> 
-                <button class="btn btn-outline-warning btn-sm me-2" type="button" onclick="showChatbotModal()" title="Ask Chef Bot to create a new recipe">
-                    <i class="bi bi-robot"></i> Chef Bot
-                </button>
-                <button class="btn btn-outline-info btn-sm me-2" type="button" data-bs-toggle="collapse" data-bs-target="#recipeFiltersCollapse" aria-expanded="false" aria-controls="recipeFiltersCollapse" title="Toggle filters">
-                    <i class="bi bi-funnel-fill"></i> Filters
-                </button>
-                <button class="btn btn-primary btn-sm" onclick="openAddRecipeMethodChoiceModal()">
-                    <i class="bi bi-plus-circle-fill me-1"></i>Add Recipe
-                </button>
-            </div>
-        </div>
+        <div class="recipe-header-bar d-flex align-items-center gap-2 mb-3">
+            <!-- Pancake/Menu Icon to toggle sidebar -->
+            <button class="btn btn-outline-secondary d-lg-none" type="button" onclick="toggleSidebar()" title="Toggle Folders">
+                <i class="bi bi-list fs-4"></i>
+            </button>
 
-        <div class="collapse mb-3" id="recipeFiltersCollapse">
-            <div class="filter-section card card-body bg-light-subtle">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h6 class="mb-0">Filter & Search</h6>
-                    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearAllRecipeFilters()" title="Clear all filters">
-                        <i class="bi bi-x-lg"></i> Clear All
-                    </button>
-                </div>
-                <div class="row g-2 align-items-end">
-                    <div class="col-lg-4 col-md-12">
-                        <label for="nameSearch" class="form-label small mb-1">By Name:</label>
-                        <input type="text" class="form-control form-control-sm" id="nameSearch" placeholder="Search by recipe name..." oninput="applyAllRecipeFilters()" />
-                    </div>
-                    <div class="col-lg-4 col-md-6">
-                        <label for="recipeSearch" class="form-label small mb-1">By Ingredient(s):</label>
-                        <input type="text" class="form-control form-control-sm" id="recipeSearch" placeholder="e.g., chicken,tomato" oninput="applyAllRecipeFilters()" />
-                    </div>
-                    <div class="col-lg-4 col-md-6">
-                        <label for="tagSearch" class="form-label small mb-1">By Tag(s):</label>
-                        <input type="text" class="form-control form-control-sm" id="tagSearch" placeholder="e.g., dinner,quick" oninput="applyAllRecipeFilters()" />
-                    </div>
-                </div>
+            <!-- Unified Search Bar -->
+            <div class="search-bar-wrapper flex-grow-1 position-relative">
+                <i class="bi bi-search position-absolute"></i>
+                <input type="text" class="form-control form-control-lg" id="unifiedSearchInput" placeholder="Search my recipes..." oninput="applyAllRecipeFilters()">
             </div>
-        </div>
 
-        <div id="recipeForm" class="collapsible-form mb-4">
-            ${getAddRecipeFormHTML()}
+            <!-- Add Recipe Icon -->
+            <button class="btn btn-primary" type="button" onclick="openAddRecipeMethodChoiceModal()" title="Add New Recipe">
+                <i class="bi bi-plus-lg fs-4"></i>
+            </button>
         </div>
 
         <div id="recipeResults"></div>
@@ -1200,55 +1175,39 @@ function filterRecipesByTag() { // This will now be triggered by tag search inpu
 // script.js
 
 function applyAllRecipeFilters() {
-    const nameSearchInput = document.getElementById('nameSearch'); // ID from your HTML
-    const ingredientSearchInput = document.getElementById('recipeSearch'); // ID from your HTML
-    const tagSearchInput = document.getElementById('tagSearch'); // ID from your HTML
+    // --- Step 1: Get values from the UI ---
+    // Get the single search term from the new unified search bar
+    const searchInput = document.getElementById('unifiedSearchInput');
+    const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : "";
+    
+    // Split the user's query into individual words to search for
+    const searchTermsArray = searchTerm.split(' ').filter(term => term.length > 0);
 
-    const nameSearchTerm = nameSearchInput ? nameSearchInput.value.toLowerCase().trim() : "";
-    const ingredientSearchValue = ingredientSearchInput ? ingredientSearchInput.value.toLowerCase().trim() : "";
-    const ingredientSearchTermsArray = ingredientSearchValue.split(',')
-                                     .map(term => term.trim().toLowerCase())
-                                     .filter(Boolean);
-    const tagSearchValue = tagSearchInput ? tagSearchInput.value.toLowerCase().trim() : "";
-    const tagTermsArray = tagSearchValue.split(',')
-                        .map(t => t.trim().toLowerCase())
-                        .filter(Boolean);
-
+    // --- Step 2: Filter by the currently selected folder ---
     let filteredList = [...recipes]; // Start with a fresh copy of all recipes
 
-    if (nameSearchTerm) {
-        filteredList = filteredList.filter(recipe =>
-            recipe.name && recipe.name.toLowerCase().includes(nameSearchTerm)
-        );
-    }
-
-    if (ingredientSearchTermsArray.length > 0) {
+    // --- Step 3: Apply the unified search filter ---
+    if (searchTermsArray.length > 0) {
         filteredList = filteredList.filter(recipe => {
-            if (!recipe.ingredients || recipe.ingredients.length === 0) return false;
-            const ingredientNamesLower = recipe.ingredients.map(ing => {
-                const name = (typeof ing === 'object' && ing.name) ? ing.name : (typeof ing === 'string' ? ing : '');
-                return name.toLowerCase();
-            });
-            return ingredientSearchTermsArray.every(term =>
-                ingredientNamesLower.some(ingName => ingName.includes(term))
-            );
-        });
-    }
+            // Create a single, searchable string for each recipe by combining its name,
+            // all ingredient names, and all tags.
+            const searchableContent = [
+                recipe.name || "",
+                ...(recipe.ingredients || []).map(ing => ing.name || ""),
+                ...(recipe.tags || [])
+            ].join(' ').toLowerCase();
 
-    if (tagTermsArray.length > 0) {
-        filteredList = filteredList.filter(recipe => {
-            if (!recipe.tags || recipe.tags.length === 0) return false;
-            const recipeTagsLower = recipe.tags.map(tag => tag.toLowerCase());
-            return tagTermsArray.every(term =>
-                recipeTagsLower.some(tag => tag.includes(term)) // Using 'includes' for tags as well
-            );
+            // Check if EVERY word from the search query is present somewhere in the recipe's content.
+            return searchTermsArray.every(term => searchableContent.includes(term));
         });
     }
     
-    const displayOptions = {};
-    if (nameSearchTerm) displayOptions.highlightNameTerm = nameSearchTerm;
-    if (ingredientSearchTermsArray.length > 0) displayOptions.highlightIngredients = ingredientSearchTermsArray;
-    if (tagTermsArray.length > 0) displayOptions.highlightTags = tagTermsArray;
+    // --- Step 4: Prepare options for highlighting the search terms in the results ---
+    const displayOptions = {
+        highlightNameTerm: searchTerm, // Highlight the full phrase in the name for better context
+        highlightIngredients: searchTermsArray,
+        highlightTags: searchTermsArray
+    };
 
     displayRecipes(filteredList, 'recipeResults', displayOptions);
 }
@@ -2658,75 +2617,6 @@ function escapeHtml(unsafe) {
          .replace(/>/g, "&gt;")
          .replace(/"/g, "&quot;")
          .replace(/'/g, "&#039;");
-}
-
-function applyAllRecipeFilters() {
-    // Use the IDs that are actually in your showRecipeFilter's innerHTML
-    const nameSearchInput = document.getElementById('nameSearch'); 
-    const ingredientSearchInput = document.getElementById('recipeSearch'); 
-    const tagSearchInput = document.getElementById('tagSearch');    
-
-    const nameSearchTerm = nameSearchInput ? nameSearchInput.value.toLowerCase().trim() : "";
-    const ingredientSearchValue = ingredientSearchInput ? ingredientSearchInput.value.toLowerCase().trim() : "";
-    const ingredientSearchTermsArray = ingredientSearchValue.split(',')
-                                         .map(term => term.trim().toLowerCase())
-                                         .filter(Boolean);
-    const tagSearchValue = tagSearchInput ? tagSearchInput.value.toLowerCase().trim() : "";
-    const tagTermsArray = tagSearchValue.split(',')
-                            .map(t => t.trim().toLowerCase())
-                            .filter(Boolean);
-
-    console.log("Applying filters. Name:", `"${nameSearchTerm}"`, "Ingredients:", ingredientSearchTermsArray, "Tags:", tagTermsArray);
-    console.log("Based on master recipes count:", recipes.length);
-
-
-    let filteredList = [...recipes]; 
-
-    // Filter by Recipe Name
-    if (nameSearchTerm) {
-        filteredList = filteredList.filter(recipe =>
-            recipe.name && recipe.name.toLowerCase().includes(nameSearchTerm)
-        );
-    }
-
-    // Filter by Ingredients
-    if (ingredientSearchTermsArray.length > 0) {
-        filteredList = filteredList.filter(recipe => {
-            if (!recipe.ingredients || recipe.ingredients.length === 0) return false;
-            const ingredientNamesLower = recipe.ingredients.map(ing => {
-                const name = (typeof ing === 'object' && ing.name) ? ing.name : (typeof ing === 'string' ? ing : '');
-                return name.toLowerCase();
-            });
-            return ingredientSearchTermsArray.every(term =>
-                ingredientNamesLower.some(ingName => ingName.includes(term))
-            );
-        });
-    }
-
-    // Filter by Tags
-    if (tagTermsArray.length > 0) {
-        filteredList = filteredList.filter(recipe => {
-            if (!recipe.tags || recipe.tags.length === 0) return false;
-            const recipeTagsLower = recipe.tags.map(tag => tag.toLowerCase());
-            return tagTermsArray.every(term =>
-                recipeTagsLower.some(tag => tag.includes(term))
-            );
-        });
-    }
-    
-    const displayOptions = {};
-    if (nameSearchTerm) {
-        displayOptions.highlightNameTerm = nameSearchTerm;
-    }
-    if (ingredientSearchTermsArray.length > 0) {
-        displayOptions.highlightIngredients = ingredientSearchTermsArray;
-    }
-    if (tagTermsArray.length > 0) {
-        displayOptions.highlightTags = tagTermsArray;
-    }
-
-    console.log("Final filtered list count:", filteredList.length);
-    displayRecipes(filteredList, 'recipeResults', displayOptions);
 }
 
 function filterRecipesByText() { // This will now be triggered by ingredient search input
@@ -4352,7 +4242,7 @@ function showPlanning() {
                 <div class="btn-toolbar" role="toolbar" aria-label="Planned meals actions">
                     <div class="btn-group btn-group-sm w-100" role="group">
                         <button class="btn btn-outline-info" style="flex-basis: 50%;" type="button" data-bs-toggle="collapse" data-bs-target="#planningFiltersCollapse" aria-expanded="false" aria-controls="planningFiltersCollapse" title="Toggle filters for planned meals">
-                            <i class="bi bi-funnel-fill"></i> Filters
+                            <i class="bi bi-funnel-fill"></i> Search
                         </button>
                         <button id="clearAllPlanningBtn" class="btn btn-outline-danger" style="flex-basis: 50%;" onclick="confirmClearAllPlanning(this)" title="Clear all planned meals">
                             <i class="bi bi-trash3"></i> Clear All
