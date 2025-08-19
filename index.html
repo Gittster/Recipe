@@ -40,6 +40,21 @@
             </div>
         </div>
 
+        <div class="sidebar" id="appSidebar">
+            <div class="sidebar-header">
+                <h5 class="sidebar-title"><i class="bi bi-sort-down me-2"></i>Sort Recipes</h5>
+                <button type="button" class="btn-close" onclick="toggleSidebar()" aria-label="Close"></button>
+            </div>
+            <div class="sidebar-body">
+                <ul id="sortOptionsList" class="nav nav-pills flex-column">
+                    <!-- Sorting options will be rendered here by JavaScript -->
+                </ul>
+            </div>
+        </div>
+
+        <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()"></div>
+
+
         <div id="mainView" class="flex-grow-1 bg-body-tertiary overflow-auto p-md-3">
             </div>
 

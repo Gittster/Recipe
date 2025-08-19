@@ -189,49 +189,6 @@ function clearRecipeFormModal(recipeData = null) {
     }
 }
 
-/**
- * Clears or populates the #recipeFormModal fields.
- * If recipeData is provided, it populates. Otherwise, it clears for a new entry.
- * @param {object|null} recipeData - Recipe data to load into the form, or null to clear.
- */
-function clearRecipeFormModal(recipeData = null) {
-    const nameInput = document.getElementById('modalRecipeNameInput');
-    const ingredientsTable = document.getElementById('modalIngredientsTable');
-    const instructionsInput = document.getElementById('modalRecipeInstructionsInput');
-    const tagInput = document.getElementById('modalTagInput');
-    const errorDiv = document.getElementById('recipeFormModalError'); // Ensure this ID is in your modal HTML
-
-    if (nameInput) nameInput.value = recipeData?.name || '';
-    if (instructionsInput) instructionsInput.value = recipeData?.instructions || '';
-    if (errorDiv) {
-        errorDiv.textContent = '';
-        errorDiv.style.display = 'none';
-    }
-
-    currentModalTags = recipeData?.tags ? [...recipeData.tags] : [];
-    if (typeof renderModalTags === "function") {
-        renderModalTags();
-    } else {
-        console.warn("renderModalTags function is not defined for recipeFormModal.");
-    }
-    if (tagInput) tagInput.value = '';
-
-    if (ingredientsTable) {
-        ingredientsTable.innerHTML = ''; // Clear existing ingredient rows
-        if (recipeData && recipeData.ingredients && Array.isArray(recipeData.ingredients)) {
-            recipeData.ingredients.forEach(ing => {
-                if (typeof createIngredientRowForModal === "function") {
-                    createIngredientRowForModal(ing.name, ing.quantity, ing.unit);
-                } else { console.warn("createIngredientRowForModal is not defined, cannot populate ingredients.");}
-            });
-        }
-        // Always add one blank row for manual entry, or if AI returns no ingredients
-        if (typeof createIngredientRowForModal === "function") {
-             createIngredientRowForModal(); // Add a blank row for new input
-        }
-    }
-}
-
 function renderModalTags() {
     const tagsContainer = document.getElementById('modalTagsContainer');
     const placeholder = document.getElementById('modalTagsPlaceholder');
@@ -377,41 +334,6 @@ function createIngredientRowForModal(name = '', qty = '', unit = '') {
 
     if (name === '' && qty === '' && unit === '') { // If it's a new blank row
         nameInput.focus();
-    }
-}
-
-/**
- * Prepares and shows the recipe form modal (#recipeFormModal).
- * If recipeDataToLoad is provided, it populates the form. Otherwise, sets up a blank form.
- * @param {object|null} recipeDataToLoad - Recipe data to load, or null for a new recipe.
- * @param {string} [mode='new'] - 'new', 'review-ai', or 'edit'.
- */
-function openRecipeFormModal(recipeDataToLoad = null, mode = 'new') {
-    const modalLabel = document.getElementById('recipeFormModalLabel');
-    const saveButton = document.getElementById('saveRecipeFromModalBtn');
-
-    if (mode === 'review-ai' && recipeDataToLoad) {
-        if(modalLabel) modalLabel.innerHTML = '<i class="bi bi-magic me-2"></i>Review AI Generated Recipe';
-        if(saveButton) saveButton.textContent = 'Save This AI Recipe';
-        clearRecipeFormModal(recipeDataToLoad); // Populate with AI data
-    } else { // Default to new manual entry
-        if(modalLabel) modalLabel.innerHTML = '<i class="bi bi-keyboard me-2"></i>Add Recipe Manually';
-        if(saveButton) saveButton.textContent = 'Save Recipe';
-        clearRecipeFormModal(null); // Clear for new manual entry
-    }
-
-    if (typeof initializeModalRecipeFormTagInput === "function") {
-        initializeModalRecipeFormTagInput();
-    } else {
-        console.warn("initializeModalRecipeFormTagInput is not defined.");
-    }
-
-    if (recipeFormModalInstance) {
-        recipeFormModalInstance.show();
-        const nameInput = document.getElementById('modalRecipeNameInput');
-        if(nameInput) nameInput.focus();
-    } else {
-        console.error("Recipe Form Modal (#recipeFormModal) not initialized.");
     }
 }
 
@@ -945,21 +867,10 @@ function showRecipeFilter() {
         <div id="recipeResults"></div>
     `;
 
-    initializeMainRecipeFormTagInput();
-
-    if (typeof recipes !== 'undefined' && typeof applyAllRecipeFilters === "function") {
-        applyAllRecipeFilters();
+    if (typeof renderSortOptions === "function") {
+        renderSortOptions();
     } else {
-        const recipeResultsContainer = document.getElementById('recipeResults');
-        if (recipeResultsContainer) {
-            recipeResultsContainer.innerHTML = '<p class="text-center text-muted">Loading recipes or no recipes found...</p>';
-        }
-        if (typeof recipes === 'undefined') {
-            console.warn("Global 'recipes' array not defined when showRecipeFilter was called. Ensure loadInitialRecipes() has run or will run.");
-        }
-        if (typeof applyAllRecipeFilters !== "function") {
-            console.error("CRITICAL: applyAllRecipeFilters function is not defined!");
-        }
+        console.error("renderSortOptions function is not defined!");
     }
 }
 
@@ -1200,6 +1111,14 @@ function applyAllRecipeFilters() {
             // Check if EVERY word from the search query is present somewhere in the recipe's content.
             return searchTermsArray.every(term => searchableContent.includes(term));
         });
+    }
+
+    if (currentSortOrder === 'newest') {
+        // Sort by timestamp, newest first. Assumes timestamp is available.
+        filteredList.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    } else if (currentSortOrder === 'all') {
+        // Sort alphabetically by name
+        filteredList.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     }
     
     // --- Step 4: Prepare options for highlighting the search terms in the results ---
@@ -2080,19 +1999,24 @@ async function saveRecipe() { // Changed to async to handle potential async loca
 async function loadRecipesFromLocal() {
     if (!localDB) {
         console.warn("LocalDB not initialized, cannot load local recipes.");
-        recipes = []; // Clear recipes array
-        displayRecipes(recipes, 'recipeResults'); // Update UI
+        recipes = [];
+        showRecipeFilter();
+        applyAllRecipeFilters(); // Display the empty state
         return;
     }
     try {
         const localRecipes = await localDB.recipes.orderBy('timestamp').reverse().toArray();
-        recipes = localRecipes.map(r => ({ ...r, id: r.localId })); // Use localId as id for consistency in displayRecipes
+        // The 'isLocal' flag is important for functions that handle both cloud and local data
+        recipes = localRecipes.map(r => ({ ...r, id: r.localId, isLocal: true }));
         console.log("Loaded recipes from LocalDB:", recipes);
-        showRecipeFilter(); // This function usually calls displayRecipes
+        showRecipeFilter(); 
+        // This is the crucial missing line that tells the app to render the recipes
+        applyAllRecipeFilters(); 
     } catch (error) {
         console.error("❌ Error loading recipes from LocalDB:", error.stack || error);
         recipes = [];
-        showRecipeFilter(); // Display empty state
+        showRecipeFilter();
+        applyAllRecipeFilters(); // Also render the empty state if there's an error
     }
 }
 
@@ -2623,16 +2547,131 @@ function filterRecipesByText() { // This will now be triggered by ingredient sea
     applyAllRecipeFilters();
 }
 
-
-
-// script.js
-
 // Helper function to escape special regex characters and create a highlighting regex
 function createHighlightRegex(term) {
     if (!term) return null;
     // Escape special characters in the search term for regex safety
     const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return new RegExp(`(${escapedTerm})`, 'gi'); // 'g' for global, 'i' for case-insensitive
+}
+
+function renderSortOptions() {
+    const listContainer = document.getElementById('sortOptionsList');
+    if (!listContainer) {
+        console.error("Sidebar sort options list container (#sortOptionsList) not found.");
+        return;
+    }
+
+    const sortOptions = [
+        { id: 'newest', name: 'Recently Added', icon: 'bi-clock-history' },
+        { id: 'all', name: 'All Recipes (A-Z)', icon: 'bi-sort-alpha-down' }
+    ];
+
+    let sortOptionsHTML = "";
+    sortOptions.forEach(option => {
+        const isActive = option.id === currentSortOrder ? 'active' : '';
+        sortOptionsHTML += `
+            <li class="nav-item">
+                <a class="nav-link ${isActive}" href="#" data-sort-id="${option.id}">
+                    <i class="bi ${option.icon} me-2"></i> ${option.name}
+                </a>
+            </li>
+        `;
+    });
+    listContainer.innerHTML = sortOptionsHTML;
+
+    // Add click listeners
+    listContainer.querySelectorAll('.nav-link').forEach(link => {
+        link.onclick = async (e) => { // Make the handler async
+            e.preventDefault();
+            const newSortOrder = link.dataset.sortId;
+            if (newSortOrder === currentSortOrder) return; // Don't do anything if it's the same
+
+            currentSortOrder = newSortOrder;
+            
+            // --- NEW: Save preference to Firebase ---
+            if (currentUser) {
+                try {
+                    const userRef = db.collection('users').doc(currentUser.uid);
+                    await userRef.set({
+                        preferences: {
+                            recipeSortOrder: currentSortOrder
+                        }
+                    }, { merge: true }); // Use merge: true to avoid overwriting other user data
+                    console.log(`Saved sort preference '${currentSortOrder}' to Firebase.`);
+                } catch (error) {
+                    console.error("Error saving user preference:", error);
+                }
+            }
+            // --- End of new block ---
+
+            applyAllRecipeFilters();
+            renderSortOptions(); // Re-render to update the active highlight
+            if (window.innerWidth < 992) {
+                toggleSidebar();
+            }
+        };
+    });
+}
+
+function toggleSidebar() {
+    // It's looking for id="appSidebar"
+    const sidebar = document.getElementById('appSidebar'); 
+    // And id="sidebarBackdrop"
+    const backdrop = document.getElementById('sidebarBackdrop');
+
+    if (sidebar && backdrop) {
+        sidebar.classList.toggle('open');
+        backdrop.classList.toggle('show');
+    } else {
+        // This is the error you are seeing
+        console.error("Sidebar or backdrop element not found!");
+    }
+}
+
+async function renderFoldersInSidebar() {
+    const listContainer = document.getElementById('folderList');
+    if (!listContainer) {
+        console.error("Sidebar folder list container (#folderList) not found in HTML.");
+        return; // This is likely where the function is stopping
+    }
+
+    const allCount = recipes.length;
+
+    // Build the HTML for just the "All Recipes" link
+    const folderListHTML = `
+        <li class="nav-item">
+            <a class="nav-link d-flex justify-content-between align-items-center" href="#" data-folder-id="all">
+                All Recipes
+                <span class="badge bg-primary rounded-pill">${allCount}</span>
+            </a>
+        </li>
+    `;
+    listContainer.innerHTML = folderListHTML;
+
+    // Add click listener and set the active class
+    const allRecipesLink = listContainer.querySelector('.nav-link[data-folder-id="all"]');
+    if (allRecipesLink) {
+        currentFolderId = 'all';
+        allRecipesLink.classList.add('active');
+        
+        allRecipesLink.onclick = (e) => {
+            e.preventDefault();
+            if (currentFolderId !== 'all') {
+                currentFolderId = 'all';
+                renderFoldersInSidebar();
+            } else {
+                // If already on 'all', just close sidebar on mobile
+                if (window.innerWidth < 992) {
+                    toggleSidebar();
+                }
+            }
+        };
+    }
+
+    // This call filters the recipe list based on the search bar,
+    // starting with all recipes since currentFolderId is now 'all'.
+    applyAllRecipeFilters();
 }
 
 // script.js
@@ -4081,31 +4120,36 @@ function saveMadeNote() {
   });
 }
 
-function loadRecipesFromFirestore() {
+async function loadRecipesFromFirestore() {
   if (!currentUser) {
     recipes = [];
     showRecipeFilter();
+    applyAllRecipeFilters(); // Display the empty state
     return;
   }
 
-  db.collection('recipes')
-    .where('uid', '==', currentUser.uid) // 🔥 Only pull user’s own recipes
-    .get()
-    .then(snapshot => {
-      recipes = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      console.log("Loaded recipes:", recipes);
-      showRecipeFilter();
-    })
-    .catch(err => {
-      console.error("❌ Error loading recipes from Firestore:", err);
-    });
+  try {
+    const snapshot = await db.collection('recipes')
+      .where('uid', '==', currentUser.uid)
+      .get();
+    
+    recipes = snapshot.docs.map(doc => ({
+      id: doc.id,
+      isLocal: false, // Good practice to flag data source
+      ...doc.data()
+    }));
+    
+    console.log("Loaded recipes from Firestore:", recipes);
+    showRecipeFilter();
+    // This is the crucial missing line that tells the app to render the recipes
+    applyAllRecipeFilters(); 
+  } catch (err) {
+    console.error("❌ Error loading recipes from Firestore:", err);
+    recipes = [];
+    showRecipeFilter();
+    applyAllRecipeFilters(); // Also render the empty state if there's an error
+  }
 }
-
-
-
 
 let ingredientsData = [];
 
@@ -5733,24 +5777,48 @@ function signOut() {
 
 // ... (your existing Firebase initialization, currentUser, localDB, etc.)
 
-auth.onAuthStateChanged(user => {
-    const previousUser = currentUser; // Capture previous state
+auth.onAuthStateChanged(async (user) => {
+    const previousUser = currentUser;
     currentUser = user;
+    
     updateAuthUI(user);
-    loadInitialRecipes(); // This will load from Firestore if 'user' is truthy, or local if 'user' is null
 
     if (user) {
         console.log("User authenticated:", user.uid);
+        
+        // --- Fetch user preference from Firestore ---
+        try {
+            const userRef = db.collection('users').doc(user.uid);
+            const userDoc = await userRef.get();
 
-        // Check if this is a login/signup event AFTER an anonymous session with data
-        // We can set a flag when local data is saved, or simply check if local stores have data.
-        if (!previousUser && user) { // User just logged in (was previously null)
+            if (userDoc.exists && userDoc.data().preferences?.recipeSortOrder) {
+                // If a preference is found in Firestore, use it
+                currentSortOrder = userDoc.data().preferences.recipeSortOrder;
+                console.log(`Loaded sort preference '${currentSortOrder}' from Firebase.`);
+            } else {
+                // Otherwise, default to 'all' (A-Z)
+                console.log("No sort preference found in Firebase, defaulting to 'all'.");
+                currentSortOrder = 'all'; 
+            }
+        } catch (error) {
+            console.error("Error fetching user preferences, defaulting to 'all':", error);
+            currentSortOrder = 'all'; // Default on error
+        }
+        // --- End of new block ---
+
+        // Now, with the correct sort order set, load the recipes
+        await loadInitialRecipes();
+
+        // Check for local data to migrate after everything else is loaded
+        if (!previousUser) {
             checkAndPromptForLocalDataMigration(user);
         }
 
-    } else {
+    } else { // User is not logged in
         console.log("User is not authenticated. Operating in 'Local Mode'.");
-        // loadInitialRecipes() already handles loading local data
+        // For logged-out users, always default to 'all' (A-Z) sort
+        currentSortOrder = 'all';
+        await loadInitialRecipes();
     }
 });
 
