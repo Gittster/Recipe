@@ -37,7 +37,7 @@ mark {
     margin: 0 auto;
     padding: 1rem;
     /* Crucial: Prevents content from being hidden by the fixed bottom nav on mobile */
-    padding-bottom: 80px;
+    padding-bottom: 80px !important;
     overflow-y: auto;
 }
 
@@ -152,6 +152,9 @@ mark {
 }
 
 /* --- 4. Component: Recipe Cards & Search --- */
+.recipe-header-bar {
+    touch-action: pan-y;
+}
 .recipe-card {
     border: 1px solid #e9ecef; /* Lighter border for cards */
 }
@@ -287,10 +290,13 @@ mark {
 /* Desktop Layout */
 @media (min-width: 768px) {
     #mainView {
-        max-width: 750px;
-        margin: 1.5rem auto;
-        padding: 1.5rem; /* This resets all padding, including bottom */
-    }
+    width: 100%;
+    margin: 0 auto;
+    padding: 1rem;
+    overflow-y: auto;
+    scroll-padding-bottom: 80px; 
+    padding-bottom: 80px !important; 
+}  
 }
 
 /* Small Mobile Layout for Shopping List Header */
