@@ -337,9 +337,6 @@ function createIngredientRowForModal(name = '', qty = '', unit = '') {
     }
 }
 
-/**
- * Reads data from the #recipeFormModal and saves it as a new recipe.
- */
 async function saveRecipeFromModal() {
     const name = document.getElementById('modalRecipeNameInput')?.value.trim();
     const instructions = document.getElementById('modalRecipeInstructionsInput')?.value.trim();
@@ -351,15 +348,13 @@ async function saveRecipeFromModal() {
         errorDiv.style.display = 'none';
     }
 
-    document.querySelectorAll('#modalIngredientsTable .ingredient-form-row').forEach(row => {
-        const inputs = row.querySelectorAll('input');
-        if (inputs.length >= 3) {
-            const ingName = inputs[0].value.trim();
-            const qty = inputs[1].value.trim();
-            const unit = inputs[2].value.trim();
-            if (ingName) {
-                ingredients.push({ name: ingName, quantity: qty, unit: unit });
-            }
+    // This logic is slightly different from your original, make sure it's correct for your new layout
+    document.querySelectorAll('#modalIngredientsTable .ingredient-form-entry').forEach(row => {
+        const ingName = row.querySelector('.ingredient-name-input')?.value.trim();
+        const qty = row.querySelector('.ingredient-qty-input')?.value.trim();
+        const unit = row.querySelector('.ingredient-unit-input')?.value.trim();
+        if (ingName) {
+            ingredients.push({ name: ingName, quantity: qty, unit: unit });
         }
     });
 
@@ -369,33 +364,26 @@ async function saveRecipeFromModal() {
         document.getElementById('modalRecipeNameInput')?.focus();
         return;
     }
-    // Optionally, check for ingredients:
-    // if (ingredients.length === 0) {
-    //     const msg = "Please add at least one ingredient.";
-    //     if(errorDiv) { errorDiv.textContent = msg; errorDiv.style.display = 'block'; } else { alert(msg); }
-    //     return;
-    // }
-
+    
     const recipeData = {
         name,
         ingredients,
-        instructions: instructions || "", // Ensure instructions is at least an empty string
-        tags: [...currentModalTags],    // Use tags from the modal's state
-        rating: 0,                      // Default for new recipes
+        instructions: instructions || "", 
+        tags: [...currentModalTags],   
+        rating: 0,                   
     };
 
-    const success = await saveNewRecipeToStorage(recipeData); // Your generic save function
+    // Use your generic save function which already adds the timestamp correctly
+    const success = await saveNewRecipeToStorage(recipeData); 
 
     if (success) {
         if (recipeFormModalInstance) recipeFormModalInstance.hide(); 
-        // clearRecipeFormModal() will be called by 'hidden.bs.modal' event listener for #recipeFormModal
     } else {
         const msg = "Failed to save recipe. Please try again.";
-        if(errorDiv && (!errorDiv.textContent || errorDiv.style.display === 'none')) { // Don't overwrite specific error from saveNewRecipeToStorage
+        if(errorDiv && (!errorDiv.textContent || errorDiv.style.display === 'none')) { 
             errorDiv.textContent = msg; 
             errorDiv.style.display = 'block'; 
         }
-        // saveNewRecipeToStorage likely showed an alert already
     }
 }
 
@@ -731,55 +719,6 @@ function renderTags() {
   });
 }
 
-function handleOCRImage(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-
-  reader.onload = async function (e) {
-    const base64Data = e.target.result.split(',')[1]; // Remove data:image prefix
-
-    try {
-      const response = await fetch("https://beamish-baklava-a99968.netlify.app/.netlify/functions/ocr", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ base64: base64Data })
-      });
-
-      const ocrResult = await response.json();
-      console.log("🧠 OCR Result:", ocrResult);
-
-      const parsed = extractRecipeFromDoctr(ocrResult);
-      fillRecipeForm(parsed);
-    } catch (err) {
-      console.error("❌ OCR call failed:", err);
-      alert("OCR failed — check the console for details.");
-    }
-  };
-
-  reader.readAsDataURL(file);
-}
-
-function extractRecipeFromDoctr(response) {
-  const blocks = response?.[0]?.pages?.[0]?.blocks || [];
-
-  const lines = blocks.flatMap(block =>
-    block.lines.map(line =>
-      line.words.map(word => word.value).join(' ')
-    )
-  );
-
-  const fullText = lines.join('\n');
-  console.log("🔎 Extracted Text:", fullText);
-
-  // 👇 Use your existing logic to parse the text into a recipe object
-  return parseOcrToRecipeFields(fullText);
-}
-
-
 function clearAllPlanning(button) {
   if (button.parentElement.querySelector('.confirm-clear')) return;
 
@@ -899,40 +838,6 @@ function clearAllRecipeFilters() {
     applyAllRecipeFilters(); // Re-apply with empty filters to show all recipes
 }
 
-function initializeMainRecipeFormTagInput() {
-    const tagInput = document.getElementById('tagInput');
-    const tagAddButton = document.getElementById('tagAddButton');
-    
-    // currentTags should be reset when a new recipe form is opened/cleared by toggleRecipeForm
-    if (tagInput && tagAddButton) {
-        // To avoid multiple listeners if this is called many times without DOM replacement,
-        // consider using a flag or removing old listeners.
-        // For now, assuming simple re-assignment if DOM is stable or re-rendered.
-        const addTagFromMainForm = () => {
-            const value = tagInput.value.trim().toLowerCase();
-            if (value && !currentTags.includes(value)) {
-                currentTags.push(value);
-                renderTags(); // This updates #tagsContainer in the Add Recipe form
-            }
-            tagInput.value = '';
-            tagInput.focus();
-        };
-        
-        tagAddButton.onclick = addTagFromMainForm;
-        // Remove previous listener before adding a new one to prevent duplication if this func is called multiple times on same elements
-        tagInput.removeEventListener('keypress', handleTagInputKeypress); // Named function for removal
-        tagInput.addEventListener('keypress', handleTagInputKeypress);
-
-    }
-}
-
-function handleTagInputKeypress(e) {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        document.getElementById('tagAddButton').click(); // Trigger the button's click
-    }
-}
-
 function handlePastedRecipeText() {
   const textarea = document.getElementById('ocrTextPaste');
   if (!textarea) return;
@@ -966,164 +871,51 @@ function normalizeFractions(text) {
     .replace(/⅞/g, '7/8');
 }
 
-
-
-function createIngredientRow(name = '', qty = '', unit = '') {
-  const row = document.createElement('div');
-  row.className = 'row g-2 align-items-center mb-2';
-
-  const nameCol = document.createElement('div');
-  nameCol.className = 'col-6';
-  const nameInput = document.createElement('input');
-  nameInput.type = 'text';
-  nameInput.placeholder = 'Ingredient';
-  nameInput.className = 'form-control';
-  nameInput.value = name;
-  nameCol.appendChild(nameInput);
-
-  const qtyCol = document.createElement('div');
-  qtyCol.className = 'col-2 position-relative d-flex align-items-center';
-  const qtyInput = document.createElement('input');
-  qtyInput.type = 'text';
-  qtyInput.placeholder = 'Qty';
-  qtyInput.className = 'form-control';
-  qtyInput.value = qty;
-  qtyCol.appendChild(qtyInput);
-
-  const unitCol = document.createElement('div');
-  unitCol.className = 'col-3';
-  const unitInput = document.createElement('input');
-  unitInput.type = 'text';
-  unitInput.placeholder = 'Unit';
-  unitInput.className = 'form-control';
-  unitInput.value = unit;
-  unitCol.appendChild(unitInput);
-
-  // ✅ Delete column (1 col wide)
-  const deleteCol = document.createElement('div');
-  deleteCol.className = 'col-1 d-flex justify-content-center align-items-center';
-
-  const deleteBtn = document.createElement('button');
-  deleteBtn.className = 'btn btn-sm btn-outline-danger';
-  deleteBtn.innerHTML = '🗑️';
-  deleteBtn.title = 'Remove this ingredient';
-
-  deleteBtn.onclick = () => {
-    row.remove();
-  };
-
-  deleteCol.appendChild(deleteBtn);
-
-  // Assemble row
-  row.appendChild(nameCol);
-  row.appendChild(qtyCol);
-  row.appendChild(unitCol);
-  row.appendChild(deleteCol);
-
-  document.getElementById('ingredientsTable').appendChild(row);
-
-  // Add new blank row when the last one is filled
-  [nameInput, qtyInput, unitInput].forEach(input => {
-    input.addEventListener('input', () => {
-      const isLastRow = row === document.getElementById('ingredientsTable').lastElementChild;
-      const filled = nameInput.value && qtyInput.value && unitInput.value;
-      if (isLastRow && filled) createIngredientRow();
-    });
-  });
-}
-
-// script.js
-
-// Assume 'recipes' is your globally accessible array of all loaded recipe objects
-// let recipes = [];
-
-function filterRecipesByName() {
-    const nameSearchTerm = document.getElementById('nameSearch') ? 
-                           document.getElementById('nameSearch').value.toLowerCase().trim() : "";
-    
-    let filteredByName = [...recipes]; // Start with all recipes
-
-    if (nameSearchTerm) {
-        filteredByName = recipes.filter(recipe =>
-            recipe.name && recipe.name.toLowerCase().includes(nameSearchTerm)
-        );
-    }
-
-    // To make this new name filter work *with* your existing independent filters,
-    // you have a few choices for how they interact:
-    // Option A: Name filter overrides others temporarily (simplest for now if you want ONLY name filter active when typing in it)
-    // Option B: Try to combine filter results (more complex if they are triggered by separate oninput)
-    //
-    // For now, let's assume typing in "Filter by name" shows results *only* based on name,
-    // and typing in "Filter by ingredient" shows results *only* based on ingredients, etc.
-    // If you want them to be additive (e.g., name AND ingredient), we'll need a single `applyAllFilters()` function.
-
-    // For this request (just make filter by name work without changing other filters' current behavior):
-    // We will re-filter based on ALL current filter inputs every time any filter changes.
-    // This is the most robust way to make them work together.
-
-    // Get values from other filters as well
-    const ingredientSearchTerm = document.getElementById('recipeSearch') ?
-                                 document.getElementById('recipeSearch').value.toLowerCase().trim() : "";
-    const tagSearchTerm = document.getElementById('tagSearch') ?
-                          document.getElementById('tagSearch').value.toLowerCase().trim() : "";
-
-    applyAllRecipeFilters(); // We will create this new function
-}
-
-// It's better to have ONE function that applies ALL active filters.
-// Let's rename your existing filterByText and filterByTag to be part of a combined filter.
-
-function filterRecipesByText() { // This will now be triggered by ingredient search input
-    applyAllRecipeFilters();
-}
-
-function filterRecipesByTag() { // This will now be triggered by tag search input
-    applyAllRecipeFilters();
-}
-
-
-// script.js
-
 function applyAllRecipeFilters() {
-    // --- Step 1: Get values from the UI ---
-    // Get the single search term from the new unified search bar
     const searchInput = document.getElementById('unifiedSearchInput');
     const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : "";
-    
-    // Split the user's query into individual words to search for
     const searchTermsArray = searchTerm.split(' ').filter(term => term.length > 0);
 
-    // --- Step 2: Filter by the currently selected folder ---
-    let filteredList = [...recipes]; // Start with a fresh copy of all recipes
+    let filteredList = [...recipes]; 
 
-    // --- Step 3: Apply the unified search filter ---
     if (searchTermsArray.length > 0) {
         filteredList = filteredList.filter(recipe => {
-            // Create a single, searchable string for each recipe by combining its name,
-            // all ingredient names, and all tags.
             const searchableContent = [
                 recipe.name || "",
                 ...(recipe.ingredients || []).map(ing => ing.name || ""),
                 ...(recipe.tags || [])
             ].join(' ').toLowerCase();
-
-            // Check if EVERY word from the search query is present somewhere in the recipe's content.
             return searchTermsArray.every(term => searchableContent.includes(term));
         });
     }
 
     if (currentSortOrder === 'newest') {
-        // Sort by timestamp, newest first. Assumes timestamp is available.
-        filteredList.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    } else if (currentSortOrder === 'all') {
-        // Sort alphabetically by name
+        filteredList.sort((a, b) => {
+            const getTime = (timestamp) => {
+                if (!timestamp) return 0;
+                return timestamp.toDate ? timestamp.toDate().getTime() : new Date(timestamp).getTime();
+            };
+            return getTime(b.timestamp) - getTime(a.timestamp);
+        });
+    } else if (currentSortOrder === 'modified') {
+        filteredList.sort((a, b) => {
+            const getModifiedTime = (recipe) => {
+                const timestamp = recipe.lastModified || recipe.timestamp;
+                if (!timestamp) return 0;
+                return timestamp.toDate ? timestamp.toDate().getTime() : new Date(timestamp).getTime();
+            };
+            return getModifiedTime(b) - getModifiedTime(a);
+        });
+    } else if (currentSortOrder === 'rating') { // --- ADD THIS BLOCK ---
+        // Sort by rating, highest first. Recipes without a rating are treated as 0.
+        filteredList.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+    }
+     else if (currentSortOrder === 'all') {
         filteredList.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     }
     
-    // --- Step 4: Prepare options for highlighting the search terms in the results ---
     const displayOptions = {
-        highlightNameTerm: searchTerm, // Highlight the full phrase in the name for better context
+        highlightNameTerm: searchTerm,
         highlightIngredients: searchTermsArray,
         highlightTags: searchTermsArray
     };
@@ -1618,78 +1410,9 @@ function markAsMade(recipeDataFromCard, buttonElement) {
     textarea.focus();
 }
 
-
-
-
-
-
-function fillRecipeForm(recipe) {
-  const nameInput = document.getElementById('recipeNameInput');
-  const instructionsInput = document.getElementById('recipeInstructionsInput');
-  const ingredientsTable = document.getElementById('ingredientsTable');
-
-  if (nameInput) nameInput.value = recipe.title || '';
-  if (instructionsInput) instructionsInput.value = recipe.instructions || '';
-
-  if (ingredientsTable) {
-    ingredientsTable.innerHTML = '';
-    recipe.ingredients.forEach(i => {
-      createIngredientRow(i.name, i.quantity, i.unit);
-    });
-    createIngredientRow(); // Add blank row at end
-  }
-}
-
-
 function stripBase64Header(dataUrl) {
   return dataUrl.replace(/^data:image\/\w+;base64,/, '');
 }
-
-
-function runOCRFromImage(src) {
-  const preview = document.getElementById('photoPreviewContainer');
-  preview.innerHTML = ''; // Clear any previous content
-
-  const status = document.createElement('p');
-  status.textContent = '🔍 Scanning text...';
-  preview.appendChild(status);
-
-  Tesseract.recognize(src, 'eng', {
-    logger: m => console.log(m),
-    config: {
-      tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:,.()/- ',
-      tessedit_pageseg_mode: '13'
-    }
-  }).then(({ data: { text } }) => {
-    status.remove();
-
-    // 📝 Textarea for editable OCR result
-    const textarea = document.createElement('textarea');
-    textarea.className = 'form-control mb-2';
-    textarea.id = 'ocrTextArea';
-    textarea.rows = 10;
-    textarea.value = text;
-    preview.appendChild(textarea);
-
-    // 🔘 Button to parse the editable OCR result
-    const parseBtn = document.createElement('button');
-    parseBtn.className = 'btn btn-info btn-sm btn-outline-dark mt-2';
-    parseBtn.textContent = '✨ Parse OCR Text to Fill Form';
-
-    parseBtn.onclick = () => {
-      const updatedText = document.getElementById('ocrTextArea').value;
-      const parsed = parseOcrToRecipeFields(updatedText);
-      fillRecipeForm(parsed);
-    };
-    console.log("✅ OCR Parse button being added!");
-    preview.appendChild(parseBtn);
-  }).catch(err => {
-    console.error("OCR error:", err);
-    status.textContent = '❌ OCR failed.';
-  });
-}
-
-
 
 /**
  * Preprocesses an image by resizing it, optionally converting to grayscale and adjusting contrast,
@@ -1914,88 +1637,6 @@ function parseOcrToRecipeFields(ocrText) {
   return recipe;
 }
 
-
-
-
-
-async function saveRecipe() { // Changed to async to handle potential async local save
-    const name = document.getElementById('recipeNameInput').value.trim();
-    const instructions = document.getElementById('recipeInstructionsInput').value.trim();
-    // ... (get ingredients and tags as before) ...
-    const rows = document.querySelectorAll('#ingredientsTable > .row');
-    const ingredients = [];
-    currentTags = currentTags || []; // Ensure currentTags is initialized
-
-    rows.forEach(row => {
-        const inputs = row.querySelectorAll('input');
-        const ingName = inputs[0]?.value.trim();
-        const qty = inputs[1]?.value.trim();
-        const unit = inputs[2]?.value.trim();
-        if (ingName) {
-            ingredients.push({ name: ingName, quantity: qty || '', unit: unit || '' });
-        }
-    });
-
-    if (!name || ingredients.length === 0) {
-        // ... (your existing error display for missing name/ingredients) ...
-        const error = document.getElementById('recipeErrorMessage') || document.createElement('div');
-        // ...
-        return;
-    }
-
-    const recipeData = {
-        // id: will be generated by Firebase or locally
-        name,
-        instructions,
-        ingredients,
-        tags: currentTags, // Use the globally managed currentTags
-        timestamp: new Date(), // Will be Firestore Timestamp or ISO string locally
-        // rating: 0, // Default rating if you have this field
-    };
-
-    if (currentUser) { // User is LOGGED IN - Save to Firebase
-        console.log("User logged in, saving recipe to Firestore:", recipeData);
-        recipeData.uid = currentUser.uid;
-        // Ensure timestamp is a Firestore server timestamp for consistency if desired
-        // recipeData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
-
-        db.collection('recipes').add(recipeData)
-            .then(docRef => {
-                console.log("✅ Recipe added to Firestore with ID:", docRef.id);
-                toggleRecipeForm();
-                showSuccessMessage("✅ Recipe saved successfully to your account!");
-                loadRecipesFromFirestore(); // Reload recipes from Firestore
-                currentTags = []; // Clear tags for the form
-            })
-            .catch(error => {
-                console.error("❌ Error adding recipe to Firestore:", error.message || error);
-                alert("Error saving recipe: " + error.message);
-            });
-    } else { // User is NOT LOGGED IN - Save to Local IndexedDB
-        if (!localDB) {
-            alert("Local storage is not available. Please sign in to save recipes.");
-            console.error("Attempted to save locally, but localDB is not initialized.");
-            return;
-        }
-        console.log("User not logged in, saving recipe to LocalDB:", recipeData);
-        recipeData.localId = generateLocalUUID(); // Generate a unique local ID
-        recipeData.timestamp = recipeData.timestamp.toISOString(); // Store date as ISO string
-
-        localDB.recipes.add(recipeData)
-            .then(() => {
-                console.log("✅ Recipe added to LocalDB with localId:", recipeData.localId);
-                toggleRecipeForm();
-                showSuccessMessage("✅ Recipe saved locally! Sign in to save to the cloud.");
-                loadRecipesFromLocal(); // Reload recipes from LocalDB
-                currentTags = []; // Clear tags for the form
-            })
-            .catch(error => {
-                console.error("❌ Error adding recipe to LocalDB:", error.stack || error);
-                alert("Error saving recipe locally: " + error.message);
-            });
-    }
-}
-
 async function loadRecipesFromLocal() {
     if (!localDB) {
         console.warn("LocalDB not initialized, cannot load local recipes.");
@@ -2046,175 +1687,6 @@ function showSuccessMessage(message) {
   setTimeout(() => {
     successAlert.remove();
   }, 3000); // disappear after 3 seconds
-}
-
-
-
-// --- Updated toggleRecipeForm Function ---
-/**
- * Toggles the main recipe form visibility and resets it if opening for a new manual entry.
- * @param {boolean} [forceOpen=false] - If true, ensures the form is opened. If false, it toggles.
- * @param {boolean} [isManualEntrySetup=false] - If true (and opening), sets up for blank manual entry.
- */
-function toggleRecipeForm(forceOpen = false, isManualEntrySetup = false) {
-    const form = document.getElementById('recipeForm');
-    const recipeNameInput = document.getElementById('recipeNameInput');
-    const ingredientsTable = document.getElementById('ingredientsTable');
-    const instructionsInput = document.getElementById('recipeInstructionsInput');
-    const tagInput = document.getElementById('tagInput');
-    const photoPreviewContainer = document.getElementById('photoPreviewContainer');
-    const ocrTextPasteArea = document.getElementById('ocrTextPaste');
-
-    if (!form) {
-        console.error("Recipe form with ID 'recipeForm' not found.");
-        return;
-    }
-
-    const isCurrentlyOpen = form.classList.contains('open');
-
-    if (forceOpen) {
-        if (!isCurrentlyOpen) {
-            form.classList.add('open');
-        }
-        // When forcing open (e.g., for 'manual' or to show AI results),
-        // reset only if it's specifically for a new manual entry.
-        if (isManualEntrySetup) {
-            console.log("toggleRecipeForm: Opening and resetting for new manual entry.");
-            if (recipeNameInput) recipeNameInput.value = '';
-            if (instructionsInput) instructionsInput.value = '';
-            if (ingredientsTable) {
-                ingredientsTable.innerHTML = '';
-                if (typeof createIngredientRow === "function") createIngredientRow();
-            }
-            currentTags = []; // Reset global/scoped tags for the form
-            if (typeof renderTags === "function") renderTags();
-            if (tagInput) tagInput.value = '';
-            
-            if (photoPreviewContainer) photoPreviewContainer.innerHTML = '';
-            if (ocrTextPasteArea) {
-                ocrTextPasteArea.value = `📛 RECIPE NAME\n====================\n\n🧂 INGREDIENTS\n====================\n\n📝 INSTRUCTIONS\n====================`;
-            }
-            // Ensure accordion sections for photo/paste are collapsed for a fresh manual entry
-            const collapseOCR = document.getElementById('collapseOCR');
-            const collapsePaste = document.getElementById('collapsePaste');
-            if (collapseOCR) {
-                const bsCollapseOCR = bootstrap.Collapse.getInstance(collapseOCR) || new bootstrap.Collapse(collapseOCR, {toggle: false});
-                bsCollapseOCR.hide();
-            }
-            if (collapsePaste) {
-                const bsCollapsePaste = bootstrap.Collapse.getInstance(collapsePaste) || new bootstrap.Collapse(collapsePaste, {toggle: false});
-                bsCollapsePaste.hide();
-            }
-            if (recipeNameInput) recipeNameInput.focus();
-        }
-    } else { // Standard toggle
-        form.classList.toggle('open');
-        if (form.classList.contains('open') && !isCurrentlyOpen) { // If just toggled to open
-            // Reset for new manual entry if toggled open (old behavior)
-            console.log("toggleRecipeForm: Toggled open, resetting for new manual entry.");
-            if (recipeNameInput) recipeNameInput.value = '';
-            if (instructionsInput) instructionsInput.value = '';
-            if (ingredientsTable) {
-                ingredientsTable.innerHTML = '';
-                if (typeof createIngredientRow === "function") createIngredientRow();
-            }
-            currentTags = [];
-            if (typeof renderTags === "function") renderTags();
-            if (tagInput) tagInput.value = '';
-            if (photoPreviewContainer) photoPreviewContainer.innerHTML = '';
-            if (ocrTextPasteArea) {
-                 ocrTextPasteArea.value = `📛 RECIPE NAME\n====================\n\n🧂 INGREDIENTS\n====================\n\n📝 INSTRUCTIONS\n====================`;
-            }
-            if (recipeNameInput) recipeNameInput.focus();
-        }
-    }
-
-    if (form.classList.contains('open')) {
-        if (typeof initializeMainRecipeFormTagInput === "function") {
-            initializeMainRecipeFormTagInput();
-        }
-        // Scroll the form into view if it's opened
-        form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-}
-
-function getAddRecipeFormHTML() {
-    // This MUST return the full HTML string for the content of <div id="recipeForm">...</div>
-    // including the manual fields AND the accordion for Photo/Paste.
-    // Example:
-    return `
-        <div class="card card-body">
-            <label class="form-label fw-semibold">📛 Recipe Name</label>
-            <input class="form-control mb-3" id="recipeNameInput" placeholder="Recipe name" />
-
-            <div class="mb-3">
-                <label class="form-label fw-semibold mt-3">🧂 Ingredients</label>
-                <div id="ingredientsTable"></div>
-                 <button type="button" class="btn btn-outline-secondary btn-sm mt-2" onclick="createIngredientRow('', '', '')"><i class="bi bi-plus-circle"></i> Add Ingredient Row</button>
-            </div>
-
-            <label class="form-label fw-semibold mt-3">📝 Instructions</label>
-            <textarea class="form-control mb-3" id="recipeInstructionsInput" rows="4" placeholder="Instructions"></textarea>
-
-            <label class="form-label fw-semibold mt-3">🏷️ Tags</label>
-            <div class="mb-3">
-                <div id="tagsContainer" class="form-control d-flex flex-wrap align-items-center gap-1 p-2 position-relative" style="min-height: 38px; background-color: #f8f9fa; border: 1px dashed #ced4da;">
-                    <span id="tagsPlaceholder" class="text-muted position-absolute small" style="left: 10px; top: 50%; transform: translateY(-50%); pointer-events: none;">Add some tags...</span>
-                </div>
-                <div class="input-group input-group-sm mt-2">
-                    <input type="text" id="tagInput" class="form-control" placeholder="Type a tag & press Enter" />
-                    <button type="button" id="tagAddButton" class="btn btn-outline-secondary"><i class="bi bi-plus"></i> Add</button>
-                </div>
-            </div>
-
-            <hr class="my-3" style="border-top: 1px solid #ccc;" />
-
-            <div class="d-flex gap-2 mb-3 justify-content-end">
-                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleRecipeForm()">Cancel</button>
-                <button type="button" class="btn btn-success btn-sm" onclick="saveRecipe()">Save Recipe</button>
-            </div>
-
-            <div class="accordion" id="addRecipeOptionsAccordion">
-                <div class="accordion-item">
-                    <h2 class="accordion-header" id="headingOCR">
-                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOCR" aria-expanded="false" aria-controls="collapseOCR">
-                            📸 Add Recipe by Photo
-                        </button>
-                    </h2>
-                    <div id="collapseOCR" class="accordion-collapse collapse" aria-labelledby="headingOCR" data-bs-parent="#addRecipeOptionsAccordion">
-                        <div class="accordion-body">
-                            <label for="recipePhotoInput" class="form-label">Upload or Take a Recipe Photo</label>
-                            <input type="file" id="recipePhotoInput" accept="image/*" capture="environment" class="form-control mb-3" onchange="handleRecipePhoto(event)" />
-                            <div id="photoPreviewContainer" class="mb-3"></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="accordion-item">
-                    <h2 class="accordion-header" id="headingPaste">
-                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePaste" aria-expanded="false" aria-controls="collapsePaste">
-                            ⌨️ Add Recipe by Pasting Text
-                        </button>
-                    </h2>
-                    <div id="collapsePaste" class="accordion-collapse collapse" aria-labelledby="headingPaste" data-bs-parent="#addRecipeOptionsAccordion">
-                        <div class="accordion-body">
-                            <label for="ocrTextPaste" class="form-label">Paste your recipe text below:</label>
-                            <textarea id="ocrTextPaste" class="form-control mb-2" rows="10">
-📛 RECIPE NAME
-====================
-
-🧂 INGREDIENTS
-====================
-
-📝 INSTRUCTIONS
-====================
-                            </textarea>
-                            <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="handlePastedRecipeText()">✨ Parse Text to Fill Form</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
 }
 
 function showRandomRecipe() {
@@ -2564,7 +2036,11 @@ function renderSortOptions() {
 
     const sortOptions = [
         { id: 'newest', name: 'Recently Added', icon: 'bi-clock-history' },
-        { id: 'all', name: 'All Recipes (A-Z)', icon: 'bi-sort-alpha-down' }
+        { id: 'modified', name: 'Date Modified', icon: 'bi-pencil-square' },
+        // Use the outline star icon for consistency
+        { id: 'rating', name: 'Rating', icon: 'bi-star' }, 
+        // Use a simpler, more balanced icon for alphabetical sort
+        { id: 'all', name: 'Alphabetical', icon: 'bi-sort-alpha-down' } // Keeping this one is fine, but bi-fonts is an alternative
     ];
 
     let sortOptionsHTML = "";
@@ -2580,40 +2056,35 @@ function renderSortOptions() {
     });
     listContainer.innerHTML = sortOptionsHTML;
 
-    // Add click listeners
+    // The rest of this function (click listeners) remains the same
     listContainer.querySelectorAll('.nav-link').forEach(link => {
-        link.onclick = async (e) => { // Make the handler async
+        link.onclick = async (e) => {
             e.preventDefault();
             const newSortOrder = link.dataset.sortId;
-            if (newSortOrder === currentSortOrder) return; // Don't do anything if it's the same
+            if (newSortOrder === currentSortOrder) return;
 
             currentSortOrder = newSortOrder;
             
-            // --- NEW: Save preference to Firebase ---
             if (currentUser) {
                 try {
                     const userRef = db.collection('users').doc(currentUser.uid);
                     await userRef.set({
-                        preferences: {
-                            recipeSortOrder: currentSortOrder
-                        }
-                    }, { merge: true }); // Use merge: true to avoid overwriting other user data
+                        preferences: { recipeSortOrder: currentSortOrder }
+                    }, { merge: true });
                     console.log(`Saved sort preference '${currentSortOrder}' to Firebase.`);
                 } catch (error) {
                     console.error("Error saving user preference:", error);
                 }
             }
-            // --- End of new block ---
-
+            
             applyAllRecipeFilters();
-            renderSortOptions(); // Re-render to update the active highlight
+            renderSortOptions();
             if (window.innerWidth < 992) {
                 toggleSidebar();
             }
         };
     });
 }
-
 function toggleSidebar() {
     // It's looking for id="appSidebar"
     const sidebar = document.getElementById('appSidebar'); 
@@ -3099,10 +2570,9 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
         const body = document.createElement('div');
         body.className = 'card-body p-3';
 
-        // --- Title Row ---
+        // --- Title Row (No changes here) ---
         const titleRow = document.createElement('div');
         titleRow.className = 'd-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2 mb-2';
-
         const titleElement = document.createElement('h5');
         titleElement.className = 'recipe-title mb-0 text-primary';
         let recipeName = recipe.name || "Untitled Recipe";
@@ -3112,43 +2582,34 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
             titleElement.textContent = recipeName;
         }
         titleRow.appendChild(titleElement);
-
-        // --- Button Group (Share, Edit, Chef Bot, Delete) ---
         const buttonGroup = document.createElement('div');
         buttonGroup.className = 'd-flex gap-2 align-items-center mt-2 mt-sm-0 recipe-card-actions flex-shrink-0';
-
         const shareBtn = document.createElement('button');
         shareBtn.className = 'btn btn-outline-secondary btn-sm btn-share';
-        if (!currentUser) { /* ... shareBtn logic ... */
+        if (!currentUser) {
             shareBtn.disabled = true;
             shareBtn.title = 'Sign in to share recipes via a link';
             shareBtn.innerHTML = '<i class="bi bi-share"></i>';
             shareBtn.onclick = (e) => { e.preventDefault(); showLoginModal(); };
-        } else { /* ... */ 
+        } else {
             shareBtn.innerHTML = '<i class="bi bi-share-fill"></i>';
             shareBtn.title = 'Share recipe link';
             shareBtn.onclick = () => shareRecipe(recipe.id);
         }
         buttonGroup.appendChild(shareBtn);
-
         const editBtn = document.createElement('button');
         editBtn.className = 'btn btn-outline-primary btn-sm';
         editBtn.innerHTML = '<i class="bi bi-pencil-fill"></i>';
         editBtn.title = "Edit recipe";
         editBtn.onclick = () => openInlineEditor(recipe.id, card);
         buttonGroup.appendChild(editBtn);
-
-        // ** NEW: Chef Bot Button for This Specific Recipe **
         const chefBotRecipeBtn = document.createElement('button');
         chefBotRecipeBtn.className = 'btn btn-outline-warning btn-sm ask-chef-bot-recipe';
         chefBotRecipeBtn.innerHTML = '<i class="bi bi-robot"></i>';
         chefBotRecipeBtn.title = `Ask Chef Bot about "${recipe.name}"`;
         chefBotRecipeBtn.dataset.recipeId = recipe.id;
-        chefBotRecipeBtn.onclick = () => {
-            openRecipeSpecificChatModal(recipe); 
-        };
+        chefBotRecipeBtn.onclick = () => { openRecipeSpecificChatModal(recipe); };
         buttonGroup.appendChild(chefBotRecipeBtn);
-        
         const deleteArea = document.createElement('div');
         deleteArea.className = 'delete-area position-relative d-inline-block';
         const deleteBtn = document.createElement('button');
@@ -3158,18 +2619,12 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
         deleteBtn.onclick = () => confirmDeleteRecipe(recipe.id, deleteArea);
         deleteArea.appendChild(deleteBtn);
         buttonGroup.appendChild(deleteArea);
-        // --- End Button Group ---
-
         titleRow.appendChild(buttonGroup);
         body.appendChild(titleRow);
 
-        // === RESTORED/ENSURED SECTIONS BELOW ===
-
-        // --- Tags and Ratings Row ---
-        const tagsAndRatingRow = document.createElement('div');
-        tagsAndRatingRow.className = 'd-flex flex-wrap justify-content-between align-items-center mb-2 gap-2';
+        // --- Tags Row (No changes here) ---
         const tagsDiv = document.createElement('div');
-        tagsDiv.className = 'recipe-tags';
+        tagsDiv.className = 'recipe-tags mb-2';
         if (recipe.tags && recipe.tags.length > 0) {
             recipe.tags.forEach(tag => {
                 const tagBadge = document.createElement('span');
@@ -3193,7 +2648,39 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
                 tagsDiv.appendChild(tagBadge);
             });
         }
-        tagsAndRatingRow.appendChild(tagsDiv);
+        body.appendChild(tagsDiv);
+
+        // --- Meta Info Row (Ratings & Date Added) (MODIFIED) ---
+        const metaInfoRow = document.createElement('div');
+        metaInfoRow.className = 'd-flex justify-content-between align-items-center mb-2'; // This creates the row
+        
+        const dateAddedElement = document.createElement('small');
+        dateAddedElement.className = 'text-muted';
+
+        // Check if the timestamp exists and format it correctly
+        if (recipe.timestamp) {
+            let date;
+            if (typeof recipe.timestamp.toDate === 'function') {
+                date = recipe.timestamp.toDate(); // Firestore timestamp object
+            } else {
+                date = new Date(recipe.timestamp); // ISO string
+            }
+            dateAddedElement.innerHTML = `<i class="bi bi-clock-history me-1"></i>Added: ${date.toLocaleDateString()}`;
+        }
+
+        const lastModifiedElement = document.createElement('small');
+        lastModifiedElement.className = 'text-muted ms-3'; // Add margin for spacing
+
+        // Check if a lastModified date exists
+        if (recipe.lastModified) {
+            let modifiedDate;
+            if (typeof recipe.lastModified.toDate === 'function') {
+                modifiedDate = recipe.lastModified.toDate(); // Firestore
+            } else {
+                modifiedDate = new Date(recipe.lastModified); // LocalDB
+            }
+            lastModifiedElement.innerHTML = `<i class="bi bi-pencil-square me-1"></i>Edited: ${modifiedDate.toLocaleDateString()}`;
+        }
         
         const ratingContainer = document.createElement('div');
         ratingContainer.className = 'rating-stars d-flex gap-1 align-items-center';
@@ -3215,10 +2702,18 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
                 ratingContainer.appendChild(star);
             }
         }
-        tagsAndRatingRow.appendChild(ratingContainer);
-        body.appendChild(tagsAndRatingRow);
+        
+        // Add the date and stars to the meta info row
+        metaInfoRow.appendChild(dateAddedElement);
+        metaInfoRow.appendChild(lastModifiedElement);
+        metaInfoRow.appendChild(ratingContainer);
 
-        // --- Ingredients Table ---
+        // Only append the meta row if it has content (either a date or stars)
+        if (recipe.timestamp || ratingContainer.hasChildNodes()) {
+            body.appendChild(metaInfoRow);
+        }
+
+        // --- Ingredients Table (No changes here) ---
         const table = document.createElement('table');
         table.className = 'table table-bordered table-sm mt-2 mb-2';
         const thead = document.createElement('thead');
@@ -3253,7 +2748,7 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
         table.appendChild(tbody);
         body.appendChild(table);
 
-        // --- Instructions ---
+        // --- Instructions (No changes here) ---
         const instructionsTitle = document.createElement('h6');
         instructionsTitle.className = 'mt-3 mb-1 fw-semibold';
         instructionsTitle.textContent = 'Instructions';
@@ -3264,7 +2759,7 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
         instructionsP.textContent = recipe.instructions || 'No instructions provided.';
         body.appendChild(instructionsP);
 
-        // --- Bottom Button Row (Mark as Made, Plan Meal) ---
+        // --- Bottom Button Row (No changes here) ---
         const bottomButtonRow = document.createElement('div');
         bottomButtonRow.className = 'd-flex align-items-center justify-content-start gap-2 mt-3 pt-2 border-top';
         const madeBtn = document.createElement('button');
@@ -3281,8 +2776,6 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
         planArea.appendChild(planBtn);
         bottomButtonRow.appendChild(planArea);
         body.appendChild(bottomButtonRow);
-
-        // === END RESTORED SECTIONS ===
 
         card.appendChild(body);
         container.appendChild(card);
@@ -3786,61 +3279,65 @@ async function openInlineEditor(recipeId, cardElement) {
 
     // --- Save Logic (remains largely the same, ensure using correct variables) ---
     saveEditBtn.onclick = async () => {
-        // ... (Construct recipePayload using nameInput, instructionsInput, ingredientsTbody, currentEditingTags)
-        // ... (Your existing save logic for Firestore or LocalDB)
-        // Ensure you are using the live input elements: nameInput, instructionsInput, ingredientsTbody
-        const updatedName = nameInput.value.trim();
-        if (!updatedName) {
-            alert("Recipe name cannot be empty.");
-            nameInput.focus();
-            return;
-        }
+    const updatedName = nameInput.value.trim();
+    if (!updatedName) {
+        alert("Recipe name cannot be empty.");
+        nameInput.focus();
+        return;
+    }
 
-        const updatedIngredients = [];
-        if (ingredientsTbody) {
-            ingredientsTbody.querySelectorAll('tr').forEach(row => {
-                const inputs = row.querySelectorAll('input');
-                if (inputs.length >= 3) { // Ensure all inputs are present
-                    const ingName = inputs[0].value.trim();
-                    const ingQty = inputs[1].value.trim();
-                    const ingUnit = inputs[2].value.trim();
-                    if (ingName) { 
-                        updatedIngredients.push({ name: ingName, quantity: ingQty, unit: ingUnit });
-                    }
+    const updatedIngredients = [];
+    if (ingredientsTbody) {
+        ingredientsTbody.querySelectorAll('tr').forEach(row => {
+            const inputs = row.querySelectorAll('input');
+            if (inputs.length >= 3) {
+                const ingName = inputs[0].value.trim();
+                const ingQty = inputs[1].value.trim();
+                const ingUnit = inputs[2].value.trim();
+                if (ingName) {
+                    updatedIngredients.push({ name: ingName, quantity: ingQty, unit: ingUnit });
                 }
-            });
-        }
-        
-        const recipePayload = {
-            name: updatedName,
-            ingredients: updatedIngredients,
-            instructions: instructionsInput.value.trim(),
-            tags: [...currentEditingTags],
-            rating: recipeData.rating || 0, 
-        };
-
-        try {
-            if (currentUser && !isLocalRecipe) {
-                recipePayload.uid = recipeData.uid || currentUser.uid;
-                recipePayload.timestamp = firebase.firestore.FieldValue.serverTimestamp();
-                const docIdToUpdate = recipeData.firestoreId || recipeData.id;
-                console.log("Saving updated recipe to Firestore, ID:", docIdToUpdate);
-                await db.collection('recipes').doc(docIdToUpdate).set(recipePayload, { merge: true });
-                showSuccessMessage("Recipe updated in your account!");
-            } else { 
-                 if (!localDB) { alert("Local storage not available to save changes."); return; }
-                recipePayload.localId = recipeData.id; 
-                recipePayload.timestamp = new Date().toISOString();
-                console.log("Saving updated recipe to LocalDB, localId:", recipePayload.localId);
-                await localDB.recipes.put(recipePayload);
-                showSuccessMessage("Local recipe updated!");
             }
-            loadInitialRecipes(); 
-        } catch (err) {
-            console.error("Error saving recipe changes:", err.stack || err);
-            alert("Failed to save changes: " + err.message);
-        }
+        });
+    }
+    
+    // This is our new payload. Notice it does NOT include the original 'timestamp'.
+    const dataToUpdate = {
+        name: updatedName,
+        ingredients: updatedIngredients,
+        instructions: instructionsInput.value.trim(),
+        tags: [...currentEditingTags],
+        // We leave 'rating' and the original 'timestamp' untouched
     };
+
+    try {
+        if (currentUser && !isLocalRecipe) {
+            // Add a 'lastModified' field for Firestore
+            dataToUpdate.lastModified = firebase.firestore.FieldValue.serverTimestamp();
+            
+            const docIdToUpdate = recipeData.firestoreId || recipeData.id;
+            console.log("Updating Firestore recipe, ID:", docIdToUpdate);
+            // Use .update() which only changes the fields you provide
+            await db.collection('recipes').doc(docIdToUpdate).update(dataToUpdate);
+            showSuccessMessage("Recipe updated in your account!");
+
+        } else {
+            if (!localDB) { alert("Local storage not available to save changes."); return; }
+            
+            // Add a 'lastModified' field for LocalDB
+            dataToUpdate.lastModified = new Date().toISOString();
+            
+            console.log("Updating LocalDB recipe, localId:", recipeData.id);
+            // .update() for Dexie also only changes the specified fields
+            await localDB.recipes.update(recipeData.id, dataToUpdate);
+            showSuccessMessage("Local recipe updated!");
+        }
+        loadInitialRecipes();
+    } catch (err) {
+        console.error("Error saving recipe changes:", err.stack || err);
+        alert("Failed to save changes: " + err.message);
+    }
+};
 
     cancelEditBtn.onclick = () => {
         loadInitialRecipes();
@@ -6828,4 +6325,3 @@ window.onload = () => {
     }
     // Removed loadRecipesFromFirestore() from here as onAuthStateChanged handles it.
 };
-
