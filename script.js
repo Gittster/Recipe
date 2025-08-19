@@ -112,19 +112,20 @@ function openRecipeFormModal(recipeDataToLoad = null, mode = 'new') {
     }
 }
 
+// This function loads all available folders into the global 'folders' array.
 async function loadFolders() {
     if (!currentUser) {
+        // In the future, you could implement local-only folders here
         folders = [];
         return;
     }
     try {
-        // Revert to ordering by name
         const snapshot = await db.collection('folders').where('uid', '==', currentUser.uid).orderBy('name').get();
         folders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         console.log("Folders loaded:", folders);
     } catch (error) {
         console.error("Error loading folders:", error);
-        folders = [];
+        folders = []; // Ensure folders is empty on error
     }
 }
 
@@ -2113,21 +2114,26 @@ function createHighlightRegex(term) {
     return new RegExp(`(${escapedTerm})`, 'gi'); // 'g' for global, 'i' for case-insensitive
 }
 
+// In script.js
 async function renderFolders() {
     const folderList = document.getElementById('folderList');
     const folderActions = document.getElementById('folderActionsContainer');
     const addFolderContainer = document.getElementById('addFolderContainer');
+    
     if (!folderList || !folderActions || !addFolderContainer) return;
 
     folderList.innerHTML = ''; 
     folderList.className = 'nav nav-pills flex-column folder-list-container';
     
+    // --- Render Edit/Done Button ---
     if (folders.length > 0) {
+        // ADD the "w-100" class to make the button full-width
         folderActions.innerHTML = `<button class="btn btn-outline-secondary btn-sm w-100" onclick="toggleFolderEditMode()">${isFolderEditMode ? 'Done' : 'Edit'}</button>`;
     } else {
         folderActions.innerHTML = '';
     }
     
+    // --- Toggle UI based on Edit Mode ---
     if (isFolderEditMode) {
         folderList.classList.add('edit-mode-active');
         addFolderContainer.style.display = 'none';
@@ -2136,6 +2142,8 @@ async function renderFolders() {
         addFolderContainer.style.display = 'block';
     }
 
+    // --- The rest of the function remains exactly the same ---
+    // --- Render "All Recipes" Link ---
     const allRecipesCount = recipes.length;
     const allRecipesItem = document.createElement('li');
     allRecipesItem.className = 'nav-item';
@@ -2146,11 +2154,10 @@ async function renderFolders() {
         </a>`;
     const allRecipesLink = allRecipesItem.querySelector('a');
     if (currentFolderId === null) allRecipesLink.classList.add('active');
-    allRecipesLink.onclick = (e) => {
-        if (!isFolderEditMode) filterByFolder(e, null);
-    };
+    allRecipesLink.onclick = (e) => filterByFolder(e, null);
     folderList.appendChild(allRecipesItem);
 
+    // --- Render Individual Folders ---
     if (currentUser && folders.length > 0) {
         folders.forEach(folder => {
             const recipeCount = recipes.filter(r => r.folderId === folder.id).length;
@@ -2169,9 +2176,7 @@ async function renderFolders() {
 
             const folderLink = li.querySelector('a');
             if (folder.id === currentFolderId) folderLink.classList.add('active');
-            folderLink.onclick = (e) => {
-                if (!isFolderEditMode) filterByFolder(e, folder.id);
-            };
+            folderLink.onclick = (e) => filterByFolder(e, folder.id);
 
             const deleteIcon = li.querySelector('.delete-folder-icon-container');
             deleteIcon.onclick = (e) => {
@@ -2262,12 +2267,13 @@ async function saveNewFolder(folderName) {
         await db.collection('folders').add({
             name: folderName,
             uid: currentUser.uid,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-            order: folders.length // Assigns the next available order index
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
         
+        // Refresh all UI elements that depend on the folder list
         await loadFolders();
         renderFolders();
+        applyAllRecipeFilters(); // <-- ADD THIS LINE to refresh the recipe cards
         restoreAddFolderButton();
 
     } catch (error) {
@@ -2330,20 +2336,19 @@ function renderSortOptions() {
     const sortOptions = [
         { id: 'newest', name: 'Recently Added', icon: 'bi-clock-history' },
         { id: 'modified', name: 'Date Modified', icon: 'bi-pencil-square' },
-        { id: 'rating', name: 'Rating', icon: 'bi-star' },
-        { id: 'all', name: 'Alphabetical', icon: 'bi-sort-alpha-down' }
+        // Use the outline star icon for consistency
+        { id: 'rating', name: 'Rating', icon: 'bi-star' }, 
+        // Use a simpler, more balanced icon for alphabetical sort
+        { id: 'all', name: 'Alphabetical', icon: 'bi-sort-alpha-down' } // Keeping this one is fine, but bi-fonts is an alternative
     ];
 
     let sortOptionsHTML = "";
     sortOptions.forEach(option => {
         const isActive = option.id === currentSortOrder ? 'active' : '';
-        // Wrap the icon and text in a span so they stick together
         sortOptionsHTML += `
             <li class="nav-item">
                 <a class="nav-link ${isActive}" href="#" data-sort-id="${option.id}">
-                    <span>
-                        <i class="bi ${option.icon} me-2"></i> ${option.name}
-                    </span>
+                    <i class="bi ${option.icon} me-2"></i> ${option.name}
                 </a>
             </li>
         `;
@@ -2398,17 +2403,25 @@ async function renderFolders() {
     const folderList = document.getElementById('folderList');
     const folderActions = document.getElementById('folderActionsContainer');
     const addFolderContainer = document.getElementById('addFolderContainer');
+    
     if (!folderList || !folderActions || !addFolderContainer) return;
 
     folderList.innerHTML = ''; 
     folderList.className = 'nav nav-pills flex-column folder-list-container';
     
+    // --- Render Edit/Done Button ---
     if (folders.length > 0) {
         folderActions.innerHTML = `<button class="btn btn-outline-secondary btn-sm w-100" onclick="toggleFolderEditMode()">${isFolderEditMode ? 'Done' : 'Edit'}</button>`;
     } else {
         folderActions.innerHTML = '';
     }
+
+    // --- NEW FIX: Automatically exit edit mode if no folders are left ---
+    if (folders.length === 0 && isFolderEditMode) {
+        isFolderEditMode = false; 
+    }
     
+    // --- Toggle UI based on Edit Mode ---
     if (isFolderEditMode) {
         folderList.classList.add('edit-mode-active');
         addFolderContainer.style.display = 'none';
@@ -2417,6 +2430,7 @@ async function renderFolders() {
         addFolderContainer.style.display = 'block';
     }
 
+    // --- Render "All Recipes" Link ---
     const allRecipesCount = recipes.length;
     const allRecipesItem = document.createElement('li');
     allRecipesItem.className = 'nav-item';
@@ -2427,11 +2441,10 @@ async function renderFolders() {
         </a>`;
     const allRecipesLink = allRecipesItem.querySelector('a');
     if (currentFolderId === null) allRecipesLink.classList.add('active');
-    allRecipesLink.onclick = (e) => {
-        if (!isFolderEditMode) filterByFolder(e, null);
-    };
+    allRecipesLink.onclick = (e) => filterByFolder(e, null);
     folderList.appendChild(allRecipesItem);
 
+    // --- Render Individual Folders ---
     if (currentUser && folders.length > 0) {
         folders.forEach(folder => {
             const recipeCount = recipes.filter(r => r.folderId === folder.id).length;
@@ -2441,8 +2454,8 @@ async function renderFolders() {
                 <a class="nav-link d-flex justify-content-between align-items-center" href="#">
                     <span><i class="bi bi-folder me-2"></i>${escapeHtml(folder.name)}</span>
                     <div class="d-flex align-items-center">
-                        ${recipeCount > 0 ? `<span class="badge bg-light text-dark rounded-pill me-2">${recipeCount}</span>` : ''}
-                        <span class="delete-folder-icon-container">
+                        ${recipeCount > 0 ? `<span class="badge bg-light text-dark rounded-pill">${recipeCount}</span>` : ''}
+                        <span class="delete-folder-icon-container ms-2">
                             <i class="bi bi-trash-fill text-danger" title="Delete Folder"></i>
                         </span>
                     </div>
@@ -2450,26 +2463,18 @@ async function renderFolders() {
 
             const folderLink = li.querySelector('a');
             if (folder.id === currentFolderId) folderLink.classList.add('active');
-            
-            folderLink.onclick = (e) => {
-                if (!isFolderEditMode) {
-                    filterByFolder(e, folder.id);
-                } else {
-                    e.preventDefault(); // Prevent link action when in edit mode
-                }
-            };
+            folderLink.onclick = (e) => filterByFolder(e, folder.id);
 
             const deleteIcon = li.querySelector('.delete-folder-icon-container');
             deleteIcon.onclick = (e) => {
-                e.stopPropagation(); 
-                e.preventDefault();
+                e.stopPropagation(); e.preventDefault();
                 confirmDeleteFolder(folder.id, folder.name);
             };
-            
             folderList.appendChild(li);
         });
     }
 }
+// script.js
 
 function openRecipeSpecificChatModal(recipe) {
     if (!recipe || !recipe.id || !recipe.name) {
@@ -2820,28 +2825,53 @@ async function saveChatHistoryToRecipe(recipeId, historyToSave, isLocal) {
     }
 }
 
-async function saveNewFolder(folderName) {
-    if (!currentUser) {
-        alert("You must be logged in to create folders.");
-        return;
-    }
-    
-    try {
-        await db.collection('folders').add({
-            name: folderName,
-            uid: currentUser.uid,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-            // The 'order' field is no longer added here
-        });
-        
-        await loadFolders();
-        renderFolders();
-        restoreAddFolderButton();
+// You'll need a generic function to save a NEW recipe object
+// This is similar to your existing `saveRecipe` but takes data as an argument
+async function saveNewRecipeToStorage(recipeDataObject) {
+    console.log("saveNewRecipeToStorage called with:", recipeDataObject);
+    let success = false;
 
-    } catch (error) {
-        console.error("Error creating new folder:", error);
-        alert("Could not create the folder. Please try again.");
+    const dataToSave = {
+        name: recipeDataObject.name || "Untitled Recipe",
+        ingredients: recipeDataObject.ingredients || [],
+        instructions: recipeDataObject.instructions || "",
+        tags: recipeDataObject.tags || [],
+        rating: recipeDataObject.rating || 0,
+    };
+
+    if (currentUser) {
+        dataToSave.uid = currentUser.uid;
+        dataToSave.timestamp = firebase.firestore.FieldValue.serverTimestamp();
+        try {
+            const docRef = await db.collection('recipes').add(dataToSave);
+            console.log("✅ New recipe from AI saved to Firestore with ID:", docRef.id);
+            showSuccessMessage(`Recipe "${dataToSave.name}" saved to your account!`);
+            success = true;
+        } catch (error) {
+            console.error("❌ Error saving new recipe to Firestore:", error);
+            alert("Error saving new recipe: " + error.message);
+        }
+    } else {
+        if (!localDB) {
+            alert("Local storage not available. Please sign in to save recipes.");
+            return false;
+        }
+        dataToSave.localId = generateLocalUUID();
+        dataToSave.timestamp = new Date().toISOString();
+        try {
+            await localDB.recipes.add(dataToSave);
+            console.log("✅ New recipe from AI saved to LocalDB with localId:", dataToSave.localId);
+            showSuccessMessage(`Recipe "${dataToSave.name}" saved locally!`);
+            success = true;
+        } catch (error) {
+            console.error("❌ Error saving new recipe to LocalDB:", error.stack || error);
+            alert("Error saving new recipe locally: " + error.message);
+        }
     }
+    if (success) {
+        loadInitialRecipes(); // Refresh the main list
+    }
+    return success;
 }
 
 function displayRecipes(listToDisplay, containerId = 'recipeResults', options = {}) {
