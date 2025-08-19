@@ -304,3 +304,14 @@ mark {
         margin-top: 0.75rem;
     }
 }
+
+/* In style.css */
+.delete-folder-icon-container {
+    display: none; /* Hide delete icons by default */
+    cursor: pointer;
+}
+
+/* When the parent list has the .edit-mode-active class, show the icons */
+.folder-list-container.edit-mode-active .delete-folder-icon-container {
+    display: inline-block;
+}

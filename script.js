@@ -1,4 +1,7 @@
 let recipes = [];
+let folders = [];
+let currentFolderId = null;
+let isFolderEditMode = false;
 let madeModalRecipe = '';
 let currentTags = [];
 let currentUser = null; // Global user tracker
@@ -109,6 +112,22 @@ function openRecipeFormModal(recipeDataToLoad = null, mode = 'new') {
     }
 }
 
+// This function loads all available folders into the global 'folders' array.
+async function loadFolders() {
+    if (!currentUser) {
+        // In the future, you could implement local-only folders here
+        folders = [];
+        return;
+    }
+    try {
+        const snapshot = await db.collection('folders').where('uid', '==', currentUser.uid).orderBy('name').get();
+        folders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        console.log("Folders loaded:", folders);
+    } catch (error) {
+        console.error("Error loading folders:", error);
+        folders = []; // Ensure folders is empty on error
+    }
+}
 
 /**
  * Clears or populates the #recipeFormModal fields.
@@ -408,6 +427,55 @@ function showPasteTextModal() {
         pasteTextModalInstance.show();
     } else {
         console.error("Paste Text Modal not initialized.");
+    }
+}
+
+function toggleFolderEditMode() {
+    isFolderEditMode = !isFolderEditMode; // Flip the state
+    renderFolders(); // Re-render the list to show/hide icons and buttons
+}
+
+async function filterByFolder(event, folderId) {
+    if (event) {
+        event.preventDefault();
+    }
+    
+    // Don't do anything if the same folder is clicked again
+    if (currentFolderId === folderId) return;
+
+    currentFolderId = folderId;
+    console.log("Filtering by folder:", currentFolderId || "All Recipes");
+
+    // --- NEW: Save the preference to Firebase ---
+    if (currentUser) {
+        try {
+            const userRef = db.collection('users').doc(currentUser.uid);
+            // Use dot notation in an .update() call to safely change a nested field
+            await userRef.update({
+                'preferences.lastSelectedFolderId': folderId
+            });
+            console.log(`Saved folder preference '${folderId}' to Firebase.`);
+        } catch (error) {
+            // This might fail if the 'preferences' object doesn't exist yet.
+            // A .set() with merge is a safe fallback.
+            if (error.code === 'not-found' || error.message.includes('No document to update')) {
+                 const userRef = db.collection('users').doc(currentUser.uid);
+                 await userRef.set({ preferences: { lastSelectedFolderId: folderId } }, { merge: true });
+                 console.log(`Saved folder preference (with merge) '${folderId}' to Firebase.`);
+            } else {
+                 console.error("Error saving user folder preference:", error);
+            }
+        }
+    }
+    // --- END NEW ---
+
+    // Re-render the UI
+    renderFolders();
+    applyAllRecipeFilters();
+
+    // On mobile, close the sidebar after selection
+    if (window.innerWidth < 992) {
+        toggleSidebar();
     }
 }
 
@@ -877,6 +945,14 @@ function applyAllRecipeFilters() {
     const searchTermsArray = searchTerm.split(' ').filter(term => term.length > 0);
 
     let filteredList = [...recipes]; 
+
+    if (currentFolderId) {
+        // If a specific folder is selected, start with only recipes from that folder
+        filteredList = recipes.filter(recipe => recipe.folderId === currentFolderId);
+    } else {
+        // Otherwise, start with all recipes
+        filteredList = [...recipes];
+    }
 
     if (searchTermsArray.length > 0) {
         filteredList = filteredList.filter(recipe => {
@@ -1661,32 +1737,43 @@ async function loadRecipesFromLocal() {
     }
 }
 
-// New main function to decide where to load recipes from
-function loadInitialRecipes() {
+// Add the "async" keyword here
+async function loadInitialRecipes() {
     if (currentUser) {
         console.log("User is logged in, loading recipes from Firestore.");
-        loadRecipesFromFirestore(); // Your existing function
+        await loadRecipesFromFirestore(); // Use await here
     } else {
         console.log("User is not logged in, loading recipes from LocalDB.");
-        loadRecipesFromLocal();
+        await loadRecipesFromLocal(); // And here
     }
 }
 
 function showSuccessMessage(message) {
-  const view = document.getElementById('mainView');
-  
-  const successAlert = document.createElement('div');
-  successAlert.className = 'alert alert-success text-center position-fixed top-0 start-50 translate-middle-x mt-3';
-  successAlert.style.zIndex = 1000;
-  successAlert.style.width = '90%';
-  successAlert.style.maxWidth = '400px';
-  successAlert.textContent = message;
+    const topBar = document.getElementById('topBar');
+    // Calculate the height of the top bar and add 16px (1rem) of margin.
+    const topOffset = (topBar ? topBar.offsetHeight : 0) + 16;
 
-  document.body.appendChild(successAlert);
+    const successAlert = document.createElement('div');
+    // We removed the 'top-0' and 'mt-3' classes to set the position with JavaScript.
+    successAlert.className = 'alert alert-success text-center position-fixed start-50 translate-middle-x shadow-sm';
+    
+    // --- MODIFIED STYLES ---
+    successAlert.style.top = `${topOffset}px`;
+    successAlert.style.zIndex = 1060; // Ensures it appears above all other content.
+    // --- END MODIFICATIONS ---
+    
+    successAlert.style.width = '90%';
+    successAlert.style.maxWidth = '400px';
+    successAlert.textContent = message;
 
-  setTimeout(() => {
-    successAlert.remove();
-  }, 3000); // disappear after 3 seconds
+    document.body.appendChild(successAlert);
+
+    setTimeout(() => {
+        // Add a fade-out effect for a smoother exit
+        successAlert.style.transition = 'opacity 0.5s ease';
+        successAlert.style.opacity = '0';
+        setTimeout(() => successAlert.remove(), 500);
+    }, 2500); // Start fading out after 2.5 seconds
 }
 
 function showRandomRecipe() {
@@ -2027,6 +2114,218 @@ function createHighlightRegex(term) {
     return new RegExp(`(${escapedTerm})`, 'gi'); // 'g' for global, 'i' for case-insensitive
 }
 
+// In script.js
+async function renderFolders() {
+    const folderList = document.getElementById('folderList');
+    const folderActions = document.getElementById('folderActionsContainer');
+    const addFolderContainer = document.getElementById('addFolderContainer');
+    
+    if (!folderList || !folderActions || !addFolderContainer) return;
+
+    folderList.innerHTML = ''; 
+    folderList.className = 'nav nav-pills flex-column folder-list-container';
+    
+    // --- Render Edit/Done Button ---
+    if (folders.length > 0) {
+        // ADD the "w-100" class to make the button full-width
+        folderActions.innerHTML = `<button class="btn btn-outline-secondary btn-sm w-100" onclick="toggleFolderEditMode()">${isFolderEditMode ? 'Done' : 'Edit'}</button>`;
+    } else {
+        folderActions.innerHTML = '';
+    }
+    
+    // --- Toggle UI based on Edit Mode ---
+    if (isFolderEditMode) {
+        folderList.classList.add('edit-mode-active');
+        addFolderContainer.style.display = 'none';
+    } else {
+        folderList.classList.remove('edit-mode-active');
+        addFolderContainer.style.display = 'block';
+    }
+
+    // --- The rest of the function remains exactly the same ---
+    // --- Render "All Recipes" Link ---
+    const allRecipesCount = recipes.length;
+    const allRecipesItem = document.createElement('li');
+    allRecipesItem.className = 'nav-item';
+    allRecipesItem.innerHTML = `
+        <a class="nav-link d-flex justify-content-between align-items-center" href="#">
+            <span><i class="bi bi-collection me-2"></i> All Recipes</span>
+            <span class="badge bg-light text-dark rounded-pill">${allRecipesCount}</span>
+        </a>`;
+    const allRecipesLink = allRecipesItem.querySelector('a');
+    if (currentFolderId === null) allRecipesLink.classList.add('active');
+    allRecipesLink.onclick = (e) => filterByFolder(e, null);
+    folderList.appendChild(allRecipesItem);
+
+    // --- Render Individual Folders ---
+    if (currentUser && folders.length > 0) {
+        folders.forEach(folder => {
+            const recipeCount = recipes.filter(r => r.folderId === folder.id).length;
+            const li = document.createElement('li');
+            li.className = 'nav-item';
+            li.innerHTML = `
+                <a class="nav-link d-flex justify-content-between align-items-center" href="#">
+                    <span><i class="bi bi-folder me-2"></i>${escapeHtml(folder.name)}</span>
+                    <div class="d-flex align-items-center">
+                        ${recipeCount > 0 ? `<span class="badge bg-light text-dark rounded-pill">${recipeCount}</span>` : ''}
+                        <span class="delete-folder-icon-container ms-2">
+                            <i class="bi bi-trash-fill text-danger" title="Delete Folder"></i>
+                        </span>
+                    </div>
+                </a>`;
+
+            const folderLink = li.querySelector('a');
+            if (folder.id === currentFolderId) folderLink.classList.add('active');
+            folderLink.onclick = (e) => filterByFolder(e, folder.id);
+
+            const deleteIcon = li.querySelector('.delete-folder-icon-container');
+            deleteIcon.onclick = (e) => {
+                e.stopPropagation(); e.preventDefault();
+                confirmDeleteFolder(folder.id, folder.name);
+            };
+            folderList.appendChild(li);
+        });
+    }
+}
+
+async function confirmDeleteFolder(folderId, folderName) {
+    const title = `Delete Folder?`;
+    const bodyContent = `
+        <p>Are you sure you want to permanently delete the folder <strong>"${escapeHtml(folderName)}"</strong>?</p>
+        <p class="text-muted small mt-3">This action will not delete the recipes inside the folder. They will be moved to "Uncategorized".</p>
+    `;
+
+    const buttons = [
+        {
+            text: 'Cancel',
+            class: 'btn-secondary',
+            dismiss: true // This property tells the modal to just close
+        },
+        {
+            text: 'Yes, Delete Folder',
+            class: 'btn-danger', // A red button for a destructive action
+            onClick: async () => {
+                // This is the deletion logic that now runs when the user clicks the red button
+                try {
+                    // Hide the modal before starting the async operations
+                    if (infoConfirmModalInstance) infoConfirmModalInstance.hide();
+
+                    // 1. Delete the folder document itself
+                    await db.collection('folders').doc(folderId).delete();
+
+                    // 2. Find all recipes in that folder and set their folderId to null
+                    const recipesInFolderSnapshot = await db.collection('recipes')
+                        .where('uid', '==', currentUser.uid)
+                        .where('folderId', '==', folderId)
+                        .get();
+
+                    const batch = db.batch();
+                    recipesInFolderSnapshot.forEach(doc => {
+                        batch.update(doc.ref, { folderId: null });
+                    });
+                    await batch.commit();
+
+                    showSuccessMessage(`Folder "${escapeHtml(folderName)}" deleted.`);
+
+                    // Refresh the entire UI state
+                    await loadFolders();
+                    renderFolders();
+                    await loadInitialRecipes(); // Reload recipes to update their folder status on the cards
+
+                } catch (error) {
+                    console.error("Error deleting folder:", error);
+                    // Show a follow-up error modal if something goes wrong
+                    showInfoConfirmModal("Error", "Failed to delete the folder. Please try again.");
+                }
+            }
+        }
+    ];
+
+    // Call your generic modal function with the configuration above
+    showInfoConfirmModal(title, bodyContent, buttons);
+}
+
+// This function resets the container back to its original "Add Folder" button
+function restoreAddFolderButton() {
+    const container = document.getElementById('addFolderContainer');
+    if (container) {
+        container.innerHTML = `
+            <button class="btn btn-outline-secondary btn-sm w-100" onclick="createNewFolder()">
+                <i class="bi bi-plus-circle"></i> Add Folder
+            </button>
+        `;
+    }
+}
+
+async function saveNewFolder(folderName) {
+    if (!currentUser) {
+        alert("You must be logged in to create folders.");
+        return;
+    }
+    
+    try {
+        await db.collection('folders').add({
+            name: folderName,
+            uid: currentUser.uid,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        // Refresh all UI elements that depend on the folder list
+        await loadFolders();
+        renderFolders();
+        applyAllRecipeFilters(); // <-- ADD THIS LINE to refresh the recipe cards
+        restoreAddFolderButton();
+
+    } catch (error) {
+        console.error("Error creating new folder:", error);
+        alert("Could not create the folder. Please try again.");
+    }
+}
+
+// This is the new function that builds the inline form, replacing the old prompt()
+function createNewFolder() {
+    const container = document.getElementById('addFolderContainer');
+    if (!container || container.querySelector('.inline-folder-form')) return;
+
+    container.innerHTML = `
+        <div class="input-group input-group-sm inline-folder-form">
+            <input type="text" class="form-control" placeholder="New folder name...">
+            <button class="btn btn-success" type="button" title="Save Folder">
+                <i class="bi bi-check-lg"></i>
+            </button>
+            <button class="btn btn-secondary" type="button" title="Cancel">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+    `;
+
+    const input = container.querySelector('input');
+    const saveBtn = container.querySelector('.btn-success');
+    const cancelBtn = container.querySelector('.btn-secondary');
+
+    input.focus();
+
+    saveBtn.onclick = () => {
+        const folderName = input.value.trim();
+        if (folderName) {
+            saveNewFolder(folderName);
+        } else {
+            input.classList.add('is-invalid'); // Show error if empty
+        }
+    };
+    
+    cancelBtn.onclick = restoreAddFolderButton;
+
+    input.onkeydown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            saveBtn.click();
+        } else if (e.key === 'Escape') {
+            cancelBtn.click();
+        }
+    };
+}
+
 function renderSortOptions() {
     const listContainer = document.getElementById('sortOptionsList');
     if (!listContainer) {
@@ -2100,51 +2399,81 @@ function toggleSidebar() {
     }
 }
 
-async function renderFoldersInSidebar() {
-    const listContainer = document.getElementById('folderList');
-    if (!listContainer) {
-        console.error("Sidebar folder list container (#folderList) not found in HTML.");
-        return; // This is likely where the function is stopping
+async function renderFolders() {
+    const folderList = document.getElementById('folderList');
+    const folderActions = document.getElementById('folderActionsContainer');
+    const addFolderContainer = document.getElementById('addFolderContainer');
+    
+    if (!folderList || !folderActions || !addFolderContainer) return;
+
+    folderList.innerHTML = ''; 
+    folderList.className = 'nav nav-pills flex-column folder-list-container';
+    
+    // --- Render Edit/Done Button ---
+    if (folders.length > 0) {
+        folderActions.innerHTML = `<button class="btn btn-outline-secondary btn-sm w-100" onclick="toggleFolderEditMode()">${isFolderEditMode ? 'Done' : 'Edit'}</button>`;
+    } else {
+        folderActions.innerHTML = '';
     }
 
-    const allCount = recipes.length;
-
-    // Build the HTML for just the "All Recipes" link
-    const folderListHTML = `
-        <li class="nav-item">
-            <a class="nav-link d-flex justify-content-between align-items-center" href="#" data-folder-id="all">
-                All Recipes
-                <span class="badge bg-primary rounded-pill">${allCount}</span>
-            </a>
-        </li>
-    `;
-    listContainer.innerHTML = folderListHTML;
-
-    // Add click listener and set the active class
-    const allRecipesLink = listContainer.querySelector('.nav-link[data-folder-id="all"]');
-    if (allRecipesLink) {
-        currentFolderId = 'all';
-        allRecipesLink.classList.add('active');
-        
-        allRecipesLink.onclick = (e) => {
-            e.preventDefault();
-            if (currentFolderId !== 'all') {
-                currentFolderId = 'all';
-                renderFoldersInSidebar();
-            } else {
-                // If already on 'all', just close sidebar on mobile
-                if (window.innerWidth < 992) {
-                    toggleSidebar();
-                }
-            }
-        };
+    // --- NEW FIX: Automatically exit edit mode if no folders are left ---
+    if (folders.length === 0 && isFolderEditMode) {
+        isFolderEditMode = false; 
+    }
+    
+    // --- Toggle UI based on Edit Mode ---
+    if (isFolderEditMode) {
+        folderList.classList.add('edit-mode-active');
+        addFolderContainer.style.display = 'none';
+    } else {
+        folderList.classList.remove('edit-mode-active');
+        addFolderContainer.style.display = 'block';
     }
 
-    // This call filters the recipe list based on the search bar,
-    // starting with all recipes since currentFolderId is now 'all'.
-    applyAllRecipeFilters();
+    // --- Render "All Recipes" Link ---
+    const allRecipesCount = recipes.length;
+    const allRecipesItem = document.createElement('li');
+    allRecipesItem.className = 'nav-item';
+    allRecipesItem.innerHTML = `
+        <a class="nav-link d-flex justify-content-between align-items-center" href="#">
+            <span><i class="bi bi-collection me-2"></i> All Recipes</span>
+            <span class="badge bg-light text-dark rounded-pill">${allRecipesCount}</span>
+        </a>`;
+    const allRecipesLink = allRecipesItem.querySelector('a');
+    if (currentFolderId === null) allRecipesLink.classList.add('active');
+    allRecipesLink.onclick = (e) => filterByFolder(e, null);
+    folderList.appendChild(allRecipesItem);
+
+    // --- Render Individual Folders ---
+    if (currentUser && folders.length > 0) {
+        folders.forEach(folder => {
+            const recipeCount = recipes.filter(r => r.folderId === folder.id).length;
+            const li = document.createElement('li');
+            li.className = 'nav-item';
+            li.innerHTML = `
+                <a class="nav-link d-flex justify-content-between align-items-center" href="#">
+                    <span><i class="bi bi-folder me-2"></i>${escapeHtml(folder.name)}</span>
+                    <div class="d-flex align-items-center">
+                        ${recipeCount > 0 ? `<span class="badge bg-light text-dark rounded-pill">${recipeCount}</span>` : ''}
+                        <span class="delete-folder-icon-container ms-2">
+                            <i class="bi bi-trash-fill text-danger" title="Delete Folder"></i>
+                        </span>
+                    </div>
+                </a>`;
+
+            const folderLink = li.querySelector('a');
+            if (folder.id === currentFolderId) folderLink.classList.add('active');
+            folderLink.onclick = (e) => filterByFolder(e, folder.id);
+
+            const deleteIcon = li.querySelector('.delete-folder-icon-container');
+            deleteIcon.onclick = (e) => {
+                e.stopPropagation(); e.preventDefault();
+                confirmDeleteFolder(folder.id, folder.name);
+            };
+            folderList.appendChild(li);
+        });
+    }
 }
-
 // script.js
 
 function openRecipeSpecificChatModal(recipe) {
@@ -2619,6 +2948,53 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
         deleteBtn.onclick = () => confirmDeleteRecipe(recipe.id, deleteArea);
         deleteArea.appendChild(deleteBtn);
         buttonGroup.appendChild(deleteArea);
+        const folderGroup = document.createElement('div');
+        folderGroup.className = 'btn-group'; // Use a btn-group for the dropdown
+
+        // Find the current folder's name using the global 'folders' array
+        const currentFolder = recipe.folderId ? folders.find(f => f.id === recipe.folderId) : null;
+        const currentFolderName = currentFolder ? currentFolder.name : 'Uncategorized';
+        
+        folderGroup.innerHTML = `
+            <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="Folder: ${escapeHtml(currentFolderName)}">
+                <i class="bi bi-folder me-1"></i>
+                <span class="folder-name-display">${escapeHtml(currentFolderName)}</span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                </ul>
+        `;
+
+        const dropdownMenu = folderGroup.querySelector('.dropdown-menu');
+
+        // Add the "Uncategorized" option
+        const uncategorizedItem = document.createElement('li');
+        uncategorizedItem.innerHTML = `<a class="dropdown-item" href="#">Uncategorized</a>`;
+        uncategorizedItem.onclick = (e) => {
+            e.preventDefault();
+            assignRecipeToFolder(recipe.id, null); // Pass null to uncategorize
+        };
+        dropdownMenu.appendChild(uncategorizedItem);
+
+        // Add a divider if there are folders
+        if (folders.length > 0) {
+            const divider = document.createElement('li');
+            divider.innerHTML = '<hr class="dropdown-divider">';
+            dropdownMenu.appendChild(divider);
+        }
+
+        // Add an item for each available folder
+        folders.forEach(folder => {
+            const folderItem = document.createElement('li');
+            folderItem.innerHTML = `<a class="dropdown-item" href="#">${escapeHtml(folder.name)}</a>`;
+            folderItem.onclick = (e) => {
+                e.preventDefault();
+                assignRecipeToFolder(recipe.id, folder.id);
+            };
+            dropdownMenu.appendChild(folderItem);
+        });
+
+        // Add the new folder dropdown to the right of the other buttons
+        buttonGroup.appendChild(folderGroup);
         titleRow.appendChild(buttonGroup);
         body.appendChild(titleRow);
 
@@ -2780,6 +3156,42 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
         card.appendChild(body);
         container.appendChild(card);
     });
+}
+
+async function assignRecipeToFolder(recipeId, folderId) {
+    console.log(`Assigning recipe ${recipeId} to folder ${folderId}`);
+
+    try {
+        if (currentUser) {
+            await db.collection('recipes').doc(recipeId).update({ folderId: folderId || null });
+        } else {
+            await localDB.recipes.update(recipeId, { folderId: folderId || null });
+        }
+
+        // --- Instant UI Update ---
+        const recipeInMemory = recipes.find(r => r.id === recipeId);
+        if (recipeInMemory) {
+            recipeInMemory.folderId = folderId;
+        }
+
+        const cardElement = document.querySelector(`.recipe-card[data-recipe-id="${recipeId}"]`);
+        if (cardElement) {
+            const folderNameDisplay = cardElement.querySelector('.folder-name-display');
+            const newFolder = folderId ? folders.find(f => f.id === folderId) : null;
+            const newFolderName = newFolder ? newFolder.name : 'Uncategorized';
+            if (folderNameDisplay) {
+                folderNameDisplay.textContent = newFolderName;
+                folderNameDisplay.parentElement.title = `Folder: ${newFolderName}`;
+            }
+        }
+        
+        renderFolders(); // <-- ADD THIS LINE to refresh the sidebar counts
+        showSuccessMessage("Recipe folder updated!");
+
+    } catch (error) {
+        console.error("Error assigning recipe to folder:", error);
+        alert("Could not update the recipe's folder. Please try again.");
+    }
 }
 
 async function saveNewRecipeToStorage(recipeDataObject) {
@@ -5283,29 +5695,32 @@ auth.onAuthStateChanged(async (user) => {
     if (user) {
         console.log("User authenticated:", user.uid);
         
-        // --- Fetch user preference from Firestore ---
         try {
             const userRef = db.collection('users').doc(user.uid);
             const userDoc = await userRef.get();
+            // Get preferences object, or an empty object if it doesn't exist
+            const preferences = userDoc.exists ? userDoc.data().preferences : {};
 
-            if (userDoc.exists && userDoc.data().preferences?.recipeSortOrder) {
-                // If a preference is found in Firestore, use it
-                currentSortOrder = userDoc.data().preferences.recipeSortOrder;
-                console.log(`Loaded sort preference '${currentSortOrder}' from Firebase.`);
-            } else {
-                // Otherwise, default to 'all' (A-Z)
-                console.log("No sort preference found in Firebase, defaulting to 'all'.");
-                currentSortOrder = 'all'; 
-            }
+            // Load Sort Order preference
+            currentSortOrder = preferences.recipeSortOrder || 'all';
+            console.log(`Loaded sort preference '${currentSortOrder}'.`);
+
+            // Load Folder preference
+            // We check for undefined so that 'null' (for All Recipes) is a valid saved preference
+            currentFolderId = preferences.lastSelectedFolderId !== undefined ? preferences.lastSelectedFolderId : null;
+            console.log(`Loaded folder preference '${currentFolderId}'.`);
+
         } catch (error) {
-            console.error("Error fetching user preferences, defaulting to 'all':", error);
-            currentSortOrder = 'all'; // Default on error
+            console.error("Error fetching user preferences, using defaults:", error);
+            currentSortOrder = 'all';
+            currentFolderId = null; 
         }
-        // --- End of new block ---
-
-        // Now, with the correct sort order set, load the recipes
+        
+        // Load data first, then render the UI in the correct order
+        await loadFolders();
         await loadInitialRecipes();
-
+        renderFolders(); 
+        
         // Check for local data to migrate after everything else is loaded
         if (!previousUser) {
             checkAndPromptForLocalDataMigration(user);
@@ -5313,9 +5728,14 @@ auth.onAuthStateChanged(async (user) => {
 
     } else { // User is not logged in
         console.log("User is not authenticated. Operating in 'Local Mode'.");
-        // For logged-out users, always default to 'all' (A-Z) sort
+        
+        // Reset state to defaults on logout
         currentSortOrder = 'all';
+        currentFolderId = null; 
+        folders = [];
+
         await loadInitialRecipes();
+        renderFolders(); // Render the empty/default folder list
     }
 });
 
