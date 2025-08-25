@@ -879,6 +879,8 @@ function showRecipeFilter() {
     } else {
         console.error("renderSortOptions function is not defined!");
     }
+
+    applyAllRecipeFilters();
 }
 
 /**
