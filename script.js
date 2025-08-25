@@ -422,7 +422,7 @@ function showPasteTextModal() {
     if (pasteTextModalInstance) {
         const textarea = document.getElementById('ocrTextPasteInputModal');
         const statusDiv = document.getElementById('pasteParseStatus');
-        if (textarea) textarea.value = '📛 RECIPE NAME\n====================\n\n🧂 INGREDIENTS\n====================\n\n📝 INSTRUCTIONS\n===================='; // Reset template
+        if (textarea) textarea.value = '';
         if (statusDiv) statusDiv.innerHTML = '';
         pasteTextModalInstance.show();
     } else {
