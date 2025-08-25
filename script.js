@@ -1072,86 +1072,57 @@ function createHighlightRegex(term) {
 }
 
 async function handlePastedRecipeTextFromModal() {
-    console.log("--- handlePastedRecipeTextFromModal called ---");
     const textarea = document.getElementById('ocrTextPasteInputModal');
     const statusDiv = document.getElementById('pasteParseStatus');
+    const parseButton = document.querySelector('#pasteTextModal .btn-primary'); // Find the button to disable it
 
-    if (!textarea) {
-        console.error("Paste textarea (#ocrTextPasteInputModal) not found!");
-        if(statusDiv) statusDiv.textContent = "Error: Text area element missing.";
+    if (!textarea || !statusDiv || !parseButton) {
+        console.error("Required modal elements for pasting text not found!");
         return;
-    }
-    if (!statusDiv) {
-        console.warn("Paste status div (#pasteParseStatus) not found.");
     }
 
     const text = textarea.value.trim();
     if (!text) {
-        if(statusDiv) {
-            statusDiv.textContent = "Please paste recipe text first.";
-            statusDiv.className = "form-text small mt-2 text-danger";
-        } else {
-            alert("Please paste recipe text first.");
-        }
-        textarea.focus();
+        statusDiv.textContent = "Please paste recipe text first.";
+        statusDiv.className = "form-text small mt-2 text-danger";
         return;
     }
 
-    if (statusDiv) {
-        statusDiv.className = "form-text small mt-2 text-info"; // Reset class
-        statusDiv.innerHTML = '🤖 Parsing text with AI... <span class="spinner-border spinner-border-sm"></span>';
-    }
+    // --- Update UI to show loading state ---
+    statusDiv.className = "form-text small mt-2 text-info";
+    statusDiv.innerHTML = '🤖 Asking Chef Bot to parse the recipe... <span class="spinner-border spinner-border-sm"></span>';
+    parseButton.disabled = true;
 
-    // Here, you would ideally send the 'text' to a Netlify function that uses Gemini
-    // to parse it into a structured recipe, similar to how process-recipe-image works.
-    // For now, I'll assume your client-side parseOcrToRecipeFields is used or you adapt it.
-    // Let's simulate an async operation as if calling an AI.
     try {
-        // const response = await fetch("/.netlify/functions/parse-pasted-text", {
-        //     method: "POST",
-        //     headers: { "Content-Type": "application/json" },
-        //     body: JSON.stringify({ recipeText: text })
-        // });
-        // const parsedRecipeData = await response.json();
-        // if (!response.ok || parsedRecipeData.error) {
-        //     throw new Error(parsedRecipeData.error || `Failed to parse text (status ${response.status})`);
-        // }
+        // --- Call the new Netlify function ---
+        const response = await fetch("/.netlify/functions/parse-recipe-text", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ recipeText: text })
+        });
 
-        // Using your existing client-side parser for now:
-        console.log("Parsing pasted text using client-side parseOcrToRecipeFields.");
-        const parsedRecipeData = parseOcrToRecipeFields(text); // Your existing parser
+        const parsedRecipeData = await response.json();
 
-        if (!parsedRecipeData || !parsedRecipeData.name) { // Changed from .title to .name
-            throw new Error("Could not extract a recipe name from the pasted text.");
+        if (!response.ok || parsedRecipeData.error) {
+            throw new Error(parsedRecipeData.error || `Failed to parse text (status ${response.status})`);
         }
-        // Ensure standard recipe object structure
-        parsedRecipeData.tags = parsedRecipeData.tags || [];
-        parsedRecipeData.ingredients = parsedRecipeData.ingredients || [];
-        parsedRecipeData.instructions = parsedRecipeData.instructions || "";
 
-
-        console.log("Pasted text parsed successfully into recipeData:", parsedRecipeData);
-
-        if (pasteTextModalInstance && typeof pasteTextModalInstance.hide === 'function') {
-            pasteTextModalInstance.hide(); // Hide the paste modal
+        console.log("AI parsed recipe data:", parsedRecipeData);
+        
+        if (pasteTextModalInstance) {
+            pasteTextModalInstance.hide();
         }
         
-        // Open the main recipe form modal with the parsed data for review
-        if (typeof openRecipeFormModal === "function") {
-            openRecipeFormModal(parsedRecipeData, 'review-ai');
-        } else {
-            console.error("openRecipeFormModal function not defined! Cannot display parsed recipe.");
-            alert("Recipe text parsed, but cannot display it for review.");
-        }
+        // Open the review modal with the AI-parsed data
+        openRecipeFormModal(parsedRecipeData, 'review-ai');
 
     } catch (error) {
-        console.error("Error parsing pasted recipe text:", error);
-        if(statusDiv) {
-            statusDiv.textContent = `Error: ${error.message}`;
-            statusDiv.className = "form-text small mt-2 text-danger";
-        } else {
-            alert(`Error parsing text: ${error.message}`);
-        }
+        console.error("Error parsing pasted recipe text with AI:", error);
+        statusDiv.textContent = `Error: ${error.message}`;
+        statusDiv.className = "form-text small mt-2 text-danger";
+    } finally {
+        // --- Restore UI after completion or error ---
+        parseButton.disabled = false;
     }
 }
 
