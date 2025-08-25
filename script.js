@@ -908,18 +908,59 @@ function clearAllRecipeFilters() {
     applyAllRecipeFilters(); // Re-apply with empty filters to show all recipes
 }
 
-function handlePastedRecipeText() {
-  const textarea = document.getElementById('ocrTextPaste');
-  if (!textarea) return;
+async function handlePastedRecipeTextFromModal() {
+    const textarea = document.getElementById('ocrTextPasteInputModal');
+    const statusDiv = document.getElementById('pasteParseStatus');
+    const parseButton = document.querySelector('#pasteTextModal .btn-primary'); // Find the button to disable it
 
-  const text = textarea.value.trim();
-  if (!text) {
-    alert("Please paste a recipe first.");
-    return;
-  }
+    if (!textarea || !statusDiv || !parseButton) {
+        console.error("Required modal elements for pasting text not found!");
+        return;
+    }
 
-  const parsed = parseOcrToRecipeFields(text);
-  fillRecipeForm(parsed);
+    const text = textarea.value.trim();
+    if (!text) {
+        statusDiv.textContent = "Please paste recipe text first.";
+        statusDiv.className = "form-text small mt-2 text-danger";
+        return;
+    }
+
+    // --- Update UI to show loading state ---
+    statusDiv.className = "form-text small mt-2 text-info";
+    statusDiv.innerHTML = '🤖 Asking Chef Bot to parse the recipe... <span class="spinner-border spinner-border-sm"></span>';
+    parseButton.disabled = true;
+
+    try {
+        // --- Call the new Netlify function ---
+        const response = await fetch("/.netlify/functions/parse-recipe-text", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ recipeText: text })
+        });
+
+        const parsedRecipeData = await response.json();
+
+        if (!response.ok || parsedRecipeData.error) {
+            throw new Error(parsedRecipeData.error || `Failed to parse text (status ${response.status})`);
+        }
+
+        console.log("AI parsed recipe data:", parsedRecipeData);
+        
+        if (pasteTextModalInstance) {
+            pasteTextModalInstance.hide();
+        }
+        
+        // Open the review modal with the AI-parsed data
+        openRecipeFormModal(parsedRecipeData, 'review-ai');
+
+    } catch (error) {
+        console.error("Error parsing pasted recipe text with AI:", error);
+        statusDiv.textContent = `Error: ${error.message}`;
+        statusDiv.className = "form-text small mt-2 text-danger";
+    } finally {
+        // --- Restore UI after completion or error ---
+        parseButton.disabled = false;
+    }
 }
 
 function normalizeFractions(text) {
