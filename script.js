@@ -4285,6 +4285,9 @@ function showPlanning() {
                         <button id="clearShoppingListBtn" class="btn btn-outline-danger" style="flex-basis: 30%;" onclick="confirmClearShoppingList()" disabled title="Clear entire shopping list">
                             <i class="bi bi-trash2"></i> Clear All
                         </button>
+                        <button class="btn btn-outline-secondary" style="flex-basis: 30%;" onclick="exportShoppingList()" title="Export or Share List">
+                            <i class="bi bi-send"></i> Export
+                        </button>
                     </div>
                 </div>
             </div>
@@ -4337,6 +4340,70 @@ function clearPlanningFilters() {
         applyPlanningFilters();
     } else {
         console.error("applyPlanningFilters is not defined. Cannot clear and refresh planning view.");
+    }
+}
+
+async function exportShoppingList() {
+    let currentShoppingList = [];
+    
+    // 1. Get the current shopping list items from Firebase or LocalDB
+    try {
+        if (currentUser) {
+            const doc = await db.collection("shoppingLists").doc(currentUser.uid).get();
+            if (doc.exists && doc.data().ingredients) {
+                currentShoppingList = doc.data().ingredients;
+            }
+        } else if (localDB) {
+            const localList = await localDB.shoppingList.get("localUserShoppingList");
+            if (localList && localList.ingredients) {
+                currentShoppingList = localList.ingredients;
+            }
+        }
+    } catch (error) {
+        console.error("Error fetching shopping list for export:", error);
+        alert("Could not load shopping list to export.");
+        return;
+    }
+
+    if (currentShoppingList.length === 0) {
+        alert("Your shopping list is empty. Add some items to export.");
+        return;
+    }
+
+    // 2. Format the list into a clean text string with checkboxes
+    const listTitle = "My Recipe Shopping List";
+    const listItemsText = currentShoppingList.map(item => {
+        const quantity = item.quantity || "";
+        const unit = item.unit || "";
+        const name = item.name || "Unknown Item";
+        // Google Keep uses "[ ]" and "[x]" for checklists
+        const checkbox = item.checked ? "[x]" : "[ ]"; 
+        return `${checkbox} ${quantity} ${unit} ${name}`.trim();
+    }).join('\n');
+
+    const fullTextToShare = `${listTitle}\n--------------------\n${listItemsText}`;
+
+    // 3. Use the Web Share API
+    if (navigator.share) {
+        try {
+            await navigator.share({
+                title: 'My Recipe Shopping List',
+                text: fullTextToShare,
+            });
+            console.log('Shopping list shared successfully.');
+        } catch (error) {
+            console.error('Error sharing shopping list:', error);
+        }
+    } else {
+        // Fallback for desktop or browsers that don't support the Share API
+        // We can copy the text to the clipboard and inform the user.
+        try {
+            await navigator.clipboard.writeText(fullTextToShare);
+            showSuccessMessage("Shopping list copied to clipboard!");
+        } catch (error) {
+            console.error('Error copying text to clipboard:', error);
+            alert("Could not copy list to clipboard. This feature may not be supported on your browser.");
+        }
     }
 }
 
