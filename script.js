@@ -4349,7 +4349,7 @@ async function exportShoppingList() {
     // 1. Get the current shopping list items from Firebase or LocalDB
     try {
         if (currentUser) {
-            const doc = await db.collection("shoppingLists").doc(currentUser.uid).get();
+            const doc = await db.collection("shopping").doc(currentUser.uid).get();
             if (doc.exists && doc.data().ingredients) {
                 currentShoppingList = doc.data().ingredients;
             }
