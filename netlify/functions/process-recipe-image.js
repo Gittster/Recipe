@@ -3,7 +3,7 @@ const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require("@googl
 
 const ALLOWED_ORIGIN = process.env.DEPLOY_PRIME_URL || process.env.URL || "*"; // More flexible for local dev
 const API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
-const MODEL_NAME = "gemini-1.5-flash-latest"; // Multimodal model
+const MODEL_NAME = "gemini-2.0-flash"; // Multimodal model
 
 exports.handler = async (event) => {
     console.log("--- process-recipe-image FUNCTION INVOCATION START ---");
