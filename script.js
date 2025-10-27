@@ -7160,7 +7160,6 @@ function showAIWeeklyPlanner() {
 
         <div id="aiPlanSuggestions" class="mt-4" style="display: none;">
              <h5 class="mb-3"><i class="bi bi-lightbulb-fill text-warning"></i> Chef Bot's Suggestions:</h5>
-             {/* ... rest of suggestions area ... */}
          </div>
     </div>`;
 
@@ -7168,16 +7167,25 @@ function showAIWeeklyPlanner() {
 }
 
 /**
- * Renders the individual day cards, including recipe selector and per-day suggestion mode choice.
+ * Renders the individual day cards, including recipe selector, per-day suggestion mode, and per-day preferences.
  */
 function renderDayCards() {
     const container = document.getElementById('weeklyPlannerDays');
     if (!container) return;
-    container.innerHTML = ''; 
+    container.innerHTML = '';
+
+    // Define styles here or globally
+    const recipeStyles = ["Any", "Soup", "Grill", "Instant Pot", "Baked", "Pasta", "Stir-fry", "Salad", "Slow Cooker", "Mexican", "Italian", "Asian"];
 
     daysOfWeek.forEach(day => {
-        // ** Default suggestionMode to 'existing' **
-        const dayPlan = currentWeeklyPlan[day] || { type: null, recipeId: null, suggestionMode: 'existing' }; 
+        // ** Default suggestionMode and preferences **
+        const dayPlan = currentWeeklyPlan[day] || { 
+            type: null, 
+            recipeId: null, 
+            suggestionMode: 'existing', 
+            maxCookTime: null, 
+            style: null 
+        };
 
         const col = document.createElement('div');
         col.className = 'col';
@@ -7197,8 +7205,7 @@ function renderDayCards() {
                         data-day="${day}" 
                         data-type="${type.id}"
                         onclick="toggleMealTypeSelection(this)"> 
-                    {/* ... icon and label ... */}
-                    <div class="d-flex w-100 justify-content-start align-items-center">
+                     <div class="d-flex w-100 justify-content-start align-items-center">
                          <i class="${type.icon} me-3 fs-5 text-primary" style="width: 20px; text-align: center;"></i> 
                          <div>
                               <h6 class="mb-0 fw-semibold">${type.label}</h6>
@@ -7206,11 +7213,11 @@ function renderDayCards() {
                          </div>
                     </div>
                 </button>`;
-            
+
             // Recipe selector area (only for 'cook-' types)
             if (type.id !== 'leftovers') {
-                const showSelector = isSelected; 
-                // **UPDATED Recipe Selector Area with Suggestion Mode Radios**
+                const showSelector = isSelected;
+                // **UPDATED Recipe Selector Area with Per-Day Preferences**
                 cardHTML += `
                     <div class="recipe-selector-container list-group-item ${showSelector ? '' : 'd-none'}" id="selector-${day}-${type.id}">
                         
@@ -7221,25 +7228,43 @@ function renderDayCards() {
                                 data-type="${type.id}" 
                                 onchange="selectRecipeForDay(this)">
                             <option value="">-- Let Chef Bot Suggest --</option> 
-                            {/* Options populated by populateRecipeSelector */}
                         </select>
 
-                        <div class="suggestion-mode-options mt-2 ${dayPlan.recipeId ? 'd-none' : ''}" id="suggestion-mode-${day}-${type.id}">
-                             <label class="form-label small fw-semibold mb-1">Suggestion Type:</label>
-                             <div class="form-check form-check-inline">
-                                 <input class="form-check-input" type="radio" name="suggestionMode-${day}-${type.id}" id="mode-existing-${day}-${type.id}" 
-                                        value="existing" ${dayPlan.suggestionMode === 'existing' ? 'checked' : ''} 
-                                        data-day="${day}" onclick="setSuggestionMode(this)">
-                                 <label class="form-check-label small" for="mode-existing-${day}-${type.id}">From My Recipes</label>
-                             </div>
-                             <div class="form-check form-check-inline">
-                                 <input class="form-check-input" type="radio" name="suggestionMode-${day}-${type.id}" id="mode-new-${day}-${type.id}" 
-                                        value="new" ${dayPlan.suggestionMode === 'new' ? 'checked' : ''} 
-                                        data-day="${day}" onclick="setSuggestionMode(this)">
-                                 <label class="form-check-label small" for="mode-new-${day}-${type.id}">New Idea</label>
-                             </div>
-                        </div>
-                        </div>`;
+                        <div class="suggestion-options-container mt-2 ${dayPlan.recipeId ? 'd-none' : ''}" id="suggestion-options-${day}-${type.id}">
+                            <div class="mb-2">
+                                <label class="form-label small fw-semibold mb-1 d-block">Suggestion Type:</label> 
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="suggestionMode-${day}-${type.id}" id="mode-existing-${day}-${type.id}" 
+                                           value="existing" ${dayPlan.suggestionMode === 'existing' ? 'checked' : ''} 
+                                           data-day="${day}" onclick="setSuggestionMode(this)">
+                                    <label class="form-check-label small" for="mode-existing-${day}-${type.id}">My Recipes</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="suggestionMode-${day}-${type.id}" id="mode-new-${day}-${type.id}" 
+                                           value="new" ${dayPlan.suggestionMode === 'new' ? 'checked' : ''} 
+                                           data-day="${day}" onclick="setSuggestionMode(this)">
+                                    <label class="form-check-label small" for="mode-new-${day}-${type.id}">New Idea</label>
+                                </div>
+                            </div>
+
+                            <div class="row gx-2 gy-1">
+                                <div class="col-6">
+                                    <label for="maxTime-${day}-${type.id}" class="form-label small fw-semibold mb-0">Max Time (min):</label>
+                                    <input type="number" class="form-control form-control-sm" id="maxTime-${day}-${type.id}" 
+                                           placeholder="Any" min="0" value="${dayPlan.maxCookTime || ''}" 
+                                           data-day="${day}" oninput="setDayPreference(this, 'maxCookTime')">
+                                </div>
+                                <div class="col-6">
+                                    <label for="style-${day}-${type.id}" class="form-label small fw-semibold mb-0">Style:</label>
+                                    <select class="form-select form-select-sm" id="style-${day}-${type.id}" 
+                                            data-day="${day}" onchange="setDayPreference(this, 'style')">
+                                        ${recipeStyles.map(style => `<option value="${style.toLowerCase() === 'any' ? '' : style}" ${dayPlan.style === style ? 'selected' : ''}>${style}</option>`).join('')}
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-text small mt-1">Chef Bot will use these if suggesting.</div>
+                        </div> 
+                    </div>`; // End Recipe Selector Container
             }
         });
 
@@ -7255,64 +7280,95 @@ function renderDayCards() {
     });
 }
 
-/**
- * Handles clicking a meal type button. Updates state, toggles UI elements.
- * @param {HTMLElement} buttonElement The meal type button clicked.
- */
 function toggleMealTypeSelection(buttonElement) {
     const day = buttonElement.dataset.day;
     const typeId = buttonElement.dataset.type;
-    // **Ensure we target the card correctly**
-    const dayCard = buttonElement.closest('.planner-day-card'); // Use closest to be safer
+    const dayCard = buttonElement.closest('.planner-day-card'); 
+    if (!dayCard) return;
 
-    if (!dayCard) {
-        console.error("Could not find parent card for day:", day);
-        return;
-    }
-    console.log("Toggling selection for Day:", day, "Type:", typeId, "Card:", dayCard); // Debug Log 1
-
-    const currentDayPlan = currentWeeklyPlan[day] || { type: null, recipeId: null };
+    const currentDayPlan = currentWeeklyPlan[day] || { type: null, recipeId: null, suggestionMode: 'existing', maxCookTime: null, style: null };
     const isCurrentlySelected = buttonElement.classList.contains('active');
     const isLeftovers = typeId === 'leftovers';
 
-    // If clicking the currently active button, do nothing (or optionally, deselect)
-    if (isCurrentlySelected) {
-         console.log("Button already active, doing nothing."); // Debug Log 2
-         return; 
-    }
+    if (isCurrentlySelected) return; 
 
-    // Update state - Reset recipeId when changing type
-    currentWeeklyPlan[day] = { type: typeId, recipeId: isLeftovers ? undefined : null }; 
-    console.log("Updated currentWeeklyPlan:", currentWeeklyPlan); // Debug Log 3
-
+    // Update state - Reset recipeId, keep suggestionMode & preferences or defaults
+    currentWeeklyPlan[day] = { 
+        type: typeId, 
+        recipeId: isLeftovers ? undefined : null, 
+        suggestionMode: currentDayPlan.suggestionMode || 'existing',
+        maxCookTime: currentDayPlan.maxCookTime || null, // Keep existing preferences
+        style: currentDayPlan.style || null 
+    }; 
+    
     // --- Update UI ---
-    // 1. Update 'active' state for all type buttons in this card
     dayCard.querySelectorAll('.planner-option').forEach(btn => {
-        const isActive = btn.dataset.type === typeId;
-        btn.classList.toggle('active', isActive);
-        // console.log("Button:", btn.dataset.type, "Set active:", isActive); // Verbose Debug Log
+        btn.classList.toggle('active', btn.dataset.type === typeId);
     });
 
-    // 2. Show/Hide Recipe Selectors within this specific card
     dayCard.querySelectorAll('.recipe-selector-container').forEach(container => {
-        // **Extract typeId more robustly from container's ID** // Example ID: "selector-Monday-cook-quick"
         const parts = container.id.split('-');
-        const containerTypeId = parts.length > 2 ? parts.slice(2).join('-') : null; // Handles types like 'cook-leftovers'
-
+        const containerTypeId = parts.length > 2 ? parts.slice(2).join('-') : null; 
         const shouldShow = containerTypeId === typeId && typeId !== 'leftovers';
-        
-        console.log("Checking Container:", container.id, "Container Type:", containerTypeId, "Target Type:", typeId, "Should Show:", shouldShow); // Debug Log 4
+        container.classList.toggle('d-none', !shouldShow);
 
-        container.classList.toggle('d-none', !shouldShow); // Add d-none if it should NOT show
-
-        // 3. Populate the relevant dropdown if showing it
         if (shouldShow) {
-            console.log("Populating selector for:", day, typeId); // Debug Log 5
-            populateRecipeSelector(day, typeId, null); // Populate with filter, reset selection
+            populateRecipeSelector(day, typeId, null); // Populate and reset selection
+            
+            // Show/hide the inner suggestion options based on whether a recipe is selected (should be blank here)
+            const suggestionOptionsDiv = container.querySelector('.suggestion-options-container');
+             if (suggestionOptionsDiv) {
+                suggestionOptionsDiv.classList.remove('d-none'); // Show options div
+                 // Ensure correct radio is checked
+                 const modeToCheck = currentWeeklyPlan[day]?.suggestionMode || 'existing';
+                 const radioToCheck = suggestionOptionsDiv.querySelector(`input[value="${modeToCheck}"]`);
+                 if(radioToCheck) radioToCheck.checked = true;
+                 
+                 // ** Reset or Populate Preference Inputs **
+                 const timeInput = suggestionOptionsDiv.querySelector(`#maxTime-${day}-${typeId}`);
+                 const styleSelect = suggestionOptionsDiv.querySelector(`#style-${day}-${typeId}`);
+                 if (timeInput) timeInput.value = currentWeeklyPlan[day]?.maxCookTime || '';
+                 if (styleSelect) styleSelect.value = currentWeeklyPlan[day]?.style || '';
+            }
         }
     });
     
-    cancelAISuggestions(); // Reset AI suggestions view
+    cancelAISuggestions(); 
+    console.log("Current Plan:", currentWeeklyPlan);
+}
+
+/**
+ * ** NEW **: Updates per-day preferences (maxCookTime, style) in the state.
+ * @param {HTMLInputElement|HTMLSelectElement} inputElement The input or select element.
+ * @param {'maxCookTime'|'style'} preferenceKey The key to update in the state.
+ */
+function setDayPreference(inputElement, preferenceKey) {
+    const day = inputElement.dataset.day;
+    let value = inputElement.value;
+
+    // Sanitize value if needed
+    if (preferenceKey === 'maxCookTime') {
+        value = value ? parseInt(value, 10) : null;
+        if (value !== null && (isNaN(value) || value < 0)) {
+            value = null; // Reset if invalid number
+        }
+    } else if (preferenceKey === 'style') {
+        value = value || null; // Store null if "Any" is selected
+    }
+
+    if (currentWeeklyPlan[day]) {
+         currentWeeklyPlan[day][preferenceKey] = value;
+    } else {
+         // Should not happen if type was selected first, but handle defensively
+         currentWeeklyPlan[day] = { 
+             type: null, recipeId: null, suggestionMode: 'existing', 
+             maxCookTime: null, style: null,
+             [preferenceKey]: value // Set the specific preference
+         };
+    }
+    
+    cancelAISuggestions(); // Reset AI suggestions if preferences change
+    console.log("Current Plan Updated (Preference):", currentWeeklyPlan);
 }
 
 /**
@@ -7391,24 +7447,31 @@ async function generatePlanWithChefBot() {
     // ... (rest of the initial UI updates for loading state) ...
 
     // Prepare data payload for the backend
-    const planRequest = daysOfWeek.map(day => ({
-        day: day,
-        type: currentWeeklyPlan[day]?.type || 'none', // Get type from state object
-        // **MODIFIED: Also send pre-selected recipeId if available**
-        recipeId: currentWeeklyPlan[day]?.recipeId || null // Send null if not selected
-    }));
-    
-    // *** Data to send to the Netlify function ***
+    const planRequest = daysOfWeek.map(day => {
+        const dayPlan = currentWeeklyPlan[day];
+        // Only include preferences if Chef Bot needs to suggest
+        const needsSuggestion = dayPlan?.type?.startsWith('cook-') && !dayPlan?.recipeId;
+        return {
+            day: day,
+            type: dayPlan?.type || 'none', 
+            recipeId: dayPlan?.recipeId || null,
+            suggestionMode: needsSuggestion ? (dayPlan?.suggestionMode || 'existing') : undefined, 
+            // ** NEW: Add per-day preferences if suggesting **
+            maxCookTime: needsSuggestion ? (dayPlan?.maxCookTime || null) : undefined,
+            style: needsSuggestion ? (dayPlan?.style || null) : undefined
+        };
+    }).filter(dayInfo => dayInfo.type !== 'none'); // Optional filter
+
+    // ** REMOVE Global Preferences ** // const timeLimitInput = ...
+    // const styleSelect = ...
+    // const maxCookTime = ...
+    // const preferredStyle = ...
+
     const requestPayload = {
         planStructure: planRequest,
-        suggestionMode: suggestionMode, // Add the mode
-        // **NEW (Required for 'existing' mode):** Send relevant recipe metadata
-        // We might only need names, tags, ratings, and maybe history data
-        // For simplicity now, let's just send names/tags/ratings.
-        // The backend function will need to be updated to receive and use this.
-        existingRecipes: suggestionMode === 'existing' ? recipes.map(r => ({ id: r.id, name: r.name, tags: r.tags || [], rating: r.rating || 0 })) : [] 
-        // OPTIONAL: Add user preferences (dietary, etc.) if available
-        // userPreferences: { ... } 
+        existingRecipes: recipes.map(r => ({ /* ... id, name, tags, rating ... */ })), 
+        // ** REMOVE Global Preferences Object **
+        // preferences: { ... } 
     };
 
     try {
