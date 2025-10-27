@@ -2,7 +2,7 @@
 console.log("generate-recipes-from-ideas.js: Loading modules.");
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require("@google/generative-ai");
 
-const MODEL_NAME = "gemini-1.5-flash";
+const MODEL_NAME = "gemini-2.0-flash";
 const API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
 console.log("generate-recipes-from-ideas.js: API_KEY defined?", !!API_KEY);
 
