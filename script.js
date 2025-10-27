@@ -4606,9 +4606,87 @@ async function loadPlannedMeals() { // Made async
     }
 }
 
+/**
+ * Helper function to format ingredients and instructions into a plain text string.
+ * @param {Array<Object>} ingredients - The recipe's ingredients array.
+ * @param {string} instructions - The recipe's instructions string.
+ * @returns {string} A formatted string for the calendar description.
+ */
+function formatRecipeForCalendar(ingredients, instructions) {
+    let description = "--- INGREDIENTS ---\n";
+    
+    if (ingredients && ingredients.length > 0) {
+        description += ingredients.map(ing => {
+            // Creates a line like "- 1 cup All-Purpose Flour"
+            return `- ${ing.quantity || ''} ${ing.unit || ''} ${ing.name || 'Unknown'}`.trim();
+        }).join('\n');
+    } else {
+        description += "No ingredients listed.\n";
+    }
+    
+    description += "\n\n--- INSTRUCTIONS ---\n";
+    description += instructions || "No instructions provided.";
+    
+    return description;
+}
+
+/**
+ * Creates and opens a Google Calendar link for a specific planned meal at 6 PM.
+ * @param {Object} planEntry - The planned meal object (from 'planning' collection/table).
+ */
+function exportMealToGoogleCalendar(planEntry) {
+    console.log("Exporting meal to calendar:", planEntry);
+
+    // 1. Find the full recipe from the global 'recipes' array.
+    //    We need the recipe's ID from the plan entry to do this.
+    const recipeIdToFind = planEntry.recipeId || planEntry.recipeLocalId;
+    const recipe = recipes.find(r => r.id == recipeIdToFind); // Use == for flexible type matching
+
+    if (!recipe) {
+        console.error("Could not find full recipe details for ID:", recipeIdToFind);
+        alert("Could not find recipe details. Unable to export to calendar.");
+        return;
+    }
+    
+    // 2. Format the event title
+    const title = recipe.name || "My Meal"; // Use recipe name as title
+
+    // 3. Format the description
+    const description = formatRecipeForCalendar(recipe.ingredients, recipe.instructions);
+
+    // 4. Format the dates and times for 6 PM (18:00)
+    // Google Calendar links are tricky with timezones. The 'dates' parameter
+    // must be in UTC (ending in 'Z') if you specify a time.
+    
+    const planDate = planEntry.date; // e.g., "2025-10-27"
+    
+    // Create a date object assuming the planDate is in the *user's local* timezone
+    // and set the time to 6 PM (18:00)
+    const localEventStart = new Date(`${planDate}T18:00:00`);
+    
+    // Create an end time, e.g., 1 hour later
+    const localEventEnd = new Date(localEventStart.getTime() + 60 * 60 * 1000); // Add 1 hour
+    
+    // Convert to ISO string (which is UTC) and format for Google Calendar
+    // Format: YYYYMMDDTHHMMSSZ
+    const utcStartDate = localEventStart.toISOString().replace(/[:-]|\.\d{3}/g, '');
+    const utcEndDate = localEventEnd.toISOString().replace(/[:-]|\.\d{3}/g, '');
+    
+    const dates = `${utcStartDate}/${utcEndDate}`;
+
+    // 5. Build the URL
+    const googleCalendarUrl = `https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${dates}&details=${encodeURIComponent(description)}`;
+
+    console.log("Opening Google Calendar URL:", googleCalendarUrl);
+    window.open(googleCalendarUrl, '_blank');
+}
+
 function renderPlannedMealsList(plannedEntries, options = {}) {
     const listContainer = document.getElementById('plannedMealsList');
-    if (!listContainer) return;
+    if (!listContainer) {
+        console.error("renderPlannedMealsList: listContainer not found");
+        return;
+    }
     
     listContainer.innerHTML = ''; // Clear previous items or loading message
 
@@ -4617,6 +4695,7 @@ function renderPlannedMealsList(plannedEntries, options = {}) {
         return;
     }
      
+    // Group by date
     const mealsByDate = plannedEntries.reduce((acc, entry) => {
         const date = entry.date;
         if (!acc[date]) {
@@ -4627,8 +4706,6 @@ function renderPlannedMealsList(plannedEntries, options = {}) {
     }, {});
 
     const sortedDates = Object.keys(mealsByDate).sort();
-
-    // Create the highlighting regex once
     const nameRegex = options.highlightNameTerm ? createHighlightRegex(options.highlightNameTerm) : null;
     const highlightTermLower = options.highlightNameTerm ? options.highlightNameTerm.toLowerCase() : null;
 
@@ -4639,22 +4716,8 @@ function renderPlannedMealsList(plannedEntries, options = {}) {
         const displayDate = new Date(date + 'T00:00:00').toLocaleDateString(undefined, { 
             weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
         });
-
-        const exportButton = document.createElement('button');
-        exportButton.className = 'btn btn-outline-primary btn-export-calendar';
-        exportButton.innerHTML = '<i class="bi bi-calendar-plus me-1"></i> Export';
-        exportButton.title = `Export ${displayDate} to Google Calendar`;
-        
-        const mealsForThisDate = mealsByDate[date];
-        
-        exportButton.onclick = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            exportDayToGoogleCalendar(date, mealsForThisDate);
-        };
         
         dateHeader.textContent = displayDate;
-        dateHeader.appendChild(exportButton);
         listContainer.appendChild(dateHeader);
 
         mealsByDate[date].forEach(entry => {
@@ -4662,31 +4725,46 @@ function renderPlannedMealsList(plannedEntries, options = {}) {
             li.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center mb-1 rounded';
 
             const info = document.createElement('span');
-            
-            // --- ROBUST FIX IS HERE ---
-            // 1. Get the recipe name, providing a fallback if it's missing.
             const recipeName = entry.recipeName || "Unnamed Meal";
             
-            // 2. Safely check for highlighting
+            // Safely check for highlighting
             if (nameRegex && highlightTermLower && recipeName.toLowerCase().includes(highlightTermLower)) {
                 info.innerHTML = recipeName.replace(nameRegex, '<mark>$1</mark>');
             } else {
                 info.textContent = recipeName;
             }
-            // --- END FIX ---
 
+            // Container for the action buttons
+            const buttonContainer = document.createElement('div');
+            buttonContainer.className = 'd-flex align-items-center gap-2';
+
+            // --- NEW: Export to Calendar Button ---
+            const calendarBtn = document.createElement('button');
+            calendarBtn.className = 'btn btn-outline-primary btn-sm py-0 px-1';
+            calendarBtn.innerHTML = '<i class="bi bi-calendar-plus"></i>';
+            calendarBtn.title = `Export "${recipeName}" to Google Calendar`;
+            calendarBtn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation(); // Prevent any parent click listeners
+                exportMealToGoogleCalendar(entry); // Call the new export function
+            };
+            buttonContainer.appendChild(calendarBtn);
+            // --- End New Button ---
+
+            // Delete button
             const deleteBtnContainer = document.createElement('div');
             deleteBtnContainer.className = 'delete-planned-meal-area';
-
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'btn btn-outline-danger btn-sm py-0 px-1';
             deleteBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
             deleteBtn.title = `Remove ${recipeName} from ${date}`;
             deleteBtn.onclick = () => confirmDeletePlannedMeal(entry.id, deleteBtnContainer, li);
-
+            
             deleteBtnContainer.appendChild(deleteBtn);
+            buttonContainer.appendChild(deleteBtnContainer); // Add delete button to the container
+
             li.appendChild(info);
-            li.appendChild(deleteBtnContainer);
+            li.appendChild(buttonContainer); // Add the container with both buttons
             listContainer.appendChild(li);
         });
     }
