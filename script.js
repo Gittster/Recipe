@@ -15,6 +15,8 @@ let currentAddRecipeMethod = null;
 let recipeFormModalInstance = null; // for #recipeFormModal
 let pasteTextModalInstance = null;  // for #pasteTextModal
 let dedicatedRecipePhotoInput = null; // <<< ADD THIS DECLARATION HERE
+let userSettingsModalInstance = null;
+let currentWeeklyPlan = {};
 
 document.addEventListener('DOMContentLoaded', () => {
     const loginModalElement = document.getElementById('loginModal');
@@ -38,6 +40,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const pasteModalEl = document.getElementById('pasteTextModal');
     if(pasteModalEl) pasteTextModalInstance = new bootstrap.Modal(pasteModalEl);
+    const settingsModalElement = document.getElementById('userSettingsModal');
+    if (settingsModalElement) {
+        userSettingsModalInstance = new bootstrap.Modal(settingsModalElement);
+    }
 });
 
 /**
@@ -591,7 +597,7 @@ function showInfoConfirmModal(title, bodyContent, buttons = []) {
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.className = `btn ${btnConfig.class || 'btn-secondary'}`;
-                button.textContent = btnConfig.text;
+                button.innerHTML = btnConfig.text;
                 if (btnConfig.dismiss) { // If true, button will dismiss the modal
                     button.setAttribute('data-bs-dismiss', 'modal');
                 }
@@ -2841,11 +2847,13 @@ async function saveChatHistoryToRecipe(recipeId, historyToSave, isLocal) {
 
 // You'll need a generic function to save a NEW recipe object
 // This is similar to your existing `saveRecipe` but takes data as an argument
+// **Modify saveNewRecipeToStorage to RETURN the ID**
 async function saveNewRecipeToStorage(recipeDataObject) {
     console.log("saveNewRecipeToStorage called with:", recipeDataObject);
-    let success = false;
+    let savedId = null; // Changed from 'success' boolean
 
-    const dataToSave = {
+    // ... (your existing dataToSave setup) ...
+     const dataToSave = {
         name: recipeDataObject.name || "Untitled Recipe",
         ingredients: recipeDataObject.ingredients || [],
         instructions: recipeDataObject.instructions || "",
@@ -2853,39 +2861,42 @@ async function saveNewRecipeToStorage(recipeDataObject) {
         rating: recipeDataObject.rating || 0,
     };
 
+
     if (currentUser) {
         dataToSave.uid = currentUser.uid;
         dataToSave.timestamp = firebase.firestore.FieldValue.serverTimestamp();
         try {
             const docRef = await db.collection('recipes').add(dataToSave);
-            console.log("✅ New recipe from AI saved to Firestore with ID:", docRef.id);
-            showSuccessMessage(`Recipe "${dataToSave.name}" saved to your account!`);
-            success = true;
+            savedId = docRef.id; // Store the Firestore ID
+            console.log("✅ New recipe saved to Firestore with ID:", savedId);
+            // Moved success message out, as this function might be called multiple times during plan save
         } catch (error) {
             console.error("❌ Error saving new recipe to Firestore:", error);
-            alert("Error saving new recipe: " + error.message);
+            // Keep savedId as null
         }
     } else {
         if (!localDB) {
-            alert("Local storage not available. Please sign in to save recipes.");
-            return false;
+             console.error("Local storage not available for saveNewRecipeToStorage.");
+             return null; // Return null if storage unavailable
         }
-        dataToSave.localId = generateLocalUUID();
+        dataToSave.localId = generateLocalUUID(); // Generate local ID
         dataToSave.timestamp = new Date().toISOString();
         try {
-            await localDB.recipes.add(dataToSave);
-            console.log("✅ New recipe from AI saved to LocalDB with localId:", dataToSave.localId);
-            showSuccessMessage(`Recipe "${dataToSave.name}" saved locally!`);
-            success = true;
+            // Dexie's add() returns the auto-generated primary key OR the provided one if defined
+            // Since we provide 'localId', we use that.
+             await localDB.recipes.add(dataToSave); 
+             savedId = dataToSave.localId; // Store the local ID
+            console.log("✅ New recipe saved to LocalDB with localId:", savedId);
         } catch (error) {
             console.error("❌ Error saving new recipe to LocalDB:", error.stack || error);
-            alert("Error saving new recipe locally: " + error.message);
+            // Keep savedId as null
         }
     }
-    if (success) {
-        loadInitialRecipes(); // Refresh the main list
-    }
-    return success;
+    
+    // Don't reload recipes here if called during plan generation
+    // loadInitialRecipes(); // Refresh the main list 
+
+    return savedId; // Return the ID (or null if failed)
 }
 
 function displayRecipes(listToDisplay, containerId = 'recipeResults', options = {}) {
@@ -4201,6 +4212,7 @@ function showPlanning() {
     }
     view.className = 'section-planning container py-3';
 
+    // **UPDATED HTML STRUCTURE**
     view.innerHTML = `
         <div class="planned-meals-header mb-3">
             <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center">
@@ -4208,10 +4220,13 @@ function showPlanning() {
                 
                 <div class="btn-toolbar" role="toolbar" aria-label="Planned meals actions">
                     <div class="btn-group btn-group-sm w-100" role="group">
-                        <button class="btn btn-outline-info" style="flex-basis: 50%;" type="button" data-bs-toggle="collapse" data-bs-target="#planningFiltersCollapse" aria-expanded="false" aria-controls="planningFiltersCollapse" title="Toggle filters for planned meals">
+                        <button class="btn btn-primary" onclick="showAIWeeklyPlanner()" title="Use AI to generate a weekly plan">
+                            <i class="bi bi-robot"></i> Chef Bot
+                        </button>
+                        <button class="btn btn-outline-info" type="button" data-bs-toggle="collapse" data-bs-target="#planningFiltersCollapse" aria-expanded="false" aria-controls="planningFiltersCollapse" title="Toggle filters for planned meals">
                             <i class="bi bi-funnel-fill"></i> Search
                         </button>
-                        <button id="clearAllPlanningBtn" class="btn btn-outline-danger" style="flex-basis: 50%;" onclick="confirmClearAllPlanning(this)" title="Clear all planned meals">
+                        <button id="clearAllPlanningBtn" class="btn btn-outline-danger" onclick="confirmClearAllPlanning(this)" title="Clear all planned meals">
                             <i class="bi bi-trash3"></i> Clear All
                         </button>
                     </div>
@@ -4249,73 +4264,43 @@ function showPlanning() {
 
         <hr class="my-4" />
 
-        <h5 class="mb-3"><i class="bi bi-calendar-plus"></i> Plan a New Meal</h5>
-        <div class="card card-body bg-light-subtle mb-4">
-            <div class="row g-3">
-                <div class="col-md-6">
-                    <label for="planDate" class="form-label fw-semibold">Select Date:</label>
-                    <input type="date" class="form-control form-control-sm" id="planDate" value="${new Date().toISOString().split('T')[0]}">
-                </div>
-                <div class="col-md-6">
-                    <label for="planRecipe" class="form-label fw-semibold">Select Recipe:</label>
-                    <select id="planRecipe" class="form-select form-select-sm">
-                        <option value="">-- Choose a recipe --</option>
-                    </select>
-                </div>
-            </div>
-            <div id="planMealError" class="alert alert-danger small p-2 mt-3" style="display:none;"></div>
-            <div class="mt-3 text-end">
-                <button class="btn btn-success btn-sm" onclick="addPlannedMeal()"><i class="bi bi-plus-circle"></i> Add to Plan</button>
-            </div>
-        </div>
-
-        <hr class="my-4" />
-        
         <div class="shopping-list-header mb-3">
-            <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center">
-                <h5 class="mb-2 mb-sm-0"><i class="bi bi-cart3"></i> Shopping List</h5>
-                <div class="btn-toolbar" role="toolbar" aria-label="Shopping list actions">
-                    <div class="btn-group btn-group-sm w-100" role="group">
-                        <button class="btn btn-primary" style="flex-basis: 40%;" onclick="generateShoppingList()" title="Generate list from current plans">
-                            <i class="bi bi-list-check"></i> Generate
-                        </button>
-                        <button id="clearCheckedShoppingListBtn" class="btn btn-outline-success" style="flex-basis: 30%; display: none;" onclick="confirmClearCheckedShoppingListItems()" title="Clear checked items from list">
-                            <i class="bi bi-check2-square"></i> Checked
-                        </button>
-                        <button id="clearShoppingListBtn" class="btn btn-outline-danger" style="flex-basis: 30%;" onclick="confirmClearShoppingList()" disabled title="Clear entire shopping list">
-                            <i class="bi bi-trash2"></i> Clear All
-                        </button>
-                        <button class="btn btn-outline-secondary" style="flex-basis: 30%;" onclick="exportShoppingList()" title="Export or Share List">
+             <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center">
+                 <h5 class="mb-2 mb-sm-0"><i class="bi bi-cart3"></i> Shopping List</h5>
+                 <div class="btn-toolbar" role="toolbar" aria-label="Shopping list actions">
+                     <div class="btn-group btn-group-sm w-100" role="group">
+                         <button class="btn btn-primary" onclick="generateShoppingList()" title="Generate list from current plans">
+                             <i class="bi bi-list-check"></i> Generate
+                         </button>
+                         <button id="clearCheckedShoppingListBtn" class="btn btn-outline-success" style="display: none;" onclick="confirmClearCheckedShoppingListItems()" title="Clear checked items from list">
+                             <i class="bi bi-check2-square"></i> Checked
+                         </button>
+                         <button id="clearShoppingListBtn" class="btn btn-outline-danger" onclick="confirmClearShoppingList()" disabled title="Clear entire shopping list">
+                             <i class="bi bi-trash2"></i> Clear All
+                         </button>
+                         <button class="btn btn-outline-secondary" onclick="exportShoppingList()" title="Export or Share List">
                             <i class="bi bi-send"></i> Export
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div id="shoppingListResults" class="mb-4">
-            <div class="list-group-item text-muted text-center">Generate a list from your planned meals.</div>
-        </div>
+                         </button>
+                     </div>
+                 </div>
+             </div>
+         </div>
+         
+         <div id="shoppingListResults" class="mb-4">
+             <div class="list-group-item text-muted text-center">Generate a list from your planned meals.</div>
+         </div>
     `;
 
-    if (typeof populateRecipeDropdownForPlanning === "function") {
-        populateRecipeDropdownForPlanning();
-    } else {
-        console.error("populateRecipeDropdownForPlanning function is not defined.");
-    }
-
+    // Load Planned Meals (Unchanged - Now called by applyPlanningFilters)
     if (typeof applyPlanningFilters === "function") {
-        applyPlanningFilters(); 
+        applyPlanningFilters(); // Loads and renders planned meals initially
     } else {
-        console.error("applyPlanningFilters function is not defined. Falling back to loadPlannedMeals.");
-        if (typeof loadPlannedMeals === "function") {
-            loadPlannedMeals();
-        } else {
-            console.error("loadPlannedMeals also not defined.");
-            const plannedListDiv = document.getElementById('plannedMealsList');
-            if(plannedListDiv) plannedListDiv.innerHTML = '<div class="list-group-item text-danger text-center">Error: Could not load planned meals function.</div>';
-        }
+        console.error("applyPlanningFilters function is not defined.");
+        const plannedListDiv = document.getElementById('plannedMealsList');
+        if (plannedListDiv) plannedListDiv.innerHTML = '<div class="list-group-item text-danger text-center">Error: Could not load planned meals function.</div>';
     }
 
+    // Load Shopping List (Unchanged)
     if (typeof loadShoppingList === "function") {
         loadShoppingList();
     } else {
@@ -4477,31 +4462,61 @@ async function applyPlanningFilters() {
     }
 }
 
-function populateRecipeDropdownForPlanning() {
-    const select = document.getElementById('planRecipe');
-    if (!select) return;
-    select.innerHTML = '<option value="">-- Choose a recipe --</option>';
+/**
+ * Updates the state when a recipe is selected from the dropdown.
+ * @param {HTMLSelectElement} selectElement The dropdown element.
+ */
+function selectRecipeForDay(selectElement) {
+    const day = selectElement.dataset.day;
+    const typeId = selectElement.dataset.type; // We still know the context type
+    const recipeId = selectElement.value || null; // Get selected recipe ID, or null if "-- Ask Chef Bot --"
 
-    // The global 'recipes' array is already populated by loadInitialRecipes()
-    // with either Firestore or LocalDB recipes.
-    if (recipes && recipes.length > 0) {
-        // Sort recipes by name for the dropdown
-        const sortedRecipes = [...recipes].sort((a, b) => a.name.localeCompare(b.name));
-        sortedRecipes.forEach(recipe => {
-            const option = document.createElement('option');
-            // When not logged in, recipe.id is recipe.localId
-            // When logged in, recipe.id is Firestore doc ID
-            option.value = recipe.id; 
-            option.textContent = recipe.name;
-            select.appendChild(option);
-        });
+    if (currentWeeklyPlan[day]) {
+        currentWeeklyPlan[day].recipeId = recipeId;
     } else {
-        const option = document.createElement('option');
-        option.value = "";
-        option.textContent = "No recipes available to plan";
-        option.disabled = true;
-        select.appendChild(option);
+        // This case should ideally not happen if type was selected first
+        currentWeeklyPlan[day] = { type: typeId, recipeId: recipeId };
     }
+    
+    cancelAISuggestions(); // Reset AI suggestions if input changes
+    console.log("Current Plan Updated:", currentWeeklyPlan);
+}
+
+/**
+ * Populates the recipe select dropdown for a specific day and meal type, applying filters.
+ * @param {string} day The day of the week.
+ * @param {string} typeId The selected meal type ID (e.g., 'cook-quick').
+ * @param {string|null} selectedRecipeId The currently selected recipe ID (if any).
+ */
+function populateRecipeSelector(day, typeId, selectedRecipeId) {
+    const selectElement = document.getElementById(`recipe-select-${day}-${typeId}`);
+    if (!selectElement) return;
+
+    const mealType = mealTypes.find(mt => mt.id === typeId);
+    const filterTag = mealType ? mealType.tag : null;
+
+    // Filter the global 'recipes' list
+    let filteredRecipes = recipes;
+    if (filterTag) {
+        filteredRecipes = recipes.filter(r => r.tags && r.tags.includes(filterTag));
+        console.log(`Filtering recipes for tag '${filterTag}', found ${filteredRecipes.length}`);
+    } else {
+         // No specific tag, maybe exclude 'leftovers' tag? Optional.
+         // filteredRecipes = recipes.filter(r => !r.tags || !r.tags.includes('leftovers')); 
+    }
+
+    // Sort filtered recipes alphabetically
+    filteredRecipes.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+    // Populate the dropdown
+    selectElement.innerHTML = '<option value="">-- Ask Chef Bot --</option>'; // Default option
+    filteredRecipes.forEach(recipe => {
+        const option = document.createElement('option');
+        option.value = recipe.id; // Use Firestore ID or localId
+        option.textContent = recipe.name;
+        option.selected = recipe.id === selectedRecipeId; // Pre-select if needed
+        selectElement.appendChild(option);
+    });
 }
 
 async function addPlannedMeal() { // Made async
@@ -4631,50 +4646,50 @@ function formatRecipeForCalendar(ingredients, instructions) {
 }
 
 /**
- * Creates and opens a Google Calendar link for a specific planned meal at 6 PM.
+ * Creates and opens a Google Calendar link for a specific planned meal.
  * @param {Object} planEntry - The planned meal object (from 'planning' collection/table).
  */
-function exportMealToGoogleCalendar(planEntry) {
-    console.log("Exporting meal to calendar:", planEntry);
-
-    // 1. Find the full recipe from the global 'recipes' array.
-    //    We need the recipe's ID from the plan entry to do this.
+async function exportMealToGoogleCalendar(planEntry) {
     const recipeIdToFind = planEntry.recipeId || planEntry.recipeLocalId;
-    const recipe = recipes.find(r => r.id == recipeIdToFind); // Use == for flexible type matching
+    
+    // Find the full recipe object in the global recipes array (which holds all loaded recipes)
+    const recipe = recipes.find(r => r.id === recipeIdToFind);
 
     if (!recipe) {
-        console.error("Could not find full recipe details for ID:", recipeIdToFind);
-        alert("Could not find recipe details. Unable to export to calendar.");
+        console.error("Recipe not found for planned entry:", planEntry);
+        showInfoConfirmModal("Error", "Could not find the full recipe details to export to a calendar. Please ensure the recipe still exists in your list.", [{ text: 'OK', class: 'btn-primary', dismiss: true }]);
         return;
     }
     
-    // 2. Format the event title
-    const title = recipe.name || "My Meal"; // Use recipe name as title
+    // --- NEW: Load saved time preference ---
+    let defaultTime = '18:00'; // 6:00 PM as fallback
+    if (currentUser) {
+        try {
+            const userRef = db.collection('users').doc(currentUser.uid);
+            const userDoc = await userRef.get();
+            if (userDoc.exists && userDoc.data().preferences?.defaultCalendarTime) {
+                defaultTime = userDoc.data().preferences.defaultCalendarTime;
+            }
+        } catch (error) {
+            console.warn("Could not fetch user's default time, using 18:00.", error);
+        }
+    }
+    // --- END NEW BLOCK ---
 
-    // 3. Format the description
+    const title = recipe.name || "My Meal";
     const description = formatRecipeForCalendar(recipe.ingredients, recipe.instructions);
-
-    // 4. Format the dates and times for 6 PM (18:00)
-    // Google Calendar links are tricky with timezones. The 'dates' parameter
-    // must be in UTC (ending in 'Z') if you specify a time.
     
     const planDate = planEntry.date; // e.g., "2025-10-27"
     
-    // Create a date object assuming the planDate is in the *user's local* timezone
-    // and set the time to 6 PM (18:00)
-    const localEventStart = new Date(`${planDate}T18:00:00`);
-    
-    // Create an end time, e.g., 1 hour later
+    // Create date object using the planDate and the (potentially user-defined) defaultTime
+    const localEventStart = new Date(`${planDate}T${defaultTime}:00`);
     const localEventEnd = new Date(localEventStart.getTime() + 60 * 60 * 1000); // Add 1 hour
     
-    // Convert to ISO string (which is UTC) and format for Google Calendar
-    // Format: YYYYMMDDTHHMMSSZ
+    // Convert to ISO string (UTC) and format for Google Calendar
     const utcStartDate = localEventStart.toISOString().replace(/[:-]|\.\d{3}/g, '');
     const utcEndDate = localEventEnd.toISOString().replace(/[:-]|\.\d{3}/g, '');
-    
     const dates = `${utcStartDate}/${utcEndDate}`;
 
-    // 5. Build the URL
     const googleCalendarUrl = `https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${dates}&details=${encodeURIComponent(description)}`;
 
     console.log("Opening Google Calendar URL:", googleCalendarUrl);
@@ -5105,6 +5120,91 @@ function confirmClearAllPlanning(button) { // Renamed to reflect it shows a conf
     confirmArea.appendChild(yesBtn);
     confirmArea.appendChild(noBtn);
     button.parentElement.appendChild(confirmArea);
+}
+
+async function openUserSettingsModal() {
+    if (!userSettingsModalInstance || !currentUser) return;
+
+    const statusDiv = document.getElementById('settingsSaveStatus');
+    if (statusDiv) statusDiv.textContent = ''; // Clear status
+
+    // Get current preferences from Firestore to populate the form
+    try {
+        const userRef = db.collection('users').doc(currentUser.uid);
+        const userDoc = await userRef.get();
+        
+        if (userDoc.exists && userDoc.data().preferences) {
+            const prefs = userDoc.data().preferences;
+            
+            // Set the saved sort order
+            const sortSelect = document.getElementById('defaultSortOrder');
+            if (sortSelect) sortSelect.value = prefs.recipeSortOrder || 'all';
+            
+            // Set the saved calendar time
+            const timeInput = document.getElementById('defaultCalendarTime');
+            if (timeInput) timeInput.value = prefs.defaultCalendarTime || '18:00'; // Default to 18:00
+            
+        } else {
+            // No preferences saved yet, set to defaults
+            document.getElementById('defaultSortOrder').value = 'all';
+            document.getElementById('defaultCalendarTime').value = '18:00';
+        }
+        
+        userSettingsModalInstance.show();
+        
+    } catch (error) {
+        console.error("Error loading user settings:", error);
+        alert("Could not load your settings. " + error.message);
+    }
+}
+
+async function saveUserSettings() {
+    if (!currentUser) return;
+
+    const sortSelect = document.getElementById('defaultSortOrder');
+    const timeInput = document.getElementById('defaultCalendarTime');
+    const statusDiv = document.getElementById('settingsSaveStatus');
+
+    const newSortOrder = sortSelect.value;
+    const newCalendarTime = timeInput.value; // e.g., "18:00"
+
+    const newPreferences = {
+        recipeSortOrder: newSortOrder,
+        defaultCalendarTime: newCalendarTime
+    };
+
+    if (statusDiv) {
+        statusDiv.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
+    }
+
+    try {
+        const userRef = db.collection('users').doc(currentUser.uid);
+        // Use .set with merge:true to update/create the preferences field
+        await userRef.set({
+            preferences: newPreferences
+        }, { merge: true });
+
+        // Update the app's current state
+        currentSortOrder = newSortOrder;
+        
+        if (statusDiv) {
+            statusDiv.textContent = '✅ Saved!';
+        }
+        
+        // Hide modal after a short delay
+        setTimeout(() => {
+            userSettingsModalInstance.hide();
+            // We need to re-render the recipe list if the sort order changed
+            applyAllRecipeFilters(); // This will use the new currentSortOrder
+            renderSortOptions(); // This will update the sidebar highlight
+        }, 1000);
+
+    } catch (error) {
+        console.error("Error saving user settings:", error);
+        if (statusDiv) {
+            statusDiv.textContent = '❌ Error saving.';
+        }
+    }
 }
 
 function deletePlannedMeal(planId, button) {
@@ -5612,6 +5712,14 @@ function handleAccountNavClick() {
             "Account Options",
             `<p>You are signed in as ${escapeHtml(userEmail)}.</p><p class="mt-3">Manage your account or view preferences here (eventually).</p>`,
             [
+                { 
+                    text: '<i class="bi bi-gear-fill me-2"></i>Settings', 
+                    class: 'btn-primary btn-sm', 
+                    onClick: () => { 
+                        openUserSettingsModal(); // A new function we will create
+                    },
+                    dismissOnClick: true
+                },
                 { 
                     text: 'Log Out', 
                     class: 'btn-danger btn-sm', 
@@ -6983,3 +7091,717 @@ window.onload = () => {
     }
     // Removed loadRecipesFromFirestore() from here as onAuthStateChanged handles it.
 };
+
+// Define meal types with icons and descriptions
+const mealTypes = [
+    // Added 'tag' property for filtering
+    { id: 'cook-leftovers', label: 'Cook - For Leftovers', icon: 'bi-stack', desc: 'Make a larger meal', tag: 'leftovers' },
+    { id: 'cook-1day', label: 'Cook - Single Meal', icon: 'bi-egg-fried', desc: 'Standard cooking', tag: null }, // No specific tag filter
+    { id: 'cook-quick', label: 'Cook - Quick Meal', icon: 'bi-stopwatch', desc: 'Under 30 mins', tag: 'quick' },
+    { id: 'leftovers', label: 'Leftovers', icon: 'bi-recycle', desc: 'Eat previously cooked meal', tag: null } // Leftovers type doesn't need recipe selection
+];
+
+// Define days of the week
+const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+/**
+ * Renders the AI Weekly Planner view in #mainView.
+ */
+function showAIWeeklyPlanner() {
+    updatePageTitle("Chef Bot Planner");
+    // Optionally, keep the 'Plan' tab visually active if desired
+    // setActiveNavButton("plan"); 
+
+    const view = document.getElementById('mainView');
+    if (!view) {
+        console.error("mainView element not found for showAIWeeklyPlanner");
+        return;
+    }
+    // Apply appropriate classes for styling and layout
+    view.className = 'section-ai-planner bg-body-tertiary flex-grow-1 overflow-auto'; 
+
+    // Set the HTML structure for the AI planner view
+    view.innerHTML = `
+    <div class="container py-3 ai-weekly-planner">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap">
+            <h4 class="mb-2 mb-sm-0"><i class="bi bi-robot me-2"></i> Chef Bot Planner</h4>
+            <button class="btn btn-sm btn-outline-secondary" onclick="showPlanning()">
+                 <i class="bi bi-arrow-left"></i> Back to Plan
+            </button>
+        </div>
+        <p class="text-muted mb-4">Select a cooking style for each day, then ask Chef Bot for recipe suggestions!</p>
+
+        <div id="weeklyPlannerDays" class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3 mb-4">
+            <div class="col"><div class="card h-100 placeholder-glow"><div class="card-body text-center"><span class="placeholder col-6"></span><div class="placeholder col-12 mt-2"></div></div></div></div>
+            <div class="col"><div class="card h-100 placeholder-glow"><div class="card-body text-center"><span class="placeholder col-6"></span><div class="placeholder col-12 mt-2"></div></div></div></div>
+            <div class="col"><div class="card h-100 placeholder-glow"><div class="card-body text-center"><span class="placeholder col-6"></span><div class="placeholder col-12 mt-2"></div></div></div></div>
+        </div>
+
+        <div class="card card-body bg-light-subtle mb-4">
+            <label class="form-label fw-semibold">Chef Bot Suggestion Mode:</label>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="aiSuggestionMode" id="suggestExistingRadio" value="existing" checked>
+                <label class="form-check-label" for="suggestExistingRadio">
+                    Suggest from My Saved Recipes
+                    <small class="d-block text-muted">Prioritizes your recipes based on rating, usage, and variety.</small>
+                </label>
+            </div>
+            <div class="form-check mt-2">
+                <input class="form-check-input" type="radio" name="aiSuggestionMode" id="suggestNewRadio" value="new">
+                <label class="form-check-label" for="suggestNewRadio">
+                    Suggest New Recipe Ideas
+                    <small class="d-block text-muted">Provides a few new ideas per day for you to choose from first.</small>
+                </label>
+            </div>
+        </div>
+
+        <div class="text-center">
+            <button id="askChefBotForPlanBtn" class="btn btn-primary btn-lg" onclick="generatePlanWithChefBot()">
+                <i class="bi bi-magic"></i> Ask Chef Bot for Suggestions
+            </button>
+            <div id="aiPlannerStatus" class="mt-2 small text-muted" style="min-height: 1.2em;"></div>
+        </div>
+
+        <div id="aiPlanSuggestions" class="mt-4" style="display: none;">
+             <h5 class="mb-3"><i class="bi bi-lightbulb-fill text-warning"></i> Chef Bot's Suggestions:</h5>
+             <p class="text-muted small">Review the suggestions below. You can accept the plan or go back to adjust your choices.</p>
+             <div id="aiSuggestionsList" class="list-group mb-3">
+                 </div>
+             <div class="text-end mt-3">
+                  <button class="btn btn-outline-secondary me-2" onclick="cancelAISuggestions()"> <i class="bi bi-arrow-left"></i> Go Back</button>
+                  <button class="btn btn-success" onclick="saveGeneratedPlan()"> <i class="bi bi-check-lg"></i> Accept & Save Plan</button>
+             </div>
+         </div>
+    </div>`;
+
+    // Call the function to render the day cards into the #weeklyPlannerDays div
+    renderDayCards();
+}
+
+/**
+ * Renders the individual day cards within the planner interface.
+ */
+function renderDayCards() {
+    const container = document.getElementById('weeklyPlannerDays');
+    if (!container) return;
+    container.innerHTML = ''; 
+
+    daysOfWeek.forEach(day => {
+        const dayPlan = currentWeeklyPlan[day] || { type: null, recipeId: null }; // Get current state for the day
+
+        const col = document.createElement('div');
+        col.className = 'col';
+
+        const card = document.createElement('div');
+        card.className = 'card h-100 shadow-sm planner-day-card';
+        card.id = `planner-card-${day}`;
+
+        let cardHTML = `<div class="card-header fw-bold text-center">${day}</div>`;
+        cardHTML += `<div class="list-group list-group-flush">`;
+
+        mealTypes.forEach(type => {
+            const isSelected = dayPlan.type === type.id;
+            // **MODIFIED**: onclick now calls toggleMealTypeSelection
+            cardHTML += `
+                <button type="button" 
+                        class="list-group-item list-group-item-action planner-option ${isSelected ? 'active' : ''}" 
+                        data-day="${day}" 
+                        data-type="${type.id}"
+                        onclick="toggleMealTypeSelection(this)"> 
+                    <div class="d-flex w-100 justify-content-start align-items-center">
+                         <i class="${type.icon} me-3 fs-5 text-primary" style="width: 20px; text-align: center;"></i> 
+                         <div>
+                              <h6 class="mb-0 fw-semibold">${type.label}</h6>
+                              <small class="text-muted d-block">${type.desc}</small> 
+                         </div>
+                    </div>
+                </button>`;
+            
+            // **NEW**: Add recipe selector area, initially hidden unless this type is active
+            // Don't show selector for 'leftovers' type
+            if (type.id !== 'leftovers') {
+                const showSelector = isSelected; 
+                cardHTML += `
+                    <div class="recipe-selector-container list-group-item ${showSelector ? '' : 'd-none'}" id="selector-${day}-${type.id}">
+                        <label for="recipe-select-${day}-${type.id}" class="form-label small fw-semibold">Select Recipe (Optional):</label>
+                        <select class="form-select form-select-sm recipe-select-dropdown" 
+                                id="recipe-select-${day}-${type.id}" 
+                                data-day="${day}" 
+                                data-type="${type.id}" 
+                                onchange="selectRecipeForDay(this)">
+                            <option value="">-- Ask Chef Bot --</option> 
+                            </select>
+                         <div class="form-text small">Leave blank to let Chef Bot suggest one.</div>
+                    </div>`;
+            }
+        });
+
+        cardHTML += `</div>`; // Close list-group
+        card.innerHTML = cardHTML;
+        col.appendChild(card);
+        container.appendChild(col);
+
+        // **NEW**: After card is added, populate its dropdowns if needed
+        if (dayPlan.type && dayPlan.type !== 'leftovers') {
+            populateRecipeSelector(day, dayPlan.type, dayPlan.recipeId);
+        }
+    });
+}
+
+/**
+ * Handles clicking a meal type button. Updates state, toggles UI elements.
+ * @param {HTMLElement} buttonElement The meal type button clicked.
+ */
+function toggleMealTypeSelection(buttonElement) {
+    const day = buttonElement.dataset.day;
+    const typeId = buttonElement.dataset.type;
+    // **Ensure we target the card correctly**
+    const dayCard = buttonElement.closest('.planner-day-card'); // Use closest to be safer
+
+    if (!dayCard) {
+        console.error("Could not find parent card for day:", day);
+        return;
+    }
+    console.log("Toggling selection for Day:", day, "Type:", typeId, "Card:", dayCard); // Debug Log 1
+
+    const currentDayPlan = currentWeeklyPlan[day] || { type: null, recipeId: null };
+    const isCurrentlySelected = buttonElement.classList.contains('active');
+    const isLeftovers = typeId === 'leftovers';
+
+    // If clicking the currently active button, do nothing (or optionally, deselect)
+    if (isCurrentlySelected) {
+         console.log("Button already active, doing nothing."); // Debug Log 2
+         return; 
+    }
+
+    // Update state - Reset recipeId when changing type
+    currentWeeklyPlan[day] = { type: typeId, recipeId: isLeftovers ? undefined : null }; 
+    console.log("Updated currentWeeklyPlan:", currentWeeklyPlan); // Debug Log 3
+
+    // --- Update UI ---
+    // 1. Update 'active' state for all type buttons in this card
+    dayCard.querySelectorAll('.planner-option').forEach(btn => {
+        const isActive = btn.dataset.type === typeId;
+        btn.classList.toggle('active', isActive);
+        // console.log("Button:", btn.dataset.type, "Set active:", isActive); // Verbose Debug Log
+    });
+
+    // 2. Show/Hide Recipe Selectors within this specific card
+    dayCard.querySelectorAll('.recipe-selector-container').forEach(container => {
+        // **Extract typeId more robustly from container's ID** // Example ID: "selector-Monday-cook-quick"
+        const parts = container.id.split('-');
+        const containerTypeId = parts.length > 2 ? parts.slice(2).join('-') : null; // Handles types like 'cook-leftovers'
+
+        const shouldShow = containerTypeId === typeId && typeId !== 'leftovers';
+        
+        console.log("Checking Container:", container.id, "Container Type:", containerTypeId, "Target Type:", typeId, "Should Show:", shouldShow); // Debug Log 4
+
+        container.classList.toggle('d-none', !shouldShow); // Add d-none if it should NOT show
+
+        // 3. Populate the relevant dropdown if showing it
+        if (shouldShow) {
+            console.log("Populating selector for:", day, typeId); // Debug Log 5
+            populateRecipeSelector(day, typeId, null); // Populate with filter, reset selection
+        }
+    });
+    
+    cancelAISuggestions(); // Reset AI suggestions view
+}
+
+/**
+ * Handles the selection of a meal type button on a day card. Updates state and UI.
+ * @param {HTMLElement} buttonElement The button element that was clicked.
+ */
+function selectMealType(buttonElement) {
+    const day = buttonElement.dataset.day;
+    const type = buttonElement.dataset.type;
+
+    // Update the global state object
+    currentWeeklyPlan[day] = type;
+
+    // Update the UI only for the affected day's card
+    const dayCard = document.getElementById(`planner-card-${day}`);
+    if (dayCard) {
+        // Find all option buttons within this specific card
+        dayCard.querySelectorAll('.planner-option').forEach(btn => {
+            // Check if this button's type matches the selected type
+            if (btn.dataset.type === type) {
+                btn.classList.add('active'); // Set the clicked button to active
+            } else {
+                btn.classList.remove('active'); // Remove active from other buttons in the same card
+            }
+        });
+    }
+
+    // Hide AI suggestions if they were previously shown, as the input has changed
+    cancelAISuggestions(); // We'll define this function next
+    
+    // Log the current state for debugging
+    console.log("Current Weekly Plan State:", currentWeeklyPlan);
+}
+
+/**
+ * Hides the AI suggestion area and resets the status message.
+ * To be called when meal type selection changes or user wants to go back.
+ */
+function cancelAISuggestions() {
+     const suggestionsDiv = document.getElementById('aiPlanSuggestions');
+     const statusDiv = document.getElementById('aiPlannerStatus');
+     const askButton = document.getElementById('askChefBotForPlanBtn');
+
+     if (suggestionsDiv) {
+         suggestionsDiv.style.display = 'none'; // Hide the suggestions block
+     }
+     if (statusDiv) {
+         statusDiv.textContent = ''; // Clear any status/error message
+     }
+     if (askButton) {
+        askButton.disabled = false; // Re-enable the "Ask Chef Bot" button
+     }
+     aiSuggestedPlan = null; // Clear the stored suggestions
+}
+
+// *** Placeholder function - We'll implement this next ***
+async function generatePlanWithChefBot() {
+    const plannerStatus = document.getElementById('aiPlannerStatus');
+    const askButton = document.getElementById('askChefBotForPlanBtn');
+    const suggestionsDiv = document.getElementById('aiPlanSuggestions');
+    const suggestionsList = document.getElementById('aiSuggestionsList');
+
+    // **NEW: Get selected suggestion mode**
+    const suggestionModeElement = document.querySelector('input[name="aiSuggestionMode"]:checked');
+    const suggestionMode = suggestionModeElement ? suggestionModeElement.value : 'existing'; // Default to 'existing' if somehow none is checked
+    console.log("Selected Suggestion Mode:", suggestionMode);
+    // **END NEW BLOCK**
+
+    // Basic validation (Unchanged)
+    if (Object.keys(currentWeeklyPlan).length === 0) {
+        if (plannerStatus) plannerStatus.textContent = "Please select a meal type for at least one day.";
+        return;
+    }
+
+    if (plannerStatus) plannerStatus.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Asking Chef Bot for suggestions...';
+    // ... (rest of the initial UI updates for loading state) ...
+
+    // Prepare data payload for the backend
+    const planRequest = daysOfWeek.map(day => ({
+        day: day,
+        type: currentWeeklyPlan[day]?.type || 'none', // Get type from state object
+        // **MODIFIED: Also send pre-selected recipeId if available**
+        recipeId: currentWeeklyPlan[day]?.recipeId || null // Send null if not selected
+    }));
+    
+    // *** Data to send to the Netlify function ***
+    const requestPayload = {
+        planStructure: planRequest,
+        suggestionMode: suggestionMode, // Add the mode
+        // **NEW (Required for 'existing' mode):** Send relevant recipe metadata
+        // We might only need names, tags, ratings, and maybe history data
+        // For simplicity now, let's just send names/tags/ratings.
+        // The backend function will need to be updated to receive and use this.
+        existingRecipes: suggestionMode === 'existing' ? recipes.map(r => ({ id: r.id, name: r.name, tags: r.tags || [], rating: r.rating || 0 })) : [] 
+        // OPTIONAL: Add user preferences (dietary, etc.) if available
+        // userPreferences: { ... } 
+    };
+
+    try {
+        // ** Call the same Netlify function, but it now needs to handle the suggestionMode **
+        const response = await fetch('/.netlify/functions/generate-weekly-plan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestPayload) // Send the enhanced payload
+        });
+
+        // ... (rest of the response handling - checking status, parsing JSON) ...
+        
+        // **MODIFIED: Handle different response types based on mode**
+        const aiResponse = await response.json(); // Expect format based on mode
+
+        if (suggestionMode === 'existing') {
+            // Expect the response to be the final plan with existing recipe IDs filled in
+            // Format: [{ day: 'Monday', type: 'cook-quick', recipe: { id: 'abc123', name: 'Existing Quick Pasta' } }, ...]
+            aiSuggestedPlan = aiResponse; 
+             if (!aiSuggestedPlan || !Array.isArray(aiSuggestedPlan)) {
+                 throw new Error("Chef Bot returned an invalid plan format for existing recipes.");
+             }
+             // Display the final suggestions directly
+             displayAISuggestions(aiSuggestedPlan, suggestionMode); 
+        } else { // suggestionMode === 'new'
+            // Expect the response to be IDEAS
+            // Format: [{ day: 'Monday', type: 'cook-quick', ideas: ['Idea 1', 'Idea 2'] }, { day: 'Tuesday', type: 'leftovers' }, ...]
+            const suggestedIdeas = aiResponse;
+             if (!suggestedIdeas || !Array.isArray(suggestedIdeas)) {
+                 throw new Error("Chef Bot returned an invalid ideas format.");
+             }
+             // Display the ideas for user selection
+             displayAIPlanIdeas(suggestedIdeas); // ** NEW function needed **
+             // Don't set aiSuggestedPlan yet, wait for user choices
+        }
+
+        if (plannerStatus) plannerStatus.textContent = suggestionMode === 'existing' ? "Review Chef Bot's suggestions below." : "Choose one idea for each day below.";
+
+    } catch (error) {
+        // ... (rest of error handling) ...
+    } finally {
+        // ... (reset button state) ...
+    }
+}
+
+// *** Placeholder function - We'll implement this later ***
+async function saveGeneratedPlan() {
+    if (!aiSuggestedPlan) {
+        alert("No plan suggestions available to save.");
+        return;
+    }
+
+    const plannerStatus = document.getElementById('aiPlannerStatus');
+    const saveButton = document.querySelector('#aiPlanSuggestions .btn-success'); // Find the save button
+    if (plannerStatus) plannerStatus.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving plan and any new recipes...';
+    if (saveButton) saveButton.disabled = true;
+
+    let savedCount = 0;
+    let errorCount = 0;
+    const todayStr = new Date().toISOString().split('T')[0]; // Simple way to get date for saving
+
+    // --- Determine Start Date (Needs Implementation) ---
+    // For now, using today + day offset. Ideally, use a date picker selected by the user.
+    const startDate = new Date(); // Or get from a date picker
+    const dateMap = {};
+    daysOfWeek.forEach((day, index) => {
+        const date = new Date(startDate);
+        date.setDate(startDate.getDate() + index); // Simple offset, doesn't handle month/year changes perfectly for long plans
+        dateMap[day] = date.toISOString().split('T')[0];
+    });
+    // --- End Start Date Placeholder ---
+
+
+    for (const item of aiSuggestedPlan) {
+        // Only save days where a recipe exists (either suggested existing or newly generated)
+        if (item.recipe && item.recipe.name) {
+            const dateForPlan = dateMap[item.day] || todayStr; // Use calculated date
+            let recipeIdToSave = item.recipe.id || null; // Will be null for newly generated recipes initially
+
+            // **NEW: Save newly generated recipes first**
+            // We need a flag or way to know if item.recipe is new vs existing.
+            // Let's assume if item.recipe.id is MISSING, it's new.
+            let isNewRecipe = !item.recipe.id; 
+            
+            if (isNewRecipe) {
+                try {
+                     console.log(`Saving newly generated recipe: ${item.recipe.name}`);
+                     // saveNewRecipeToStorage should return the ID of the saved recipe (Firestore or Local)
+                     const savedRecipeId = await saveNewRecipeToStorage(item.recipe); 
+                     if (savedRecipeId) {
+                         recipeIdToSave = savedRecipeId;
+                         console.log(`Saved new recipe, got ID: ${savedRecipeId}`);
+                     } else {
+                         throw new Error("Failed to save the new recipe itself.");
+                     }
+                } catch(recipeSaveError) {
+                     console.error(`Error saving NEW recipe "${item.recipe.name}" before planning:`, recipeSaveError);
+                     errorCount++;
+                     continue; // Skip planning this item if the recipe save failed
+                }
+            }
+             
+             // Now save the planning entry with the correct recipeId
+             const planEntry = {
+                 date: dateForPlan, 
+                 recipeName: item.recipe.name,
+             };
+
+             try {
+                if (currentUser) {
+                    planEntry.uid = currentUser.uid;
+                    planEntry.recipeId = recipeIdToSave; // Use the (potentially new) ID
+                    await db.collection("planning").add(planEntry);
+                } else if (localDB) {
+                    planEntry.localId = generateLocalUUID();
+                    planEntry.recipeLocalId = recipeIdToSave; // Use the (potentially new) ID
+                    await localDB.planning.add(planEntry);
+                }
+                savedCount++;
+             } catch (planSaveError) {
+                 console.error(`Error saving planned meal for ${item.day} (Recipe ID: ${recipeIdToSave}):`, planSaveError);
+                 errorCount++;
+             }
+        }
+    }
+
+    // ... (rest of the summary/navigation logic from your previous saveGeneratedPlan) ...
+     if (plannerStatus) plannerStatus.textContent = ''; // Clear status
+
+    if (errorCount > 0) {
+        showInfoConfirmModal("Plan Saved (with errors)", `Saved ${savedCount} meals to your plan. Failed to save ${errorCount} meals or recipes.`, [{ text: 'OK', class: 'btn-primary', dismiss: true }]);
+    } else {
+        showSuccessMessage(`Added ${savedCount} meals to your plan!`);
+    }
+    currentWeeklyPlan = {};
+    aiSuggestedPlan = null;
+    showPlanning(); 
+}
+
+/**
+ * Displays the AI-suggested recipe IDEAS for user selection.
+ * @param {Array} suggestedIdeas - The ideas structure from the AI. 
+ * Format: [{ day: 'Monday', type: 'cook-quick', ideas: ['Idea A', 'Idea B'] }, ...]
+ */
+function displayAIPlanIdeas(suggestedIdeas) {
+    const suggestionsDiv = document.getElementById('aiPlanSuggestions');
+    const suggestionsList = document.getElementById('aiSuggestionsList');
+    const confirmButton = suggestionsDiv ? suggestionsDiv.querySelector('.btn-success') : null; // Get the confirm/save button
+    const goBackButton = suggestionsDiv ? suggestionsDiv.querySelector('.btn-outline-secondary') : null; // Get the go back button
+
+    if (!suggestionsDiv || !suggestionsList || !confirmButton || !goBackButton) {
+        console.error("Required elements for displaying AI ideas not found!");
+        return;
+    }
+
+    suggestionsList.innerHTML = ''; // Clear previous content (like final suggestions)
+
+    let ideaSelectionNeeded = false; // Track if there are actually choices to make
+
+    suggestedIdeas.forEach((item, index) => {
+        const listItem = document.createElement('div');
+        listItem.className = 'list-group-item flex-column align-items-start'; // Use flex-column for layout
+
+        const dayHeader = document.createElement('h6');
+        dayHeader.className = 'mb-2 fw-bold';
+        dayHeader.textContent = item.day;
+        listItem.appendChild(dayHeader);
+
+        if (item.type === 'leftovers') {
+            const detailSpan = document.createElement('p');
+            detailSpan.className = 'mb-0 text-muted';
+            detailSpan.innerHTML = `<i class="bi bi-recycle me-2"></i> Leftovers`;
+            listItem.appendChild(detailSpan);
+        } else if (item.ideas && Array.isArray(item.ideas) && item.ideas.length > 0) {
+            ideaSelectionNeeded = true; // Mark that we have choices
+            const mealTypeInfo = mealTypes.find(mt => mt.id === item.type);
+            const typeLabel = mealTypeInfo ? `(${mealTypeInfo.label})` : '';
+
+            const ideaForm = document.createElement('div');
+            ideaForm.className = 'ms-3'; // Indent the choices slightly
+            ideaForm.innerHTML = `<p class="mb-1 small text-muted">Choose an idea ${typeLabel}:</p>`;
+
+            item.ideas.forEach((idea, ideaIndex) => {
+                const radioId = `idea-${item.day}-${ideaIndex}`;
+                const radioName = `idea-choice-${item.day}`; // Unique name per day group
+
+                const formCheck = document.createElement('div');
+                formCheck.className = 'form-check';
+                formCheck.innerHTML = `
+                    <input class="form-check-input ai-idea-radio" 
+                           type="radio" 
+                           name="${radioName}" 
+                           id="${radioId}" 
+                           value="${escapeHtml(idea)}" 
+                           data-day="${item.day}"
+                           ${ideaIndex === 0 ? 'checked' : ''}> 
+                    <label class="form-check-label" for="${radioId}">
+                        ${escapeHtml(idea)}
+                    </label>
+                `;
+                ideaForm.appendChild(formCheck);
+            });
+            listItem.appendChild(ideaForm);
+
+        } else { // No ideas provided for a 'cook' day
+            const detailSpan = document.createElement('p');
+            detailSpan.className = 'mb-0 text-warning';
+            detailSpan.innerHTML = `<i class="bi bi-question-circle me-2"></i> No specific ideas suggested by Chef Bot.`;
+            listItem.appendChild(detailSpan);
+        }
+
+        suggestionsList.appendChild(listItem);
+    });
+
+    // **Update the confirm button text and action**
+    confirmButton.textContent = 'Confirm Choices & Generate Recipes';
+    confirmButton.onclick = generateFullRecipesFromIdeas; // Point to the next step function
+
+    // Ensure the "Go Back" button still works correctly
+    goBackButton.onclick = cancelAISuggestions; 
+
+    // Show the suggestions area
+    suggestionsDiv.style.display = 'block';
+
+    // Disable confirm button if there were no actual ideas to choose from
+    confirmButton.disabled = !ideaSelectionNeeded;
+}
+
+/**
+ * Gathers chosen ideas and requests full recipes from the backend.
+ */
+async function generateFullRecipesFromIdeas() {
+    const suggestionsList = document.getElementById('aiSuggestionsList');
+    const plannerStatus = document.getElementById('aiPlannerStatus');
+    const confirmButton = document.querySelector('#aiPlanSuggestions .btn-success'); 
+    if (!suggestionsList || !plannerStatus || !confirmButton) return;
+
+    const chosenIdeas = [];
+    const checkedRadios = suggestionsList.querySelectorAll('.ai-idea-radio:checked');
+
+    checkedRadios.forEach(radio => {
+        // Find the original type associated with this day
+        const day = radio.dataset.day;
+        const originalType = currentWeeklyPlan[day]?.type || 'cook-1day'; // Default if somehow missing
+        
+        chosenIdeas.push({
+            day: day,
+            chosenIdea: radio.value,
+            type: originalType // Send the original type back for context
+        });
+    });
+
+    console.log("User chose these ideas:", chosenIdeas);
+
+    if (chosenIdeas.length === 0) {
+        alert("Please select at least one recipe idea to generate.");
+        return;
+    }
+
+    // --- UI Update: Show Loading State ---
+    plannerStatus.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Generating full recipes from choices...';
+    confirmButton.disabled = true;
+    confirmButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Generating...';
+    suggestionsList.querySelectorAll('.ai-idea-radio').forEach(radio => radio.disabled = true);
+
+    // --- Actual Backend Call ---
+    try {
+        // *** This needs a NEW Netlify function: '/.netlify/functions/generate-recipes-from-ideas' ***
+        const response = await fetch('/.netlify/functions/generate-recipes-from-ideas', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // Send the array of chosen ideas { day, chosenIdea, type }
+            body: JSON.stringify({ chosenIdeas: chosenIdeas }) 
+        });
+
+        console.log("generateFullRecipesFromIdeas: Fetch response received, status:", response.status);
+
+        const responseText = await response.text(); // Get raw text first
+        console.log("generateFullRecipesFromIdeas: Raw response text (first 300):", responseText.substring(0, 300)); 
+
+        if (!response.ok) {
+            let errorData = { error: `Server error ${response.status}.` };
+            try { errorData = JSON.parse(responseText); } catch (e) { errorData.details = responseText.substring(0,200); }
+            console.error("generate-recipes-from-ideas API error:", errorData);
+            throw new Error(errorData.error || `Chef Bot had an issue generating full recipes (Status: ${response.status}).`);
+        }
+
+        // Expect the response to be the final plan with full recipe details
+        // Format: [{ day: 'Monday', type: '...', recipe: { name: '...', ingredients: [...], ... } }, ...]
+        const fullRecipesPlan = JSON.parse(responseText);
+
+        if (!fullRecipesPlan || !Array.isArray(fullRecipesPlan)) {
+             throw new Error("Chef Bot returned an invalid format for full recipes.");
+        }
+        
+        // Add back any days that were 'leftovers' or had no selection/idea chosen
+        const finalPlanMap = new Map(fullRecipesPlan.map(item => [item.day, item]));
+        daysOfWeek.forEach(day => {
+            if (!finalPlanMap.has(day)) {
+                 const originalPlan = currentWeeklyPlan[day];
+                 if (originalPlan && originalPlan.type === 'leftovers') {
+                     finalPlanMap.set(day, { day: day, type: 'leftovers' });
+                 } else if (originalPlan && originalPlan.recipeId) {
+                     // If a recipe was pre-selected, it should still be included
+                     const existingRecipe = recipes.find(r => r.id === originalPlan.recipeId);
+                     if (existingRecipe) {
+                         finalPlanMap.set(day, { day: day, type: originalPlan.type, recipe: { id: existingRecipe.id, name: existingRecipe.name } });
+                     } else {
+                          finalPlanMap.set(day, { day: day, type: originalPlan.type || 'none', recipe: null }); // Fallback if pre-selected recipe not found
+                     }
+                 }
+                 else {
+                     finalPlanMap.set(day, { day: day, type: originalPlan?.type || 'none', recipe: null }); // Ensure all days are present
+                 }
+            }
+        });
+
+        // Convert map back to array and sort
+        aiSuggestedPlan = Array.from(finalPlanMap.values());
+        aiSuggestedPlan.sort((a, b) => daysOfWeek.indexOf(a.day) - daysOfWeek.indexOf(b.day));
+
+
+        console.log("Received and processed full recipes:", aiSuggestedPlan);
+
+        // --- Display Final Suggestions ---
+        displayAISuggestions(aiSuggestedPlan, 'new'); // Call the display function for the final review
+        plannerStatus.textContent = "Review the generated recipes below.";
+        
+        // The confirm button in displayAISuggestions is already set up to call saveGeneratedPlan()
+
+    } catch (error) {
+        console.error("Error generating full recipes:", error);
+        plannerStatus.textContent = `Error: ${error.message}`;
+         // Re-enable UI elements on error
+        confirmButton.disabled = false;
+        confirmButton.innerHTML = 'Confirm Choices & Generate Recipes';
+         suggestionsList.querySelectorAll('.ai-idea-radio').forEach(radio => radio.disabled = false);
+    }
+    // --- End Backend Call ---
+}
+
+// **Modify displayAISuggestions slightly to handle the 'mode' for clarity (optional)**
+/**
+ * Displays the AI-suggested recipes (either existing or newly generated) for user review.
+ * @param {Array} suggestedPlan - The plan structure with recipe details.
+ * @param {string} mode - 'existing' or 'new' to adjust text slightly (optional).
+ */
+function displayAISuggestions(suggestedPlan, mode = 'existing') { // Added mode parameter
+    const suggestionsDiv = document.getElementById('aiPlanSuggestions');
+    const suggestionsList = document.getElementById('aiSuggestionsList');
+    const confirmButton = suggestionsDiv ? suggestionsDiv.querySelector('.btn-success') : null;
+    const goBackButton = suggestionsDiv ? suggestionsDiv.querySelector('.btn-outline-secondary') : null;
+     const titleElement = suggestionsDiv ? suggestionsDiv.querySelector('h5') : null; // Get the title element
+
+
+    if (!suggestionsDiv || !suggestionsList || !confirmButton || !goBackButton || !titleElement) return;
+
+    suggestionsList.innerHTML = ''; 
+    
+    // Update title based on mode
+     titleElement.innerHTML = `<i class="bi bi-lightbulb-fill text-warning"></i> Chef Bot's ${mode === 'new' ? 'Generated Plan' : 'Suggestions'}:`;
+
+
+    suggestedPlan.forEach(item => {
+        // ... (rest of the logic from your previous displayAISuggestions to render the list item) ...
+         const listItem = document.createElement('div');
+        listItem.className = 'list-group-item d-flex justify-content-between align-items-center';
+
+        const daySpan = document.createElement('span');
+        daySpan.className = 'fw-bold me-3';
+        daySpan.textContent = item.day;
+
+        const detailSpan = document.createElement('span');
+        detailSpan.className = 'flex-grow-1 text-end'; 
+
+        if (item.type === 'leftovers') {
+            detailSpan.innerHTML = `<i class="bi bi-recycle me-2"></i> Leftovers`;
+            detailSpan.classList.add('text-muted');
+        } else if (item.recipe && item.recipe.name) {
+             // Find original meal type icon
+             const mealTypeInfo = mealTypes.find(mt => mt.id === item.type);
+             const iconClass = mealTypeInfo ? mealTypeInfo.icon : 'bi-egg'; // Default icon
+             detailSpan.innerHTML = `<i class="${iconClass} me-2"></i> ${escapeHtml(item.recipe.name)}`;
+             // Maybe add a tooltip or small button here later to view recipe details?
+        } else {
+             detailSpan.innerHTML = `<i class="bi bi-question-circle me-2"></i> No suggestion provided`;
+             detailSpan.classList.add('text-warning');
+        }
+
+        listItem.appendChild(daySpan);
+        listItem.appendChild(detailSpan);
+        suggestionsList.appendChild(listItem);
+    });
+
+    // **Ensure the confirm button now triggers the FINAL save**
+    confirmButton.textContent = 'Accept & Save Plan';
+    confirmButton.onclick = saveGeneratedPlan; 
+    confirmButton.disabled = false; // Ensure it's enabled
+
+    goBackButton.onclick = cancelAISuggestions; 
+
+    suggestionsDiv.style.display = 'block';
+}
