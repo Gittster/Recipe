@@ -4606,16 +4606,17 @@ async function loadPlannedMeals() { // Made async
     }
 }
 
-function renderPlannedMealsList(plannedEntries) {
+function renderPlannedMealsList(plannedEntries, options = {}) {
     const listContainer = document.getElementById('plannedMealsList');
+    if (!listContainer) return;
+    
     listContainer.innerHTML = ''; // Clear previous items or loading message
 
     if (!plannedEntries || plannedEntries.length === 0) {
-         listContainer.innerHTML = `<div class="list-group-item text-muted text-center">No meals planned yet. Use the form below to add some!</div>`;
+         listContainer.innerHTML = `<div class="list-group-item text-muted text-center">No meals planned for this period.</div>`;
         return;
     }
-    
-    // Group by date
+     
     const mealsByDate = plannedEntries.reduce((acc, entry) => {
         const date = entry.date;
         if (!acc[date]) {
@@ -4627,49 +4628,61 @@ function renderPlannedMealsList(plannedEntries) {
 
     const sortedDates = Object.keys(mealsByDate).sort();
 
+    // Create the highlighting regex once
+    const nameRegex = options.highlightNameTerm ? createHighlightRegex(options.highlightNameTerm) : null;
+    const highlightTermLower = options.highlightNameTerm ? options.highlightNameTerm.toLowerCase() : null;
+
     for (const date of sortedDates) {
         const dateHeader = document.createElement('h6');
-        dateHeader.className = 'mt-3 mb-2 text-primary fw-bold ps-1'; // Styling for date header
-        dateHeader.textContent = new Date(date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        dateHeader.className = 'mt-3 mb-2 text-primary fw-bold ps-1 d-flex align-items-center';
+        
+        const displayDate = new Date(date + 'T00:00:00').toLocaleDateString(undefined, { 
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+        });
+
+        const exportButton = document.createElement('button');
+        exportButton.className = 'btn btn-outline-primary btn-export-calendar';
+        exportButton.innerHTML = '<i class="bi bi-calendar-plus me-1"></i> Export';
+        exportButton.title = `Export ${displayDate} to Google Calendar`;
+        
+        const mealsForThisDate = mealsByDate[date];
+        
+        exportButton.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            exportDayToGoogleCalendar(date, mealsForThisDate);
+        };
+        
+        dateHeader.textContent = displayDate;
+        dateHeader.appendChild(exportButton);
         listContainer.appendChild(dateHeader);
 
         mealsByDate[date].forEach(entry => {
-            const li = document.createElement('div'); // Changed to div for better styling flexibility with list-group-item
-            li.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center mb-1 rounded'; // Added mb-1 and rounded
+            const li = document.createElement('div');
+            li.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center mb-1 rounded';
 
             const info = document.createElement('span');
-            info.textContent = entry.recipeName;
-            // You could add a link to view the recipe here if recipeLocalId/recipeId is available
-            // e.g., if (entry.recipeLocalId || entry.recipeId) { ... }
-
-            const exportButton = document.createElement('button');
-            exportButton.className = 'btn btn-outline-primary btn-export-calendar';
-            exportButton.innerHTML = '<i class="bi bi-calendar-plus me-1"></i> Export';
-            exportButton.title = `Export ${displayDate} to Google Calendar`;
-
-            // Get the meals for this specific date
-            const mealsForThisDate = mealsByDate[date];
             
-            exportButton.onclick = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                exportDayToGoogleCalendar(date, mealsForThisDate);
-            };
+            // --- ROBUST FIX IS HERE ---
+            // 1. Get the recipe name, providing a fallback if it's missing.
+            const recipeName = entry.recipeName || "Unnamed Meal";
             
-            // Add the date and button to the header
-            dateHeader.textContent = displayDate;
-            dateHeader.appendChild(exportButton);
-            
-            listContainer.appendChild(dateHeader);
+            // 2. Safely check for highlighting
+            if (nameRegex && highlightTermLower && recipeName.toLowerCase().includes(highlightTermLower)) {
+                info.innerHTML = recipeName.replace(nameRegex, '<mark>$1</mark>');
+            } else {
+                info.textContent = recipeName;
+            }
+            // --- END FIX ---
 
-            const deleteBtnContainer = document.createElement('div'); // Container for delete button
+            const deleteBtnContainer = document.createElement('div');
             deleteBtnContainer.className = 'delete-planned-meal-area';
 
             const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'btn btn-outline-danger btn-sm py-0 px-1'; // Smaller padding
+            deleteBtn.className = 'btn btn-outline-danger btn-sm py-0 px-1';
             deleteBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
-            deleteBtn.title = `Remove ${entry.recipeName} from ${date}`;
-            deleteBtn.onclick = () => confirmDeletePlannedMeal(entry.id, deleteBtnContainer, li); // entry.id is firestoreId or localId
+            deleteBtn.title = `Remove ${recipeName} from ${date}`;
+            deleteBtn.onclick = () => confirmDeletePlannedMeal(entry.id, deleteBtnContainer, li);
 
             deleteBtnContainer.appendChild(deleteBtn);
             li.appendChild(info);
