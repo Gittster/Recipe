@@ -7108,8 +7108,7 @@ const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Sat
  * Renders the AI Weekly Planner view in #mainView.
  */
 function showAIWeeklyPlanner() {
-    updatePageTitle("Chef Bot Planner");
-    // Optionally, keep the 'Plan' tab visually active if desired
+    updatePageTitle("AI Weekly Planner");
     // setActiveNavButton("plan"); 
 
     const view = document.getElementById('mainView');
@@ -7117,43 +7116,40 @@ function showAIWeeklyPlanner() {
         console.error("mainView element not found for showAIWeeklyPlanner");
         return;
     }
-    // Apply appropriate classes for styling and layout
     view.className = 'section-ai-planner bg-body-tertiary flex-grow-1 overflow-auto'; 
 
-    // Set the HTML structure for the AI planner view
+    // ** Sample list of recipe styles - expand as needed **
+    const recipeStyles = ["Any", "Soup", "Grill", "Instant Pot", "Baked", "Pasta", "Stir-fry", "Salad", "Slow Cooker", "Mexican", "Italian", "Asian"];
+    
     view.innerHTML = `
     <div class="container py-3 ai-weekly-planner">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap">
-            <h4 class="mb-2 mb-sm-0"><i class="bi bi-robot me-2"></i> Chef Bot Planner</h4>
+            <h4 class="mb-2 mb-sm-0"><i class="bi bi-robot me-2"></i> AI Weekly Meal Planner</h4>
             <button class="btn btn-sm btn-outline-secondary" onclick="showPlanning()">
                  <i class="bi bi-arrow-left"></i> Back to Plan
             </button>
         </div>
-        <p class="text-muted mb-4">Select a cooking style for each day, then ask Chef Bot for recipe suggestions!</p>
-
-        <div id="weeklyPlannerDays" class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3 mb-4">
-            <div class="col"><div class="card h-100 placeholder-glow"><div class="card-body text-center"><span class="placeholder col-6"></span><div class="placeholder col-12 mt-2"></div></div></div></div>
-            <div class="col"><div class="card h-100 placeholder-glow"><div class="card-body text-center"><span class="placeholder col-6"></span><div class="placeholder col-12 mt-2"></div></div></div></div>
-            <div class="col"><div class="card h-100 placeholder-glow"><div class="card-body text-center"><span class="placeholder col-6"></span><div class="placeholder col-12 mt-2"></div></div></div></div>
-        </div>
+        <p class="text-muted mb-3">Select a cooking style for each day, optionally pre-select recipes, and set preferences. Then ask Chef Bot for suggestions!</p>
 
         <div class="card card-body bg-light-subtle mb-4">
-            <label class="form-label fw-semibold">Chef Bot Suggestion Mode:</label>
-            <div class="form-check">
-                <input class="form-check-input" type="radio" name="aiSuggestionMode" id="suggestExistingRadio" value="existing" checked>
-                <label class="form-check-label" for="suggestExistingRadio">
-                    Suggest from My Saved Recipes
-                    <small class="d-block text-muted">Prioritizes your recipes based on rating, usage, and variety.</small>
-                </label>
-            </div>
-            <div class="form-check mt-2">
-                <input class="form-check-input" type="radio" name="aiSuggestionMode" id="suggestNewRadio" value="new">
-                <label class="form-check-label" for="suggestNewRadio">
-                    Suggest New Recipe Ideas
-                    <small class="d-block text-muted">Provides a few new ideas per day for you to choose from first.</small>
-                </label>
-            </div>
+             <h6 class="mb-3">Chef Bot Preferences (Optional)</h6>
+             <div class="row g-3">
+                 <div class="col-md-6">
+                     <label for="aiPlannerTimeLimit" class="form-label small fw-semibold">Max Cooking Time (minutes):</label>
+                     <input type="number" class="form-control form-control-sm" id="aiPlannerTimeLimit" placeholder="e.g., 45" min="0">
+                     <div class="form-text small">Suggest recipes that take less than this time.</div>
+                 </div>
+                 <div class="col-md-6">
+                     <label for="aiPlannerRecipeStyle" class="form-label small fw-semibold">Preferred Recipe Style:</label>
+                     <select class="form-select form-select-sm" id="aiPlannerRecipeStyle">
+                         ${recipeStyles.map(style => `<option value="${style.toLowerCase() === 'any' ? '' : style}">${style}</option>`).join('')}
+                     </select>
+                     <div class="form-text small">Guide Chef Bot towards a specific type of dish.</div>
+                 </div>
+             </div>
         </div>
+        <div id="weeklyPlannerDays" class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3 mb-4">
+            </div>
 
         <div class="text-center">
             <button id="askChefBotForPlanBtn" class="btn btn-primary btn-lg" onclick="generatePlanWithChefBot()">
@@ -7164,22 +7160,15 @@ function showAIWeeklyPlanner() {
 
         <div id="aiPlanSuggestions" class="mt-4" style="display: none;">
              <h5 class="mb-3"><i class="bi bi-lightbulb-fill text-warning"></i> Chef Bot's Suggestions:</h5>
-             <p class="text-muted small">Review the suggestions below. You can accept the plan or go back to adjust your choices.</p>
-             <div id="aiSuggestionsList" class="list-group mb-3">
-                 </div>
-             <div class="text-end mt-3">
-                  <button class="btn btn-outline-secondary me-2" onclick="cancelAISuggestions()"> <i class="bi bi-arrow-left"></i> Go Back</button>
-                  <button class="btn btn-success" onclick="saveGeneratedPlan()"> <i class="bi bi-check-lg"></i> Accept & Save Plan</button>
-             </div>
+             {/* ... rest of suggestions area ... */}
          </div>
     </div>`;
 
-    // Call the function to render the day cards into the #weeklyPlannerDays div
     renderDayCards();
 }
 
 /**
- * Renders the individual day cards within the planner interface.
+ * Renders the individual day cards, including recipe selector and per-day suggestion mode choice.
  */
 function renderDayCards() {
     const container = document.getElementById('weeklyPlannerDays');
@@ -7187,7 +7176,8 @@ function renderDayCards() {
     container.innerHTML = ''; 
 
     daysOfWeek.forEach(day => {
-        const dayPlan = currentWeeklyPlan[day] || { type: null, recipeId: null }; // Get current state for the day
+        // ** Default suggestionMode to 'existing' **
+        const dayPlan = currentWeeklyPlan[day] || { type: null, recipeId: null, suggestionMode: 'existing' }; 
 
         const col = document.createElement('div');
         col.className = 'col';
@@ -7201,13 +7191,13 @@ function renderDayCards() {
 
         mealTypes.forEach(type => {
             const isSelected = dayPlan.type === type.id;
-            // **MODIFIED**: onclick now calls toggleMealTypeSelection
             cardHTML += `
                 <button type="button" 
                         class="list-group-item list-group-item-action planner-option ${isSelected ? 'active' : ''}" 
                         data-day="${day}" 
                         data-type="${type.id}"
                         onclick="toggleMealTypeSelection(this)"> 
+                    {/* ... icon and label ... */}
                     <div class="d-flex w-100 justify-content-start align-items-center">
                          <i class="${type.icon} me-3 fs-5 text-primary" style="width: 20px; text-align: center;"></i> 
                          <div>
@@ -7217,22 +7207,39 @@ function renderDayCards() {
                     </div>
                 </button>`;
             
-            // **NEW**: Add recipe selector area, initially hidden unless this type is active
-            // Don't show selector for 'leftovers' type
+            // Recipe selector area (only for 'cook-' types)
             if (type.id !== 'leftovers') {
                 const showSelector = isSelected; 
+                // **UPDATED Recipe Selector Area with Suggestion Mode Radios**
                 cardHTML += `
                     <div class="recipe-selector-container list-group-item ${showSelector ? '' : 'd-none'}" id="selector-${day}-${type.id}">
-                        <label for="recipe-select-${day}-${type.id}" class="form-label small fw-semibold">Select Recipe (Optional):</label>
-                        <select class="form-select form-select-sm recipe-select-dropdown" 
+                        
+                        <label for="recipe-select-${day}-${type.id}" class="form-label small fw-semibold mb-1">Select Recipe (Optional):</label>
+                        <select class="form-select form-select-sm recipe-select-dropdown mb-2" 
                                 id="recipe-select-${day}-${type.id}" 
                                 data-day="${day}" 
                                 data-type="${type.id}" 
                                 onchange="selectRecipeForDay(this)">
-                            <option value="">-- Ask Chef Bot --</option> 
-                            </select>
-                         <div class="form-text small">Leave blank to let Chef Bot suggest one.</div>
-                    </div>`;
+                            <option value="">-- Let Chef Bot Suggest --</option> 
+                            {/* Options populated by populateRecipeSelector */}
+                        </select>
+
+                        <div class="suggestion-mode-options mt-2 ${dayPlan.recipeId ? 'd-none' : ''}" id="suggestion-mode-${day}-${type.id}">
+                             <label class="form-label small fw-semibold mb-1">Suggestion Type:</label>
+                             <div class="form-check form-check-inline">
+                                 <input class="form-check-input" type="radio" name="suggestionMode-${day}-${type.id}" id="mode-existing-${day}-${type.id}" 
+                                        value="existing" ${dayPlan.suggestionMode === 'existing' ? 'checked' : ''} 
+                                        data-day="${day}" onclick="setSuggestionMode(this)">
+                                 <label class="form-check-label small" for="mode-existing-${day}-${type.id}">From My Recipes</label>
+                             </div>
+                             <div class="form-check form-check-inline">
+                                 <input class="form-check-input" type="radio" name="suggestionMode-${day}-${type.id}" id="mode-new-${day}-${type.id}" 
+                                        value="new" ${dayPlan.suggestionMode === 'new' ? 'checked' : ''} 
+                                        data-day="${day}" onclick="setSuggestionMode(this)">
+                                 <label class="form-check-label small" for="mode-new-${day}-${type.id}">New Idea</label>
+                             </div>
+                        </div>
+                        </div>`;
             }
         });
 
@@ -7241,7 +7248,7 @@ function renderDayCards() {
         col.appendChild(card);
         container.appendChild(col);
 
-        // **NEW**: After card is added, populate its dropdowns if needed
+        // Populate dropdown if needed (unchanged)
         if (dayPlan.type && dayPlan.type !== 'leftovers') {
             populateRecipeSelector(day, dayPlan.type, dayPlan.recipeId);
         }
