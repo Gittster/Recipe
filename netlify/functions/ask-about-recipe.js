@@ -4,7 +4,7 @@ console.log("ask-about-recipe.js: Top of file, loading modules.");
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require("@google/generative-ai");
 console.log("ask-about-recipe.js: GoogleGenerativeAI module loaded.");
 
-const MODEL_NAME = "gemini-1.5-flash-latest"; // Or your preferred Gemini model
+const MODEL_NAME = "gemini-2.0-flash"; // Or your preferred Gemini model
 const API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
 console.log("ask-about-recipe.js: API_KEY defined?", !!API_KEY);
 

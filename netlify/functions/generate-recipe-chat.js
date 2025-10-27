@@ -4,7 +4,7 @@ console.log("generate-recipe-chat.js: Top of file, loading modules."); // LOG 1
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require("@google/generative-ai");
 console.log("generate-recipe-chat.js: GoogleGenerativeAI module loaded."); // LOG 2
 
-const MODEL_NAME = "gemini-1.5-flash";
+const MODEL_NAME = "gemini-2.0-flash";
 const API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
 console.log("generate-recipe-chat.js: API_KEY defined?", !!API_KEY); // LOG 3
 
