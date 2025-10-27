@@ -2,7 +2,7 @@
 console.log("generate-weekly-plan.js: Loading modules.");
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require("@google/generative-ai");
 
-const MODEL_NAME = "gemini-1.5-flash"; // Or your preferred model
+const MODEL_NAME = "gemini-2.0-flash"; // Or your preferred model
 const API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
 console.log("generate-weekly-plan.js: API_KEY defined?", !!API_KEY);
 
