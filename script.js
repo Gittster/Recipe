@@ -18,6 +18,16 @@ let dedicatedRecipePhotoInput = null; // <<< ADD THIS DECLARATION HERE
 let userSettingsModalInstance = null;
 let currentWeeklyPlan = {};
 
+const dietaryOptions = [
+    // Allergies
+    "Gluten-Free", "Dairy-Free", "Nut-Free", "Soy-Free", "Egg-Free", "Shellfish-Free", "Fish-Free",
+    // Choices/Preferences
+    "Vegetarian", "Vegan", "Pescatarian", "Keto", "Paleo", "Low-Carb", "Low-FODMAP",
+    // Other common ones
+    "No Pork", "No Red Meat" 
+    // Add more as needed
+];
+
 document.addEventListener('DOMContentLoaded', () => {
     const loginModalElement = document.getElementById('loginModal');
     if (loginModalElement) {
@@ -5126,32 +5136,66 @@ async function openUserSettingsModal() {
     if (!userSettingsModalInstance || !currentUser) return;
 
     const statusDiv = document.getElementById('settingsSaveStatus');
-    if (statusDiv) statusDiv.textContent = ''; // Clear status
+    if (statusDiv) statusDiv.textContent = ''; 
 
-    // Get current preferences from Firestore to populate the form
+    // Populate Email (if using the enhanced UI from previous suggestions)
+    const userEmailElement = document.getElementById('settingsUserEmail');
+    if (userEmailElement && currentUser.email) {
+        userEmailElement.textContent = currentUser.email;
+    }
+
+    // ** NEW: Populate Dietary Checkboxes **
+    const checkboxContainer = document.getElementById('dietaryRestrictionsCheckboxes');
+    if (checkboxContainer) {
+         checkboxContainer.innerHTML = ''; // Clear placeholders
+         dietaryOptions.forEach(option => {
+             const optionId = `diet-${option.toLowerCase().replace(/[^a-z0-9]/g, '-')}`; // Create a safe ID
+             const col = document.createElement('div');
+             col.className = 'col';
+             col.innerHTML = `
+                 <div class="form-check">
+                     <input class="form-check-input dietary-restriction-checkbox" type="checkbox" value="${option}" id="${optionId}">
+                     <label class="form-check-label small" for="${optionId}">
+                         ${option}
+                     </label>
+                 </div>
+             `;
+             checkboxContainer.appendChild(col);
+         });
+    }
+    // ** END NEW BLOCK **
+
+    // Get current preferences from Firestore
     try {
         const userRef = db.collection('users').doc(currentUser.uid);
         const userDoc = await userRef.get();
-        
+
+        let prefs = {};
         if (userDoc.exists && userDoc.data().preferences) {
-            const prefs = userDoc.data().preferences;
-            
-            // Set the saved sort order
-            const sortSelect = document.getElementById('defaultSortOrder');
-            if (sortSelect) sortSelect.value = prefs.recipeSortOrder || 'all';
-            
-            // Set the saved calendar time
-            const timeInput = document.getElementById('defaultCalendarTime');
-            if (timeInput) timeInput.value = prefs.defaultCalendarTime || '18:00'; // Default to 18:00
-            
-        } else {
-            // No preferences saved yet, set to defaults
-            document.getElementById('defaultSortOrder').value = 'all';
-            document.getElementById('defaultCalendarTime').value = '18:00';
+            prefs = userDoc.data().preferences;
         }
-        
+
+        // Set General Sort Order
+        const sortSelect = document.getElementById('defaultSortOrder');
+        if (sortSelect) sortSelect.value = prefs.recipeSortOrder || 'all';
+
+        // Set Planning Calendar Time
+        const timeInput = document.getElementById('defaultCalendarTime');
+        if (timeInput) timeInput.value = prefs.defaultCalendarTime || '18:00'; 
+
+        // ** NEW: Check Dietary Restriction Boxes **
+         if (checkboxContainer && Array.isArray(prefs.dietaryRestrictions)) {
+             prefs.dietaryRestrictions.forEach(savedRestriction => {
+                 const checkbox = checkboxContainer.querySelector(`input[value="${savedRestriction}"]`);
+                 if (checkbox) {
+                     checkbox.checked = true;
+                 }
+             });
+         }
+         // ** END NEW BLOCK **
+
         userSettingsModalInstance.show();
-        
+
     } catch (error) {
         console.error("Error loading user settings:", error);
         alert("Could not load your settings. " + error.message);
@@ -5167,10 +5211,15 @@ async function saveUserSettings() {
 
     const newSortOrder = sortSelect.value;
     const newCalendarTime = timeInput.value; // e.g., "18:00"
+    const checkedDietaryOptions = [];
+    document.querySelectorAll('.dietary-restriction-checkbox:checked').forEach(checkbox => {
+         checkedDietaryOptions.push(checkbox.value);
+    });
 
     const newPreferences = {
         recipeSortOrder: newSortOrder,
-        defaultCalendarTime: newCalendarTime
+        defaultCalendarTime: newCalendarTime,
+        dietaryRestrictions: checkedDietaryOptions // Add the array
     };
 
     if (statusDiv) {
@@ -7431,6 +7480,7 @@ async function generatePlanWithChefBot() {
     const suggestionsDiv = document.getElementById('aiPlanSuggestions');
     const suggestionsList = document.getElementById('aiSuggestionsList');
 
+    let userDietaryRestrictions = [];
     // **NEW: Get selected suggestion mode**
     const suggestionModeElement = document.querySelector('input[name="aiSuggestionMode"]:checked');
     const suggestionMode = suggestionModeElement ? suggestionModeElement.value : 'existing'; // Default to 'existing' if somehow none is checked
@@ -7470,6 +7520,7 @@ async function generatePlanWithChefBot() {
     const requestPayload = {
         planStructure: planRequest,
         existingRecipes: recipes.map(r => ({ /* ... id, name, tags, rating ... */ })), 
+        dietaryRestrictions: userDietaryRestrictions
         // ** REMOVE Global Preferences Object **
         // preferences: { ... } 
     };

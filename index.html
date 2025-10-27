@@ -290,23 +290,79 @@
                     <h5 class="modal-title" id="userSettingsModalLabel"><i class="bi bi-gear-fill me-2"></i>Settings</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body">
-                    <p class="text-muted small">Your preferences are saved to your account and sync across devices.</p>
-                    <hr>
-                    <div class="mb-3">
-                        <label for="defaultSortOrder" class="form-label fw-semibold">Default Recipe Sort Order</label>
-                        <select id="defaultSortOrder" class="form-select">
-                            <option value="all">All Recipes (A-Z)</option>
-                            <option value="newest">Recently Added</option>
-                        </select>
+                
+                <div class="modal-body p-0"> 
+                    <div id="settingsTabsContainer">
+                        <ul class="nav nav-pills p-3 border-bottom" id="settingsTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="general-tab" data-bs-toggle="pill" data-bs-target="#general-pane" type="button" role="tab" aria-controls="general-pane" aria-selected="true">
+                                    <i class="bi bi-gear-fill me-1"></i> General
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="planning-tab" data-bs-toggle="pill" data-bs-target="#planning-pane" type="button" role="tab" aria-controls="planning-pane" aria-selected="false">
+                                    <i class="bi bi-calendar-week me-1"></i> Planning
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="dietary-tab" data-bs-toggle="pill" data-bs-target="#dietary-pane" type="button" role="tab" aria-controls="dietary-pane" aria-selected="false">
+                                    <i class="bi bi-shield-check me-1"></i> Dietary
+                                </button>
+                            </li>
+                            </ul>
+
+                        <div class="tab-content p-3" id="settingsTabsContent">
+                            
+                            <div class="tab-pane fade show active" id="general-pane" role="tabpanel" aria-labelledby="general-tab" tabindex="0">
+                                <p class="text-muted small">Your preferences for viewing your recipes.</p>
+                                
+                                <div class="list-group list-group-flush border-bottom mb-3">
+                                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                                        <label for="defaultSortOrder" class="form-label mb-0 fw-semibold">
+                                            <i class="bi bi-sort-down me-2 text-primary"></i> Default Recipe Sort
+                                        </label>
+                                        <select id="defaultSortOrder" class="form-select form-select-sm w-auto" style="min-width: 150px;">
+                                            <option value="all">Alphabetical (A-Z)</option>
+                                            <option value="newest">Recently Added</option>
+                                            <option value="modified">Date Modified</option>
+                                            <option value="rating">Rating</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div id="accountInfoSummary">
+                                    <p class="text-muted small mb-1">Account Info:</p>
+                                    <p class="small mb-0"><i class="bi bi-person-check-fill me-2"></i> <span id="settingsUserEmail">Loading...</span></p>
+                                    <button class="btn btn-link btn-sm text-danger p-0 mt-2" onclick="signOut()"><i class="bi bi-box-arrow-right me-1"></i> Log Out</button>
+                                </div>
+                            </div>
+
+                            <div class="tab-pane fade" id="planning-pane" role="tabpanel" aria-labelledby="planning-tab" tabindex="0">
+                                <p class="text-muted small">Preferences for your Meal Plan and Calendar.</p>
+                                
+                                <div class="list-group list-group-flush">
+                                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                                        <label for="defaultCalendarTime" class="form-label mb-0 fw-semibold">
+                                            <i class="bi bi-calendar-check me-2 text-success"></i> Default Calendar Time
+                                        </label>
+                                        <input type="time" id="defaultCalendarTime" class="form-control form-control-sm w-auto" style="min-width: 120px;">
+                                    </div>
+                                </div>
+                                <div class="form-text small mt-2">Sets the time when exporting a planned meal to a calendar app.</div>
+                            </div>
+
+                            <div class="tab-pane fade" id="dietary-pane" role="tabpanel" aria-labelledby="dietary-tab" tabindex="0">
+                                <p class="text-muted small">Select any dietary restrictions or preferences Chef Bot should consider when suggesting new recipes.</p>
+                                <div id="dietaryRestrictionsCheckboxes" class="row row-cols-2 row-cols-sm-3 g-2 mt-2">
+                                    <div class="col"><span class="placeholder col-10"></span></div> 
+                                    <div class="col"><span class="placeholder col-10"></span></div>
+                                    <div class="col"><span class="placeholder col-10"></span></div>
+                                </div>
+                            </div>
+                             </div>
                     </div>
-                    <div class="mb-3">
-                        <label for="defaultCalendarTime" class="form-label fw-semibold">Default Meal Plan Time</label>
-                        <input type="time" id="defaultCalendarTime" class="form-control">
-                        <div class="form-text">Set a default time (e.g., 6:00 PM) for calendar events.</div>
-                    </div>
-                    </div>
-                <div class="modal-footer">
+                </div> 
+                 <div class="modal-footer">
                     <div id="settingsSaveStatus" class="small me-auto"></div>
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
                     <button type="button" class="btn btn-primary" onclick="saveUserSettings()">Save Settings</button>
