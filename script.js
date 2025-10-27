@@ -4642,6 +4642,26 @@ function renderPlannedMealsList(plannedEntries) {
             // You could add a link to view the recipe here if recipeLocalId/recipeId is available
             // e.g., if (entry.recipeLocalId || entry.recipeId) { ... }
 
+            const exportButton = document.createElement('button');
+            exportButton.className = 'btn btn-outline-primary btn-export-calendar';
+            exportButton.innerHTML = '<i class="bi bi-calendar-plus me-1"></i> Export';
+            exportButton.title = `Export ${displayDate} to Google Calendar`;
+
+            // Get the meals for this specific date
+            const mealsForThisDate = mealsByDate[date];
+            
+            exportButton.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                exportDayToGoogleCalendar(date, mealsForThisDate);
+            };
+            
+            // Add the date and button to the header
+            dateHeader.textContent = displayDate;
+            dateHeader.appendChild(exportButton);
+            
+            listContainer.appendChild(dateHeader);
+
             const deleteBtnContainer = document.createElement('div'); // Container for delete button
             deleteBtnContainer.className = 'delete-planned-meal-area';
 
@@ -4657,6 +4677,52 @@ function renderPlannedMealsList(plannedEntries) {
             listContainer.appendChild(li);
         });
     }
+}
+
+// script.js
+
+/**
+ * Helper function to format a YYYY-MM-DD date into YYYYMMDD format for Google Calendar.
+ * @param {string} dateString - The date in "YYYY-MM-DD" format.
+ * @returns {string} The date in "YYYYMMDD" format.
+ */
+function formatDateForGoogleCalendar(dateString) {
+    return dateString.replace(/-/g, '');
+}
+
+/**
+ * Creates and opens a Google Calendar link for a specific day's meal plan.
+ * @param {string} date - The date of the plan (YYYY-MM-DD).
+ * @param {Array<Object>} meals - The array of meal (planEntry) objects for that day.
+ */
+function exportDayToGoogleCalendar(date, meals) {
+    console.log(`Exporting meals for ${date}:`, meals);
+
+    // Format the title, e.g., "Meal Plan (2 Recipes)"
+    const title = `Meal Plan (${meals.length} Recipe${meals.length > 1 ? 's' : ''})`;
+
+    // Format the description with one meal per line
+    const details = meals.map(meal => {
+        return `- ${meal.recipeName}`;
+    }).join('\n'); // Use newline character for the description
+
+    // Format the dates for an all-day event
+    // Google all-day events start on one day and end on the *next* day.
+    const startDate = formatDateForGoogleCalendar(date);
+    
+    // Get the next day
+    const localStartDate = new Date(date + 'T00:00:00'); // Treat as local timezone
+    const nextDay = new Date(localStartDate.getTime() + 24 * 60 * 60 * 1000); // Add 24 hours
+    
+    // Format the next day as YYYY-MM-DD, then YYYYMMDD
+    const nextDayISO = nextDay.toISOString().split('T')[0];
+    const endDate = formatDateForGoogleCalendar(nextDayISO);
+
+    // Build the URL
+    const googleCalendarUrl = `https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${startDate}/${endDate}&details=${encodeURIComponent(details)}`;
+
+    console.log("Opening Google Calendar URL:", googleCalendarUrl);
+    window.open(googleCalendarUrl, '_blank');
 }
 
 function confirmDeletePlannedMeal(planId, deleteAreaContainer, listItemElement) {

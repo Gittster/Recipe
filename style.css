@@ -321,3 +321,11 @@ mark {
 .folder-list-container.edit-mode-active .delete-folder-icon-container {
     display: inline-block;
 }
+
+/* Style for the 'Export to Calendar' button on each date header */
+.btn-export-calendar {
+    padding: 0.1rem 0.4rem;
+    font-size: 0.7rem;
+    margin-left: 0.75rem;
+    vertical-align: middle;
+}
