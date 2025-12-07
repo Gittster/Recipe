@@ -2,7 +2,7 @@
 
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require("@google/generative-ai");
 
-const MODEL_NAME = "gemini-2.0-flash"; // Using your preferred model
+const MODEL_NAME = "gemini-2.5-flash"; // Using your preferred model
 const API_KEY = process.env.GOOGLE_GEMINI_API_KEY; // Using your API key variable
 const ALLOWED_ORIGIN = "https://erinslist.netlify.app";
 
