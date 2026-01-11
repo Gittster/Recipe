@@ -6,8 +6,7 @@ const MODEL_NAME = "gemini-2.5-flash"; // Or your preferred model
 const API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
 console.log("generate-weekly-plan.js: API_KEY defined?", !!API_KEY);
 
-// Use Netlify's URL env variable if available, otherwise default
-const ALLOWED_ORIGIN = process.env.URL || "https://erinslist.netlify.app"; 
+const ALLOWED_ORIGIN = process.env.CONTEXT === 'dev' ? '*' : "https://erinslist.netlify.app";
 console.log("generate-weekly-plan.js: Allowing origin:", ALLOWED_ORIGIN);
 
 

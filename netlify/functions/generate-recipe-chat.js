@@ -8,8 +8,8 @@ const MODEL_NAME = "gemini-2.5-flash";
 const API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
 console.log("generate-recipe-chat.js: API_KEY defined?", !!API_KEY); // LOG 3
 
-const ALLOWED_ORIGIN = "https://erinslist.netlify.app"; // Your Netlify app's domain
-console.log("generate-recipe-chat.js: ALLOWED_ORIGIN defined."); // LOG 4
+const ALLOWED_ORIGIN = process.env.CONTEXT === 'dev' ? '*' : "https://erinslist.netlify.app";
+console.log("generate-recipe-chat.js: ALLOWED_ORIGIN:", ALLOWED_ORIGIN); // LOG 4
 
 exports.handler = async (event) => {
     console.log("generate-recipe-chat.js: Handler started. Event HTTP method:", event.httpMethod); // LOG 5

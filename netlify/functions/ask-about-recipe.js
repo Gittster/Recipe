@@ -8,8 +8,7 @@ const MODEL_NAME = "gemini-2.5-flash"; // Or your preferred Gemini model
 const API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
 console.log("ask-about-recipe.js: API_KEY defined?", !!API_KEY);
 
-// IMPORTANT: Set your actual Netlify URL or "*" for local dev
-const ALLOWED_ORIGIN = process.env.NETLIFY_URL || "https://your-app-name.netlify.app";
+const ALLOWED_ORIGIN = process.env.CONTEXT === 'dev' ? '*' : "https://erinslist.netlify.app";
 console.log("ask-about-recipe.js: ALLOWED_ORIGIN set to:", ALLOWED_ORIGIN);
 
 exports.handler = async (event) => {

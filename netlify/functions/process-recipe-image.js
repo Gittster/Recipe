@@ -1,7 +1,7 @@
 // functions/process-recipe-image.js
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require("@google/generative-ai");
 
-const ALLOWED_ORIGIN = process.env.DEPLOY_PRIME_URL || process.env.URL || "*"; // More flexible for local dev
+const ALLOWED_ORIGIN = process.env.CONTEXT === 'dev' ? '*' : "https://erinslist.netlify.app";
 const API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
 const MODEL_NAME = "gemini-2.5-flash"; // Multimodal model
 

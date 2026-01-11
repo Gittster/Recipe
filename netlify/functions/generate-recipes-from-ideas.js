@@ -6,7 +6,7 @@ const MODEL_NAME = "gemini-2.5-flash";
 const API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
 console.log("generate-recipes-from-ideas.js: API_KEY defined?", !!API_KEY);
 
-const ALLOWED_ORIGIN = "https://erinslist.netlify.app";
+const ALLOWED_ORIGIN = process.env.CONTEXT === 'dev' ? '*' : "https://erinslist.netlify.app";
 
 exports.handler = async (event) => {
     console.log("generate-recipes-from-ideas.js: Handler started. Method:", event.httpMethod);

@@ -370,35 +370,6 @@
             </div>
         </div>
     </div>
-    <div class="container py-3 ai-weekly-planner">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h4><i class="bi bi-robot me-2"></i> Chef Bot Meal Planner</h4>
-            <button class="btn btn-sm btn-outline-secondary" onclick="showPlanning()">
-                <i class="bi bi-arrow-left"></i> Back to Plan
-            </button>
-        </div>
-        <p class="text-muted">Select a cooking style for each day, then ask Chef Bot for recipe suggestions!</p>
-
-        <div id="weeklyPlannerDays" class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3 mb-4">
-            </div>
-
-        <div class="text-center">
-            <button id="askChefBotForPlanBtn" class="btn btn-primary btn-lg" onclick="generatePlanWithChefBot()">
-                <i class="bi bi-magic"></i> Ask Chef Bot for Suggestions
-            </button>
-            <div id="aiPlannerStatus" class="mt-2 small text-muted"></div>
-        </div>
-
-        <div id="aiPlanSuggestions" class="mt-4" style="display: none;">
-            <h5>Chef Bot's Suggestions:</h5>
-            <div id="aiSuggestionsList" class="list-group">
-                </div>
-            <div class="text-end mt-3">
-                <button class="btn btn-secondary me-2" onclick="cancelAISuggestions()">Cancel</button>
-                <button class="btn btn-success" onclick="saveGeneratedPlan()">Accept & Save Plan</button>
-            </div>
-        </div>
-    </div>
     <canvas id="preprocessCanvas" style="display:none;"></canvas>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>

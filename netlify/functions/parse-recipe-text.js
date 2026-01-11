@@ -4,7 +4,7 @@ const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require("@googl
 
 const MODEL_NAME = "gemini-2.5-flash"; // Using your preferred model
 const API_KEY = process.env.GOOGLE_GEMINI_API_KEY; // Using your API key variable
-const ALLOWED_ORIGIN = "https://erinslist.netlify.app";
+const ALLOWED_ORIGIN = process.env.CONTEXT === 'dev' ? '*' : "https://erinslist.netlify.app";
 
 exports.handler = async (event) => {
     // --- All of your existing robust header and error handling ---
