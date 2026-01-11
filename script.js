@@ -18,6 +18,22 @@ let dedicatedRecipePhotoInput = null; // <<< ADD THIS DECLARATION HERE
 let userSettingsModalInstance = null;
 let currentWeeklyPlan = {};
 
+// Track which recipe cards are expanded (persists across re-renders)
+const expandedRecipeIds = new Set();
+
+function toggleRecipeCard(recipeId) {
+    const card = document.querySelector(`.recipe-card[data-recipe-id="${recipeId}"]`);
+    if (!card) return;
+
+    if (expandedRecipeIds.has(recipeId)) {
+        expandedRecipeIds.delete(recipeId);
+        card.classList.remove('recipe-card-expanded');
+    } else {
+        expandedRecipeIds.add(recipeId);
+        card.classList.add('recipe-card-expanded');
+    }
+}
+
 const dietaryOptions = [
     // Allergies
     "Gluten-Free", "Dairy-Free", "Nut-Free", "Soy-Free", "Egg-Free", "Shellfish-Free", "Fish-Free",
@@ -1497,22 +1513,21 @@ function markAsMade(recipeDataFromCard, buttonElement) {
 
     form.appendChild(textarea);
     form.appendChild(controls);
-    // Insert the form after the card's main content but before other action buttons if any,
-    // or simply at the end of the card body.
-    // Assuming 'card' is the main recipe card element:
-    const cardBody = card.querySelector('.card-body'); // Or a more specific container within the card
-    if (cardBody) {
-        // Check if there's a row of buttons at the bottom of card-body (like plan meal, mark as made)
-        const bottomButtonRow = cardBody.querySelector('.justify-content-start.gap-2.mt-3.pt-2.border-top');
-        if (bottomButtonRow) {
-            cardBody.insertBefore(form, bottomButtonRow); // Insert form before the bottom button row
-        } else {
-            cardBody.appendChild(form); // Append to end of card body if specific row not found
-        }
+
+    // Insert the form into the expanded details section
+    const detailsSection = card.querySelector('.recipe-card-details');
+    if (detailsSection) {
+        detailsSection.appendChild(form);
     } else {
-        card.appendChild(form); // Fallback if no .card-body found
+        // Fallback for older card structure
+        const cardBody = card.querySelector('.card-body');
+        if (cardBody) {
+            cardBody.appendChild(form);
+        } else {
+            card.appendChild(form);
+        }
     }
-    
+
     textarea.focus();
 }
 
@@ -2130,18 +2145,6 @@ function escapeHtml(unsafe) {
          .replace(/>/g, "&gt;")
          .replace(/"/g, "&quot;")
          .replace(/'/g, "&#039;");
-}
-
-function filterRecipesByText() { // This will now be triggered by ingredient search input
-    applyAllRecipeFilters();
-}
-
-// Helper function to escape special regex characters and create a highlighting regex
-function createHighlightRegex(term) {
-    if (!term) return null;
-    // Escape special characters in the search term for regex safety
-    const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`(${escapedTerm})`, 'gi'); // 'g' for global, 'i' for case-insensitive
 }
 
 // In script.js
@@ -2909,6 +2912,258 @@ async function saveNewRecipeToStorage(recipeDataObject) {
     return savedId; // Return the ID (or null if failed)
 }
 
+// Helper: Build rating stars
+function buildRatingStars(recipe, interactive = true) {
+    const container = document.createElement('div');
+    container.className = 'rating-stars d-flex gap-1 align-items-center';
+
+    if (interactive && currentUser) {
+        for (let i = 1; i <= 5; i++) {
+            const star = document.createElement('i');
+            star.className = `bi text-warning ${i <= (recipe.rating || 0) ? 'bi-star-fill' : 'bi-star'}`;
+            star.style.cursor = 'pointer';
+            star.dataset.value = i;
+            star.addEventListener('mouseenter', () => highlightStars(container, i));
+            star.addEventListener('mouseleave', () => resetStars(container, recipe.rating || 0));
+            star.addEventListener('click', (e) => {
+                e.stopPropagation();
+                updateRecipeRating(recipe.id, i, !currentUser);
+            });
+            container.appendChild(star);
+        }
+    } else if (recipe.rating && recipe.rating > 0) {
+        for (let i = 1; i <= 5; i++) {
+            const star = document.createElement('i');
+            star.className = `bi text-warning ${i <= recipe.rating ? 'bi-star-fill' : 'bi-star'}`;
+            container.appendChild(star);
+        }
+    }
+    return container;
+}
+
+// Helper: Format instructions with proper numbered/bulleted lists
+function formatInstructions(text) {
+    if (!text) return null;
+
+    // Patterns to detect numbered steps:
+    // - "1." "2." etc. (with or without newlines)
+    // - "1)" "2)" etc.
+    // - "Step 1:" "Step 2:" etc.
+
+    // First, try to split by numbered patterns (handles both newline-separated and inline)
+    // This regex matches: newline/start + optional space + number + . or ) or : + space
+    const numberedSplitPattern = /(?:^|[\n\r]+)\s*(?:step\s*)?\d+\s*[.):\-]\s*|(?<=\s)\s*(?:step\s*)?\d+\s*[.):\-]\s+/gi;
+
+    // Simpler approach: look for sequential numbers and split
+    const steps = [];
+    let currentStep = '';
+
+    // Split text into potential steps by looking for number patterns
+    const parts = text.split(/(\d+\s*[.):\-]\s*)/i);
+
+    let expectingContent = false;
+    let stepNumber = 0;
+
+    for (let i = 0; i < parts.length; i++) {
+        const part = parts[i].trim();
+        if (!part) continue;
+
+        // Check if this part is a step number like "1." or "2)" or "3:"
+        const stepMatch = part.match(/^(\d+)\s*[.):\-]\s*$/);
+        if (stepMatch) {
+            const num = parseInt(stepMatch[1]);
+            // Check if this looks like a sequential step (1, 2, 3...) or starts from 1
+            if (num === 1 || num === stepNumber + 1) {
+                // Save previous step if exists
+                if (currentStep.trim()) {
+                    steps.push(currentStep.trim());
+                }
+                currentStep = '';
+                stepNumber = num;
+                expectingContent = true;
+            } else {
+                // Not a sequential step number, treat as content
+                currentStep += part + ' ';
+            }
+        } else {
+            currentStep += part + ' ';
+        }
+    }
+
+    // Don't forget the last step
+    if (currentStep.trim()) {
+        steps.push(currentStep.trim());
+    }
+
+    // If we found multiple steps, create an ordered list
+    if (steps.length > 1) {
+        const ol = document.createElement('ol');
+        ol.className = 'ps-3 mb-0';
+        steps.forEach(step => {
+            const li = document.createElement('li');
+            li.className = 'mb-2';
+            li.textContent = step;
+            ol.appendChild(li);
+        });
+        return ol;
+    }
+
+    // Check for bullet points (-, *, •) at start of lines
+    const bulletPattern = /(?:^|\n)\s*[-*•]\s+/;
+    if (bulletPattern.test(text)) {
+        const items = text.split(/(?:^|\n)\s*[-*•]\s+/).filter(item => item.trim());
+        if (items.length > 1) {
+            const ul = document.createElement('ul');
+            ul.className = 'ps-3 mb-0';
+            items.forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'mb-2';
+                li.textContent = item.trim();
+                ul.appendChild(li);
+            });
+            return ul;
+        }
+    }
+
+    // No list detected, return null for plain text fallback
+    return null;
+}
+
+// Helper: Build ingredient match indicator for collapsed cards during search
+function buildIngredientMatchIndicator(recipe, searchTerms) {
+    if (!searchTerms || searchTerms.length === 0) return null;
+
+    const matchedIngredients = [];
+    (recipe.ingredients || []).forEach(ing => {
+        const ingName = typeof ing === 'object' ? (ing.name || '') : (ing || '');
+        searchTerms.forEach(term => {
+            if (ingName.toLowerCase().includes(term.toLowerCase())) {
+                if (!matchedIngredients.includes(ingName)) {
+                    matchedIngredients.push(ingName);
+                }
+            }
+        });
+    });
+
+    if (matchedIngredients.length === 0) return null;
+
+    const indicator = document.createElement('div');
+    indicator.className = 'ingredient-match-indicator small text-muted mt-1';
+    const displayMatches = matchedIngredients.slice(0, 3).map(name => `<mark>${escapeHtml(name)}</mark>`).join(', ');
+    indicator.innerHTML = `<i class="bi bi-search me-1"></i>Contains: ${displayMatches}`;
+    if (matchedIngredients.length > 3) {
+        indicator.innerHTML += ` <span class="text-muted">+${matchedIngredients.length - 3} more</span>`;
+    }
+    return indicator;
+}
+
+// Helper: Build action buttons for recipe card
+function buildActionButtons(recipe, card) {
+    const buttonGroup = document.createElement('div');
+    buttonGroup.className = 'd-flex gap-2 align-items-center flex-wrap recipe-card-actions';
+
+    // Share button
+    const shareBtn = document.createElement('button');
+    shareBtn.className = 'btn btn-outline-secondary btn-sm btn-share';
+    if (!currentUser) {
+        shareBtn.disabled = true;
+        shareBtn.title = 'Sign in to share recipes via a link';
+        shareBtn.innerHTML = '<i class="bi bi-share"></i>';
+        shareBtn.onclick = (e) => { e.stopPropagation(); e.preventDefault(); showLoginModal(); };
+    } else {
+        shareBtn.innerHTML = '<i class="bi bi-share-fill"></i>';
+        shareBtn.title = 'Share recipe link';
+        shareBtn.onclick = (e) => { e.stopPropagation(); shareRecipe(recipe.id); };
+    }
+    buttonGroup.appendChild(shareBtn);
+
+    // Edit button
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn btn-outline-primary btn-sm';
+    editBtn.innerHTML = '<i class="bi bi-pencil-fill"></i>';
+    editBtn.title = "Edit recipe";
+    editBtn.onclick = (e) => { e.stopPropagation(); openInlineEditor(recipe.id, card); };
+    buttonGroup.appendChild(editBtn);
+
+    // Chef Bot button
+    const chefBotBtn = document.createElement('button');
+    chefBotBtn.className = 'btn btn-outline-warning btn-sm';
+    chefBotBtn.innerHTML = '<i class="bi bi-robot"></i>';
+    chefBotBtn.title = `Ask Chef Bot about "${recipe.name}"`;
+    chefBotBtn.onclick = (e) => { e.stopPropagation(); openRecipeSpecificChatModal(recipe); };
+    buttonGroup.appendChild(chefBotBtn);
+
+    // Delete button
+    const deleteArea = document.createElement('div');
+    deleteArea.className = 'delete-area position-relative d-inline-block';
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn btn-outline-danger btn-sm';
+    deleteBtn.innerHTML = '<i class="bi bi-trash-fill"></i>';
+    deleteBtn.title = "Delete recipe";
+    deleteBtn.onclick = (e) => { e.stopPropagation(); confirmDeleteRecipe(recipe.id, deleteArea); };
+    deleteArea.appendChild(deleteBtn);
+    buttonGroup.appendChild(deleteArea);
+
+    // Folder dropdown
+    const currentFolder = recipe.folderId ? folders.find(f => f.id === recipe.folderId) : null;
+    const currentFolderName = currentFolder ? currentFolder.name : 'Uncategorized';
+
+    const folderGroup = document.createElement('div');
+    folderGroup.className = 'btn-group';
+    folderGroup.innerHTML = `
+        <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="Folder: ${escapeHtml(currentFolderName)}">
+            <i class="bi bi-folder me-1"></i><span class="folder-name-display">${escapeHtml(currentFolderName)}</span>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end"></ul>
+    `;
+    folderGroup.onclick = (e) => e.stopPropagation();
+
+    const dropdownMenu = folderGroup.querySelector('.dropdown-menu');
+    const uncategorizedItem = document.createElement('li');
+    uncategorizedItem.innerHTML = `<a class="dropdown-item" href="#">Uncategorized</a>`;
+    uncategorizedItem.onclick = (e) => { e.preventDefault(); assignRecipeToFolder(recipe.id, null); };
+    dropdownMenu.appendChild(uncategorizedItem);
+
+    if (folders.length > 0) {
+        const divider = document.createElement('li');
+        divider.innerHTML = '<hr class="dropdown-divider">';
+        dropdownMenu.appendChild(divider);
+    }
+
+    folders.forEach(folder => {
+        const folderItem = document.createElement('li');
+        folderItem.innerHTML = `<a class="dropdown-item" href="#">${escapeHtml(folder.name)}</a>`;
+        folderItem.onclick = (e) => { e.preventDefault(); assignRecipeToFolder(recipe.id, folder.id); };
+        dropdownMenu.appendChild(folderItem);
+    });
+
+    buttonGroup.appendChild(folderGroup);
+    return buttonGroup;
+}
+
+// Helper: Build bottom action row (Mark as Made, Plan Meal)
+function buildBottomActionRow(recipe) {
+    const row = document.createElement('div');
+    row.className = 'd-flex align-items-center justify-content-start gap-2 mt-3 pt-2 border-top';
+
+    const madeBtn = document.createElement('button');
+    madeBtn.className = 'btn btn-outline-info btn-sm';
+    madeBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Mark as Made';
+    madeBtn.onclick = (e) => { e.stopPropagation(); markAsMade(recipe, e.target); };
+    row.appendChild(madeBtn);
+
+    const planArea = document.createElement('div');
+    planArea.className = 'plan-area';
+    const planBtn = document.createElement('button');
+    planBtn.className = 'btn btn-outline-success btn-sm';
+    planBtn.innerHTML = '<i class="bi bi-calendar-plus"></i> Plan Meal';
+    planBtn.onclick = (e) => { e.stopPropagation(); openPlanMealForm(recipe, planArea); };
+    planArea.appendChild(planBtn);
+    row.appendChild(planArea);
+
+    return row;
+}
+
 function displayRecipes(listToDisplay, containerId = 'recipeResults', options = {}) {
     const container = document.getElementById(containerId);
     if (!container) {
@@ -2925,118 +3180,67 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
     const nameRegex = options.highlightNameTerm ? createHighlightRegex(options.highlightNameTerm) : null;
     const ingredientRegexes = options.highlightIngredients ? options.highlightIngredients.map(term => createHighlightRegex(term)).filter(r => r) : [];
     const tagRegexes = options.highlightTags ? options.highlightTags.map(term => createHighlightRegex(term)).filter(r => r) : [];
+    const searchTerms = options.highlightIngredients || [];
 
     listToDisplay.forEach(recipe => {
         const card = document.createElement('div');
         card.className = 'card mb-3 shadow-sm recipe-card';
         card.dataset.recipeId = recipe.id;
 
+        // Restore expanded state
+        const isExpanded = expandedRecipeIds.has(recipe.id);
+        if (isExpanded) {
+            card.classList.add('recipe-card-expanded');
+        }
+
         const body = document.createElement('div');
         body.className = 'card-body p-3';
 
-        // --- Title Row (No changes here) ---
+        // === COMPACT HEADER (always visible, clickable) ===
+        const header = document.createElement('div');
+        header.className = 'recipe-card-header';
+        header.onclick = (e) => {
+            if (e.target.closest('button, a, input, select, .dropdown-menu')) return;
+            toggleRecipeCard(recipe.id);
+        };
+
+        // Title row with expand indicator
         const titleRow = document.createElement('div');
-        titleRow.className = 'd-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2 mb-2';
+        titleRow.className = 'd-flex justify-content-between align-items-start gap-2';
+
+        const titleInfo = document.createElement('div');
+        titleInfo.className = 'flex-grow-1';
+
         const titleElement = document.createElement('h5');
-        titleElement.className = 'recipe-title mb-0 text-primary';
+        titleElement.className = 'recipe-title mb-1 text-primary';
         let recipeName = recipe.name || "Untitled Recipe";
         if (nameRegex && options.highlightNameTerm && recipeName.toLowerCase().includes(options.highlightNameTerm.toLowerCase())) {
             titleElement.innerHTML = recipeName.replace(nameRegex, '<mark>$1</mark>');
         } else {
             titleElement.textContent = recipeName;
         }
-        titleRow.appendChild(titleElement);
-        const buttonGroup = document.createElement('div');
-        buttonGroup.className = 'd-flex gap-2 align-items-center mt-2 mt-sm-0 recipe-card-actions flex-shrink-0';
-        const shareBtn = document.createElement('button');
-        shareBtn.className = 'btn btn-outline-secondary btn-sm btn-share';
-        if (!currentUser) {
-            shareBtn.disabled = true;
-            shareBtn.title = 'Sign in to share recipes via a link';
-            shareBtn.innerHTML = '<i class="bi bi-share"></i>';
-            shareBtn.onclick = (e) => { e.preventDefault(); showLoginModal(); };
-        } else {
-            shareBtn.innerHTML = '<i class="bi bi-share-fill"></i>';
-            shareBtn.title = 'Share recipe link';
-            shareBtn.onclick = () => shareRecipe(recipe.id);
-        }
-        buttonGroup.appendChild(shareBtn);
-        const editBtn = document.createElement('button');
-        editBtn.className = 'btn btn-outline-primary btn-sm';
-        editBtn.innerHTML = '<i class="bi bi-pencil-fill"></i>';
-        editBtn.title = "Edit recipe";
-        editBtn.onclick = () => openInlineEditor(recipe.id, card);
-        buttonGroup.appendChild(editBtn);
-        const chefBotRecipeBtn = document.createElement('button');
-        chefBotRecipeBtn.className = 'btn btn-outline-warning btn-sm ask-chef-bot-recipe';
-        chefBotRecipeBtn.innerHTML = '<i class="bi bi-robot"></i>';
-        chefBotRecipeBtn.title = `Ask Chef Bot about "${recipe.name}"`;
-        chefBotRecipeBtn.dataset.recipeId = recipe.id;
-        chefBotRecipeBtn.onclick = () => { openRecipeSpecificChatModal(recipe); };
-        buttonGroup.appendChild(chefBotRecipeBtn);
-        const deleteArea = document.createElement('div');
-        deleteArea.className = 'delete-area position-relative d-inline-block';
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'btn btn-outline-danger btn-sm';
-        deleteBtn.innerHTML = '<i class="bi bi-trash-fill"></i>';
-        deleteBtn.title = "Delete recipe";
-        deleteBtn.onclick = () => confirmDeleteRecipe(recipe.id, deleteArea);
-        deleteArea.appendChild(deleteBtn);
-        buttonGroup.appendChild(deleteArea);
-        const folderGroup = document.createElement('div');
-        folderGroup.className = 'btn-group'; // Use a btn-group for the dropdown
+        titleInfo.appendChild(titleElement);
 
-        // Find the current folder's name using the global 'folders' array
+        // Meta row: folder badge + rating
+        const metaRow = document.createElement('div');
+        metaRow.className = 'd-flex flex-wrap align-items-center gap-2 mb-1';
+
         const currentFolder = recipe.folderId ? folders.find(f => f.id === recipe.folderId) : null;
-        const currentFolderName = currentFolder ? currentFolder.name : 'Uncategorized';
-        
-        folderGroup.innerHTML = `
-            <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="Folder: ${escapeHtml(currentFolderName)}">
-                <i class="bi bi-folder me-1"></i>
-                <span class="folder-name-display">${escapeHtml(currentFolderName)}</span>
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end">
-                </ul>
-        `;
+        const folderBadge = document.createElement('span');
+        folderBadge.className = 'badge bg-light text-dark border';
+        folderBadge.innerHTML = `<i class="bi bi-folder me-1"></i>${escapeHtml(currentFolder ? currentFolder.name : 'Uncategorized')}`;
+        metaRow.appendChild(folderBadge);
 
-        const dropdownMenu = folderGroup.querySelector('.dropdown-menu');
+        const compactRating = buildRatingStars(recipe, false);
+        compactRating.classList.add('rating-stars-compact');
+        metaRow.appendChild(compactRating);
 
-        // Add the "Uncategorized" option
-        const uncategorizedItem = document.createElement('li');
-        uncategorizedItem.innerHTML = `<a class="dropdown-item" href="#">Uncategorized</a>`;
-        uncategorizedItem.onclick = (e) => {
-            e.preventDefault();
-            assignRecipeToFolder(recipe.id, null); // Pass null to uncategorize
-        };
-        dropdownMenu.appendChild(uncategorizedItem);
+        titleInfo.appendChild(metaRow);
 
-        // Add a divider if there are folders
-        if (folders.length > 0) {
-            const divider = document.createElement('li');
-            divider.innerHTML = '<hr class="dropdown-divider">';
-            dropdownMenu.appendChild(divider);
-        }
-
-        // Add an item for each available folder
-        folders.forEach(folder => {
-            const folderItem = document.createElement('li');
-            folderItem.innerHTML = `<a class="dropdown-item" href="#">${escapeHtml(folder.name)}</a>`;
-            folderItem.onclick = (e) => {
-                e.preventDefault();
-                assignRecipeToFolder(recipe.id, folder.id);
-            };
-            dropdownMenu.appendChild(folderItem);
-        });
-
-        // Add the new folder dropdown to the right of the other buttons
-        buttonGroup.appendChild(folderGroup);
-        titleRow.appendChild(buttonGroup);
-        body.appendChild(titleRow);
-
-        // --- Tags Row (No changes here) ---
-        const tagsDiv = document.createElement('div');
-        tagsDiv.className = 'recipe-tags mb-2';
+        // Tags
         if (recipe.tags && recipe.tags.length > 0) {
+            const tagsDiv = document.createElement('div');
+            tagsDiv.className = 'recipe-tags mt-1';
             recipe.tags.forEach(tag => {
                 const tagBadge = document.createElement('span');
                 tagBadge.className = 'badge me-1 mb-1 bg-secondary';
@@ -3058,75 +3262,37 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
                 tagBadge.innerHTML = tagDisplay;
                 tagsDiv.appendChild(tagBadge);
             });
-        }
-        body.appendChild(tagsDiv);
-
-        // --- Meta Info Row (Ratings & Date Added) (MODIFIED) ---
-        const metaInfoRow = document.createElement('div');
-        metaInfoRow.className = 'd-flex justify-content-between align-items-center mb-2'; // This creates the row
-        
-        const dateAddedElement = document.createElement('small');
-        dateAddedElement.className = 'text-muted';
-
-        // Check if the timestamp exists and format it correctly
-        if (recipe.timestamp) {
-            let date;
-            if (typeof recipe.timestamp.toDate === 'function') {
-                date = recipe.timestamp.toDate(); // Firestore timestamp object
-            } else {
-                date = new Date(recipe.timestamp); // ISO string
-            }
-            dateAddedElement.innerHTML = `<i class="bi bi-clock-history me-1"></i>Added: ${date.toLocaleDateString()}`;
+            titleInfo.appendChild(tagsDiv);
         }
 
-        const lastModifiedElement = document.createElement('small');
-        lastModifiedElement.className = 'text-muted ms-3'; // Add margin for spacing
-
-        // Check if a lastModified date exists
-        if (recipe.lastModified) {
-            let modifiedDate;
-            if (typeof recipe.lastModified.toDate === 'function') {
-                modifiedDate = recipe.lastModified.toDate(); // Firestore
-            } else {
-                modifiedDate = new Date(recipe.lastModified); // LocalDB
-            }
-            lastModifiedElement.innerHTML = `<i class="bi bi-pencil-square me-1"></i>Edited: ${modifiedDate.toLocaleDateString()}`;
-        }
-        
-        const ratingContainer = document.createElement('div');
-        ratingContainer.className = 'rating-stars d-flex gap-1 align-items-center';
-        if (currentUser) {
-            for (let i = 1; i <= 5; i++) {
-                const star = document.createElement('i');
-                star.className = `bi text-warning ${i <= (recipe.rating || 0) ? 'bi-star-fill' : 'bi-star'}`;
-                star.style.cursor = 'pointer';
-                star.dataset.value = i;
-                star.addEventListener('mouseenter', () => highlightStars(ratingContainer, i));
-                star.addEventListener('mouseleave', () => resetStars(ratingContainer, recipe.rating || 0));
-                star.addEventListener('click', () => updateRecipeRating(recipe.id, i, !currentUser));
-                ratingContainer.appendChild(star);
-            }
-        } else if (recipe.rating && recipe.rating > 0) {
-            for (let i = 1; i <= 5; i++) {
-                const star = document.createElement('i');
-                star.className = `bi text-warning ${i <= recipe.rating ? 'bi-star-fill' : 'bi-star'}`;
-                ratingContainer.appendChild(star);
-            }
-        }
-        
-        // Add the date and stars to the meta info row
-        metaInfoRow.appendChild(dateAddedElement);
-        metaInfoRow.appendChild(lastModifiedElement);
-        metaInfoRow.appendChild(ratingContainer);
-
-        // Only append the meta row if it has content (either a date or stars)
-        if (recipe.timestamp || ratingContainer.hasChildNodes()) {
-            body.appendChild(metaInfoRow);
+        // Ingredient match indicator (shown when searching and card is collapsed)
+        const matchIndicator = buildIngredientMatchIndicator(recipe, searchTerms);
+        if (matchIndicator) {
+            titleInfo.appendChild(matchIndicator);
         }
 
-        // --- Ingredients Table (No changes here) ---
+        titleRow.appendChild(titleInfo);
+
+        // Expand indicator
+        const expandIcon = document.createElement('i');
+        expandIcon.className = 'bi bi-chevron-down expand-indicator';
+        titleRow.appendChild(expandIcon);
+
+        header.appendChild(titleRow);
+        body.appendChild(header);
+
+        // === EXPANDABLE DETAILS (hidden when collapsed) ===
+        const details = document.createElement('div');
+        details.className = 'recipe-card-details';
+
+        // Action buttons (first - most important)
+        const actionButtons = buildActionButtons(recipe, card);
+        actionButtons.classList.add('mt-3', 'pt-2', 'border-top');
+        details.appendChild(actionButtons);
+
+        // Ingredients table
         const table = document.createElement('table');
-        table.className = 'table table-bordered table-sm mt-2 mb-2';
+        table.className = 'table table-bordered table-sm mt-3 mb-2';
         const thead = document.createElement('thead');
         thead.innerHTML = `<tr><th>Ingredient</th><th>Qty</th><th>Unit</th></tr>`;
         table.appendChild(thead);
@@ -3157,37 +3323,70 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
             tbody.innerHTML = '<tr><td colspan="3" class="text-muted">No ingredients listed.</td></tr>';
         }
         table.appendChild(tbody);
-        body.appendChild(table);
+        details.appendChild(table);
 
-        // --- Instructions (No changes here) ---
+        // Instructions
         const instructionsTitle = document.createElement('h6');
         instructionsTitle.className = 'mt-3 mb-1 fw-semibold';
         instructionsTitle.textContent = 'Instructions';
-        body.appendChild(instructionsTitle);
-        const instructionsP = document.createElement('p');
-        instructionsP.className = 'card-text recipe-instructions';
-        instructionsP.style.whiteSpace = 'pre-wrap';
-        instructionsP.textContent = recipe.instructions || 'No instructions provided.';
-        body.appendChild(instructionsP);
+        details.appendChild(instructionsTitle);
 
-        // --- Bottom Button Row (No changes here) ---
-        const bottomButtonRow = document.createElement('div');
-        bottomButtonRow.className = 'd-flex align-items-center justify-content-start gap-2 mt-3 pt-2 border-top';
-        const madeBtn = document.createElement('button');
-        madeBtn.className = 'btn btn-outline-info btn-sm';
-        madeBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Mark as Made';
-        madeBtn.onclick = (e) => markAsMade(recipe, e.target);
-        bottomButtonRow.appendChild(madeBtn);
-        const planArea = document.createElement('div');
-        planArea.className = 'plan-area';
-        const planBtn = document.createElement('button');
-        planBtn.className = 'btn btn-outline-success btn-sm';
-        planBtn.innerHTML = '<i class="bi bi-calendar-plus"></i> Plan Meal';
-        planBtn.onclick = () => openPlanMealForm(recipe, planArea);
-        planArea.appendChild(planBtn);
-        bottomButtonRow.appendChild(planArea);
-        body.appendChild(bottomButtonRow);
+        const formattedInstructions = formatInstructions(recipe.instructions);
+        if (formattedInstructions && formattedInstructions.nodeType) {
+            // It's a DOM element (ol or ul)
+            details.appendChild(formattedInstructions);
+        } else {
+            // Plain text fallback
+            const instructionsP = document.createElement('p');
+            instructionsP.className = 'card-text recipe-instructions';
+            instructionsP.style.whiteSpace = 'pre-wrap';
+            instructionsP.textContent = recipe.instructions || 'No instructions provided.';
+            details.appendChild(instructionsP);
+        }
 
+        // Metadata row (dates + interactive rating) - at bottom
+        const detailsMetaRow = document.createElement('div');
+        detailsMetaRow.className = 'd-flex flex-wrap align-items-center gap-3 mt-3 pt-2 border-top text-muted small';
+
+        if (recipe.timestamp) {
+            let date;
+            if (typeof recipe.timestamp.toDate === 'function') {
+                date = recipe.timestamp.toDate();
+            } else {
+                date = new Date(recipe.timestamp);
+            }
+            const dateAdded = document.createElement('span');
+            dateAdded.innerHTML = `<i class="bi bi-clock-history me-1"></i>Added: ${date.toLocaleDateString()}`;
+            detailsMetaRow.appendChild(dateAdded);
+        }
+
+        if (recipe.lastModified) {
+            let modifiedDate;
+            if (typeof recipe.lastModified.toDate === 'function') {
+                modifiedDate = recipe.lastModified.toDate();
+            } else {
+                modifiedDate = new Date(recipe.lastModified);
+            }
+            const dateModified = document.createElement('span');
+            dateModified.innerHTML = `<i class="bi bi-pencil-square me-1"></i>Edited: ${modifiedDate.toLocaleDateString()}`;
+            detailsMetaRow.appendChild(dateModified);
+        }
+
+        // Interactive rating stars (in expanded view)
+        if (currentUser) {
+            const interactiveRating = buildRatingStars(recipe, true);
+            detailsMetaRow.appendChild(interactiveRating);
+        }
+
+        if (detailsMetaRow.hasChildNodes()) {
+            details.appendChild(detailsMetaRow);
+        }
+
+        // Bottom row (Mark as Made, Plan Meal)
+        const bottomRow = buildBottomActionRow(recipe);
+        details.appendChild(bottomRow);
+
+        body.appendChild(details);
         card.appendChild(body);
         container.appendChild(card);
     });

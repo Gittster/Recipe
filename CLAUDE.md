@@ -59,3 +59,11 @@ All functions use `process.env.CONTEXT === 'dev'` to detect local development an
 - All Netlify functions follow the same structure: CORS headers, OPTIONS handling, POST validation, Gemini AI call, JSON response
 - Functions expect JSON body with specific fields (varies by function)
 - AI responses are parsed and validated before returning to client
+
+## Recipe Card System
+Recipe cards use a compact/expand pattern:
+- **Compact view**: Title, folder badge, rating stars, tags, ingredient match indicator (during search)
+- **Expanded view**: Full details including ingredients table, instructions, action buttons
+- **State management**: `expandedRecipeIds` Set tracks which cards are expanded (persists across re-renders)
+- **Toggle**: Click anywhere on card header to expand/collapse
+- **Key functions**: `displayRecipes()`, `toggleRecipeCard()`, `buildRatingStars()`, `buildActionButtons()`, `buildBottomActionRow()`, `buildIngredientMatchIndicator()`
