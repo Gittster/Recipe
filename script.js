@@ -7364,11 +7364,8 @@ function showAIWeeklyPlanner() {
         console.error("mainView element not found for showAIWeeklyPlanner");
         return;
     }
-    view.className = 'section-ai-planner bg-body-tertiary flex-grow-1 overflow-auto'; 
+    view.className = 'section-ai-planner bg-body-tertiary flex-grow-1 overflow-auto';
 
-    // ** Sample list of recipe styles - expand as needed **
-    const recipeStyles = ["Any", "Soup", "Grill", "Instant Pot", "Baked", "Pasta", "Stir-fry", "Salad", "Slow Cooker", "Mexican", "Italian", "Asian"];
-    
     view.innerHTML = `
     <div class="container py-3 ai-weekly-planner">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap">
@@ -7377,25 +7374,8 @@ function showAIWeeklyPlanner() {
                  <i class="bi bi-arrow-left"></i> Back to Plan
             </button>
         </div>
-        <p class="text-muted mb-3">Select a cooking style for each day, optionally pre-select recipes, and set preferences. Then ask Chef Bot for suggestions!</p>
+        <p class="text-muted mb-3">Select a cooking style for each day, set per-day preferences, and let Chef Bot suggest options!</p>
 
-        <div class="card card-body bg-light-subtle mb-4">
-             <h6 class="mb-3">Chef Bot Preferences (Optional)</h6>
-             <div class="row g-3">
-                 <div class="col-md-6">
-                     <label for="aiPlannerTimeLimit" class="form-label small fw-semibold">Max Cooking Time (minutes):</label>
-                     <input type="number" class="form-control form-control-sm" id="aiPlannerTimeLimit" placeholder="e.g., 45" min="0">
-                     <div class="form-text small">Suggest recipes that take less than this time.</div>
-                 </div>
-                 <div class="col-md-6">
-                     <label for="aiPlannerRecipeStyle" class="form-label small fw-semibold">Preferred Recipe Style:</label>
-                     <select class="form-select form-select-sm" id="aiPlannerRecipeStyle">
-                         ${recipeStyles.map(style => `<option value="${style.toLowerCase() === 'any' ? '' : style}">${style}</option>`).join('')}
-                     </select>
-                     <div class="form-text small">Guide Chef Bot towards a specific type of dish.</div>
-                 </div>
-             </div>
-        </div>
         <div id="weeklyPlannerDays" class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3 mb-4">
             </div>
 
@@ -7407,8 +7387,13 @@ function showAIWeeklyPlanner() {
         </div>
 
         <div id="aiPlanSuggestions" class="mt-4" style="display: none;">
-             <h5 class="mb-3"><i class="bi bi-lightbulb-fill text-warning"></i> Chef Bot's Suggestions:</h5>
-         </div>
+            <h5 class="mb-3"><i class="bi bi-lightbulb-fill text-warning"></i> Chef Bot's Suggestions:</h5>
+            <div id="aiSuggestionsList" class="list-group mb-3"></div>
+            <div class="d-flex gap-2 justify-content-center">
+                <button class="btn btn-success" onclick="saveGeneratedPlan()">Accept & Save Plan</button>
+                <button class="btn btn-outline-secondary" onclick="cancelAISuggestions()">Go Back</button>
+            </div>
+        </div>
     </div>`;
 
     renderDayCards();
@@ -7427,12 +7412,15 @@ function renderDayCards() {
 
     daysOfWeek.forEach(day => {
         // ** Default suggestionMode and preferences **
-        const dayPlan = currentWeeklyPlan[day] || { 
-            type: null, 
-            recipeId: null, 
-            suggestionMode: 'existing', 
-            maxCookTime: null, 
-            style: null 
+        const dayPlan = currentWeeklyPlan[day] || {
+            type: null,
+            recipeId: null,
+            suggestionMode: 'mix',
+            maxCookTime: null,
+            style: null,
+            ingredientsToUse: [],
+            mood: null,
+            effort: null
         };
 
         const col = document.createElement('div');
@@ -7480,37 +7468,90 @@ function renderDayCards() {
 
                         <div class="suggestion-options-container mt-2 ${dayPlan.recipeId ? 'd-none' : ''}" id="suggestion-options-${day}-${type.id}">
                             <div class="mb-2">
-                                <label class="form-label small fw-semibold mb-1 d-block">Suggestion Type:</label> 
+                                <label class="form-label small fw-semibold mb-1 d-block">Suggestion Type:</label>
                                 <div class="form-check form-check-inline">
-                                    <input class="form-check-input" type="radio" name="suggestionMode-${day}-${type.id}" id="mode-existing-${day}-${type.id}" 
-                                           value="existing" ${dayPlan.suggestionMode === 'existing' ? 'checked' : ''} 
+                                    <input class="form-check-input" type="radio" name="suggestionMode-${day}-${type.id}" id="mode-mix-${day}-${type.id}"
+                                           value="mix" ${dayPlan.suggestionMode === 'mix' ? 'checked' : ''}
+                                           data-day="${day}" onclick="setSuggestionMode(this)">
+                                    <label class="form-check-label small" for="mode-mix-${day}-${type.id}">Mix</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="suggestionMode-${day}-${type.id}" id="mode-existing-${day}-${type.id}"
+                                           value="existing" ${dayPlan.suggestionMode === 'existing' ? 'checked' : ''}
                                            data-day="${day}" onclick="setSuggestionMode(this)">
                                     <label class="form-check-label small" for="mode-existing-${day}-${type.id}">My Recipes</label>
                                 </div>
                                 <div class="form-check form-check-inline">
-                                    <input class="form-check-input" type="radio" name="suggestionMode-${day}-${type.id}" id="mode-new-${day}-${type.id}" 
-                                           value="new" ${dayPlan.suggestionMode === 'new' ? 'checked' : ''} 
+                                    <input class="form-check-input" type="radio" name="suggestionMode-${day}-${type.id}" id="mode-new-${day}-${type.id}"
+                                           value="new" ${dayPlan.suggestionMode === 'new' ? 'checked' : ''}
                                            data-day="${day}" onclick="setSuggestionMode(this)">
-                                    <label class="form-check-label small" for="mode-new-${day}-${type.id}">New Idea</label>
+                                    <label class="form-check-label small" for="mode-new-${day}-${type.id}">New Ideas</label>
                                 </div>
                             </div>
 
                             <div class="row gx-2 gy-1">
                                 <div class="col-6">
                                     <label for="maxTime-${day}-${type.id}" class="form-label small fw-semibold mb-0">Max Time (min):</label>
-                                    <input type="number" class="form-control form-control-sm" id="maxTime-${day}-${type.id}" 
-                                           placeholder="Any" min="0" value="${dayPlan.maxCookTime || ''}" 
+                                    <input type="number" class="form-control form-control-sm" id="maxTime-${day}-${type.id}"
+                                           placeholder="Any" min="0" value="${dayPlan.maxCookTime || ''}"
                                            data-day="${day}" oninput="setDayPreference(this, 'maxCookTime')">
                                 </div>
                                 <div class="col-6">
                                     <label for="style-${day}-${type.id}" class="form-label small fw-semibold mb-0">Style:</label>
-                                    <select class="form-select form-select-sm" id="style-${day}-${type.id}" 
+                                    <select class="form-select form-select-sm" id="style-${day}-${type.id}"
                                             data-day="${day}" onchange="setDayPreference(this, 'style')">
                                         ${recipeStyles.map(style => `<option value="${style.toLowerCase() === 'any' ? '' : style}" ${dayPlan.style === style ? 'selected' : ''}>${style}</option>`).join('')}
                                     </select>
                                 </div>
                             </div>
-                            <div class="form-text small mt-1">Chef Bot will use these if suggesting.</div>
+                            <div class="row gx-2 gy-1 mt-1">
+                                <div class="col-6">
+                                    <label for="mood-${day}-${type.id}" class="form-label small fw-semibold mb-0">Mood:</label>
+                                    <select class="form-select form-select-sm" id="mood-${day}-${type.id}"
+                                            data-day="${day}" onchange="setDayPreference(this, 'mood')">
+                                        <option value="" ${!dayPlan.mood ? 'selected' : ''}>Any</option>
+                                        <option value="comfort" ${dayPlan.mood === 'comfort' ? 'selected' : ''}>Comfort Food</option>
+                                        <option value="healthy" ${dayPlan.mood === 'healthy' ? 'selected' : ''}>Healthy/Light</option>
+                                        <option value="adventurous" ${dayPlan.mood === 'adventurous' ? 'selected' : ''}>Adventurous</option>
+                                    </select>
+                                </div>
+                                <div class="col-6">
+                                    <label for="effort-${day}-${type.id}" class="form-label small fw-semibold mb-0">Effort:</label>
+                                    <select class="form-select form-select-sm" id="effort-${day}-${type.id}"
+                                            data-day="${day}" onchange="setDayPreference(this, 'effort')">
+                                        <option value="" ${!dayPlan.effort ? 'selected' : ''}>Any</option>
+                                        <option value="minimal" ${dayPlan.effort === 'minimal' ? 'selected' : ''}>Minimal Effort</option>
+                                        <option value="worth-it" ${dayPlan.effort === 'worth-it' ? 'selected' : ''}>Worth the Work</option>
+                                        <option value="impress" ${dayPlan.effort === 'impress' ? 'selected' : ''}>Impress Guests</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="mt-2">
+                                <label class="form-label small fw-semibold mb-1">Use up ingredients (optional):</label>
+                                <div class="tag-input-container" id="tag-container-${day}-${type.id}">
+                                    <div class="tags-display" id="tags-display-${day}-${type.id}">
+                                        ${(dayPlan.ingredientsToUse || []).map(ing =>
+                                            `<span class="ingredient-tag" data-ingredient="${escapeHtml(ing)}" data-day="${day}" data-type="${type.id}">
+                                                ${escapeHtml(ing)}
+                                                <button type="button" class="tag-remove" onclick="removeIngredientTag(this)">&times;</button>
+                                            </span>`
+                                        ).join('')}
+                                        <input type="text" class="tag-input" id="tag-input-${day}-${type.id}"
+                                               placeholder="${(dayPlan.ingredientsToUse || []).length ? '' : 'Type ingredient + Enter'}"
+                                               data-day="${day}" data-type="${type.id}"
+                                               onkeydown="handleTagInputKeydown(event, this)">
+                                    </div>
+                                </div>
+                                <div class="quick-chips mt-1 d-flex flex-wrap gap-1" id="quick-chips-${day}-${type.id}">
+                                    ${['Chicken', 'Beef', 'Pork', 'Fish', 'Shrimp', 'Eggs', 'Vegetables', 'Pasta', 'Rice', 'Cheese', 'Tofu'].map(ing => {
+                                        const isActive = (dayPlan.ingredientsToUse || []).map(i => i.toLowerCase()).includes(ing.toLowerCase());
+                                        return `<span class="badge quick-chip ${isActive ? 'bg-primary' : 'bg-light text-dark border'}"
+                                                      data-ingredient="${ing}" data-day="${day}" data-type="${type.id}"
+                                                      onclick="toggleQuickChip(this)">${ing}</span>`;
+                                    }).join('')}
+                                </div>
+                            </div>
+                            <div class="form-text small mt-1">Chef Bot will use these preferences if suggesting.</div>
                         </div> 
                     </div>`; // End Recipe Selector Container
             }
@@ -7534,19 +7575,22 @@ function toggleMealTypeSelection(buttonElement) {
     const dayCard = buttonElement.closest('.planner-day-card'); 
     if (!dayCard) return;
 
-    const currentDayPlan = currentWeeklyPlan[day] || { type: null, recipeId: null, suggestionMode: 'existing', maxCookTime: null, style: null };
+    const currentDayPlan = currentWeeklyPlan[day] || { type: null, recipeId: null, suggestionMode: 'mix', maxCookTime: null, style: null };
     const isCurrentlySelected = buttonElement.classList.contains('active');
     const isLeftovers = typeId === 'leftovers';
 
     if (isCurrentlySelected) return; 
 
     // Update state - Reset recipeId, keep suggestionMode & preferences or defaults
-    currentWeeklyPlan[day] = { 
-        type: typeId, 
-        recipeId: isLeftovers ? undefined : null, 
-        suggestionMode: currentDayPlan.suggestionMode || 'existing',
+    currentWeeklyPlan[day] = {
+        type: typeId,
+        recipeId: isLeftovers ? undefined : null,
+        suggestionMode: currentDayPlan.suggestionMode || 'mix',
         maxCookTime: currentDayPlan.maxCookTime || null, // Keep existing preferences
-        style: currentDayPlan.style || null 
+        style: currentDayPlan.style || null,
+        ingredientsToUse: currentDayPlan.ingredientsToUse || [], // NEW: ingredients to use up
+        mood: currentDayPlan.mood || null, // NEW: mood preference (comfort, healthy, adventurous)
+        effort: currentDayPlan.effort || null // NEW: effort level (minimal, worth-it, impress)
     }; 
     
     // --- Update UI ---
@@ -7568,20 +7612,43 @@ function toggleMealTypeSelection(buttonElement) {
              if (suggestionOptionsDiv) {
                 suggestionOptionsDiv.classList.remove('d-none'); // Show options div
                  // Ensure correct radio is checked
-                 const modeToCheck = currentWeeklyPlan[day]?.suggestionMode || 'existing';
+                 const modeToCheck = currentWeeklyPlan[day]?.suggestionMode || 'mix';
                  const radioToCheck = suggestionOptionsDiv.querySelector(`input[value="${modeToCheck}"]`);
                  if(radioToCheck) radioToCheck.checked = true;
                  
                  // ** Reset or Populate Preference Inputs **
                  const timeInput = suggestionOptionsDiv.querySelector(`#maxTime-${day}-${typeId}`);
                  const styleSelect = suggestionOptionsDiv.querySelector(`#style-${day}-${typeId}`);
+                 const moodSelect = suggestionOptionsDiv.querySelector(`#mood-${day}-${typeId}`);
+                 const effortSelect = suggestionOptionsDiv.querySelector(`#effort-${day}-${typeId}`);
+                 const ingredientsInput = suggestionOptionsDiv.querySelector(`#ingredients-${day}-${typeId}`);
+
                  if (timeInput) timeInput.value = currentWeeklyPlan[day]?.maxCookTime || '';
                  if (styleSelect) styleSelect.value = currentWeeklyPlan[day]?.style || '';
+                 if (moodSelect) moodSelect.value = currentWeeklyPlan[day]?.mood || '';
+                 if (effortSelect) effortSelect.value = currentWeeklyPlan[day]?.effort || '';
+                 if (ingredientsInput) ingredientsInput.value = (currentWeeklyPlan[day]?.ingredientsToUse || []).join(', ');
+
+                 // Update ingredient chip states
+                 const chipsContainer = suggestionOptionsDiv.querySelector(`#ingredient-chips-${day}-${typeId}`);
+                 if (chipsContainer) {
+                     const currentIngredients = (currentWeeklyPlan[day]?.ingredientsToUse || []).map(i => i.toLowerCase());
+                     chipsContainer.querySelectorAll('.ingredient-chip').forEach(chip => {
+                         const chipIngredient = chip.dataset.ingredient.toLowerCase();
+                         if (currentIngredients.includes(chipIngredient)) {
+                             chip.classList.add('bg-primary');
+                             chip.classList.remove('bg-light', 'text-dark', 'border');
+                         } else {
+                             chip.classList.remove('bg-primary');
+                             chip.classList.add('bg-light', 'text-dark', 'border');
+                         }
+                     });
+                 }
             }
         }
     });
-    
-    cancelAISuggestions(); 
+
+    cancelAISuggestions();
     console.log("Current Plan:", currentWeeklyPlan);
 }
 
@@ -7594,29 +7661,228 @@ function setDayPreference(inputElement, preferenceKey) {
     const day = inputElement.dataset.day;
     let value = inputElement.value;
 
-    // Sanitize value if needed
+    // Sanitize value based on preference type
     if (preferenceKey === 'maxCookTime') {
         value = value ? parseInt(value, 10) : null;
         if (value !== null && (isNaN(value) || value < 0)) {
             value = null; // Reset if invalid number
         }
-    } else if (preferenceKey === 'style') {
+    } else if (preferenceKey === 'style' || preferenceKey === 'mood' || preferenceKey === 'effort') {
         value = value || null; // Store null if "Any" is selected
+    } else if (preferenceKey === 'ingredientsToUse') {
+        // Parse comma-separated ingredients into array
+        value = value ? value.split(',').map(i => i.trim()).filter(i => i.length > 0) : [];
     }
 
     if (currentWeeklyPlan[day]) {
-         currentWeeklyPlan[day][preferenceKey] = value;
+        currentWeeklyPlan[day][preferenceKey] = value;
     } else {
-         // Should not happen if type was selected first, but handle defensively
-         currentWeeklyPlan[day] = { 
-             type: null, recipeId: null, suggestionMode: 'existing', 
-             maxCookTime: null, style: null,
-             [preferenceKey]: value // Set the specific preference
-         };
+        // Should not happen if type was selected first, but handle defensively
+        currentWeeklyPlan[day] = {
+            type: null, recipeId: null, suggestionMode: 'mix',
+            maxCookTime: null, style: null,
+            ingredientsToUse: [], mood: null, effort: null,
+            [preferenceKey]: value // Set the specific preference
+        };
     }
-    
+
     cancelAISuggestions(); // Reset AI suggestions if preferences change
     console.log("Current Plan Updated (Preference):", currentWeeklyPlan);
+}
+
+/**
+ * Updates the suggestion mode (existing/new) for a specific day.
+ * @param {HTMLInputElement} radioElement The radio input element.
+ */
+function setSuggestionMode(radioElement) {
+    const day = radioElement.dataset.day;
+    const mode = radioElement.value;
+
+    if (currentWeeklyPlan[day]) {
+        currentWeeklyPlan[day].suggestionMode = mode;
+    } else {
+        currentWeeklyPlan[day] = {
+            type: null, recipeId: null, suggestionMode: mode,
+            maxCookTime: null, style: null,
+            ingredientsToUse: [], mood: null, effort: null
+        };
+    }
+
+    cancelAISuggestions();
+    console.log("Current Plan Updated (Suggestion Mode):", currentWeeklyPlan);
+}
+
+/**
+ * Handles keydown in the tag input - adds tag on Enter.
+ */
+function handleTagInputKeydown(event, inputElement) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        const value = inputElement.value.trim();
+        if (!value) return;
+
+        const day = inputElement.dataset.day;
+        const typeId = inputElement.dataset.type;
+        addIngredientTag(day, typeId, value);
+        inputElement.value = '';
+        inputElement.placeholder = '';
+    }
+}
+
+/**
+ * Adds an ingredient tag for a specific day.
+ */
+function addIngredientTag(day, typeId, ingredient) {
+    if (!currentWeeklyPlan[day]) {
+        currentWeeklyPlan[day] = {
+            type: null, recipeId: null, suggestionMode: 'mix',
+            maxCookTime: null, style: null,
+            ingredientsToUse: [], mood: null, effort: null
+        };
+    }
+
+    const ingredients = currentWeeklyPlan[day].ingredientsToUse || [];
+    const lowerIngredient = ingredient.toLowerCase();
+
+    // Check if already exists
+    if (ingredients.some(i => i.toLowerCase() === lowerIngredient)) {
+        return; // Already exists
+    }
+
+    ingredients.push(ingredient);
+    currentWeeklyPlan[day].ingredientsToUse = ingredients;
+
+    // Update the tags display
+    updateTagsDisplay(day, typeId);
+
+    // Update quick chips
+    updateQuickChipsState(day, typeId);
+
+    cancelAISuggestions();
+}
+
+/**
+ * Removes an ingredient tag.
+ */
+function removeIngredientTag(buttonElement) {
+    const tagSpan = buttonElement.closest('.ingredient-tag');
+    if (!tagSpan) return;
+
+    const ingredient = tagSpan.dataset.ingredient;
+    const day = tagSpan.dataset.day;
+    const typeId = tagSpan.dataset.type;
+
+    if (currentWeeklyPlan[day]) {
+        const ingredients = currentWeeklyPlan[day].ingredientsToUse || [];
+        const index = ingredients.findIndex(i => i.toLowerCase() === ingredient.toLowerCase());
+        if (index >= 0) {
+            ingredients.splice(index, 1);
+            currentWeeklyPlan[day].ingredientsToUse = ingredients;
+        }
+    }
+
+    // Update the tags display
+    updateTagsDisplay(day, typeId);
+
+    // Update quick chips
+    updateQuickChipsState(day, typeId);
+
+    cancelAISuggestions();
+}
+
+/**
+ * Toggles a quick chip on/off and updates the tags.
+ */
+function toggleQuickChip(chipElement) {
+    const ingredient = chipElement.dataset.ingredient;
+    const day = chipElement.dataset.day;
+    const typeId = chipElement.dataset.type;
+
+    if (!currentWeeklyPlan[day]) {
+        currentWeeklyPlan[day] = {
+            type: null, recipeId: null, suggestionMode: 'mix',
+            maxCookTime: null, style: null,
+            ingredientsToUse: [], mood: null, effort: null
+        };
+    }
+
+    const ingredients = currentWeeklyPlan[day].ingredientsToUse || [];
+    const lowerIngredient = ingredient.toLowerCase();
+    const existingIndex = ingredients.findIndex(i => i.toLowerCase() === lowerIngredient);
+
+    if (existingIndex >= 0) {
+        // Remove ingredient
+        ingredients.splice(existingIndex, 1);
+    } else {
+        // Add ingredient
+        ingredients.push(ingredient);
+    }
+
+    currentWeeklyPlan[day].ingredientsToUse = ingredients;
+
+    // Update the tags display
+    updateTagsDisplay(day, typeId);
+
+    // Update quick chips
+    updateQuickChipsState(day, typeId);
+
+    cancelAISuggestions();
+}
+
+/**
+ * Updates the tags display to reflect current ingredients.
+ */
+function updateTagsDisplay(day, typeId) {
+    const tagsDisplay = document.getElementById(`tags-display-${day}-${typeId}`);
+    const tagInput = document.getElementById(`tag-input-${day}-${typeId}`);
+    if (!tagsDisplay) return;
+
+    const ingredients = currentWeeklyPlan[day]?.ingredientsToUse || [];
+
+    // Clear existing tags (keep the input)
+    tagsDisplay.querySelectorAll('.ingredient-tag').forEach(tag => tag.remove());
+
+    // Add tags before the input
+    ingredients.forEach(ing => {
+        const tagSpan = document.createElement('span');
+        tagSpan.className = 'ingredient-tag';
+        tagSpan.dataset.ingredient = ing;
+        tagSpan.dataset.day = day;
+        tagSpan.dataset.type = typeId;
+        tagSpan.innerHTML = `${escapeHtml(ing)}<button type="button" class="tag-remove" onclick="removeIngredientTag(this)">&times;</button>`;
+        tagsDisplay.insertBefore(tagSpan, tagInput);
+    });
+
+    // Update placeholder
+    if (tagInput) {
+        tagInput.placeholder = ingredients.length ? '' : 'Type ingredient + Enter';
+    }
+}
+
+/**
+ * Updates the quick chips visual state to reflect current ingredients.
+ */
+function updateQuickChipsState(day, typeId) {
+    const chipsContainer = document.getElementById(`quick-chips-${day}-${typeId}`);
+    if (!chipsContainer) return;
+
+    const ingredients = (currentWeeklyPlan[day]?.ingredientsToUse || []).map(i => i.toLowerCase());
+
+    chipsContainer.querySelectorAll('.quick-chip').forEach(chip => {
+        const chipIngredient = chip.dataset.ingredient.toLowerCase();
+        if (ingredients.includes(chipIngredient)) {
+            chip.classList.add('bg-primary');
+            chip.classList.remove('bg-light', 'text-dark', 'border');
+        } else {
+            chip.classList.remove('bg-primary');
+            chip.classList.add('bg-light', 'text-dark', 'border');
+        }
+    });
+}
+
+// Keep the old function name for backwards compatibility
+function toggleIngredientChip(chipElement) {
+    toggleQuickChip(chipElement);
 }
 
 /**
@@ -7679,12 +7945,20 @@ async function generatePlanWithChefBot() {
     const suggestionsDiv = document.getElementById('aiPlanSuggestions');
     const suggestionsList = document.getElementById('aiSuggestionsList');
 
+    // Load dietary restrictions from user preferences
     let userDietaryRestrictions = [];
-    // **NEW: Get selected suggestion mode**
-    const suggestionModeElement = document.querySelector('input[name="aiSuggestionMode"]:checked');
-    const suggestionMode = suggestionModeElement ? suggestionModeElement.value : 'existing'; // Default to 'existing' if somehow none is checked
-    console.log("Selected Suggestion Mode:", suggestionMode);
-    // **END NEW BLOCK**
+    try {
+        if (currentUser && db) {
+            const userRef = db.collection("users").doc(currentUser.uid);
+            const userDoc = await userRef.get();
+            if (userDoc.exists && userDoc.data().preferences?.dietaryRestrictions) {
+                userDietaryRestrictions = userDoc.data().preferences.dietaryRestrictions;
+            }
+        }
+    } catch (e) {
+        console.warn("Could not load dietary restrictions:", e);
+    }
+    console.log("User dietary restrictions:", userDietaryRestrictions);
 
     // Basic validation (Unchanged)
     if (Object.keys(currentWeeklyPlan).length === 0) {
@@ -7702,12 +7976,15 @@ async function generatePlanWithChefBot() {
         const needsSuggestion = dayPlan?.type?.startsWith('cook-') && !dayPlan?.recipeId;
         return {
             day: day,
-            type: dayPlan?.type || 'none', 
+            type: dayPlan?.type || 'none',
             recipeId: dayPlan?.recipeId || null,
-            suggestionMode: needsSuggestion ? (dayPlan?.suggestionMode || 'existing') : undefined, 
-            // ** NEW: Add per-day preferences if suggesting **
+            suggestionMode: needsSuggestion ? (dayPlan?.suggestionMode || 'mix') : undefined,
+            // Per-day preferences (only if suggesting)
             maxCookTime: needsSuggestion ? (dayPlan?.maxCookTime || null) : undefined,
-            style: needsSuggestion ? (dayPlan?.style || null) : undefined
+            style: needsSuggestion ? (dayPlan?.style || null) : undefined,
+            ingredientsToUse: needsSuggestion ? (dayPlan?.ingredientsToUse || []) : undefined,
+            mood: needsSuggestion ? (dayPlan?.mood || null) : undefined,
+            effort: needsSuggestion ? (dayPlan?.effort || null) : undefined
         };
     }).filter(dayInfo => dayInfo.type !== 'none'); // Optional filter
 
@@ -7718,52 +7995,42 @@ async function generatePlanWithChefBot() {
 
     const requestPayload = {
         planStructure: planRequest,
-        existingRecipes: recipes.map(r => ({ /* ... id, name, tags, rating ... */ })), 
+        existingRecipes: recipes.map(r => ({ id: r.id, name: r.name, tags: r.tags || [], rating: r.rating || 0 })),
         dietaryRestrictions: userDietaryRestrictions
-        // ** REMOVE Global Preferences Object **
-        // preferences: { ... } 
     };
 
+    if (askButton) askButton.disabled = true;
+
     try {
-        // ** Call the same Netlify function, but it now needs to handle the suggestionMode **
         const response = await fetch('/.netlify/functions/generate-weekly-plan', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestPayload) // Send the enhanced payload
+            body: JSON.stringify(requestPayload)
         });
 
-        // ... (rest of the response handling - checking status, parsing JSON) ...
-        
-        // **MODIFIED: Handle different response types based on mode**
-        const aiResponse = await response.json(); // Expect format based on mode
-
-        if (suggestionMode === 'existing') {
-            // Expect the response to be the final plan with existing recipe IDs filled in
-            // Format: [{ day: 'Monday', type: 'cook-quick', recipe: { id: 'abc123', name: 'Existing Quick Pasta' } }, ...]
-            aiSuggestedPlan = aiResponse; 
-             if (!aiSuggestedPlan || !Array.isArray(aiSuggestedPlan)) {
-                 throw new Error("Chef Bot returned an invalid plan format for existing recipes.");
-             }
-             // Display the final suggestions directly
-             displayAISuggestions(aiSuggestedPlan, suggestionMode); 
-        } else { // suggestionMode === 'new'
-            // Expect the response to be IDEAS
-            // Format: [{ day: 'Monday', type: 'cook-quick', ideas: ['Idea 1', 'Idea 2'] }, { day: 'Tuesday', type: 'leftovers' }, ...]
-            const suggestedIdeas = aiResponse;
-             if (!suggestedIdeas || !Array.isArray(suggestedIdeas)) {
-                 throw new Error("Chef Bot returned an invalid ideas format.");
-             }
-             // Display the ideas for user selection
-             displayAIPlanIdeas(suggestedIdeas); // ** NEW function needed **
-             // Don't set aiSuggestedPlan yet, wait for user choices
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+            throw new Error(errorData.error || `Server error: ${response.status}`);
         }
 
-        if (plannerStatus) plannerStatus.textContent = suggestionMode === 'existing' ? "Review Chef Bot's suggestions below." : "Choose one idea for each day below.";
+        const aiResponse = await response.json();
+        if (!aiResponse || !Array.isArray(aiResponse)) {
+            throw new Error("Chef Bot returned an invalid response format.");
+        }
+
+        // Store the response with options for user selection
+        aiSuggestedPlan = aiResponse;
+
+        // Display options for each day
+        displayOptionsPerDay(aiResponse);
+
+        if (plannerStatus) plannerStatus.textContent = "Choose one option for each day, then confirm your selections.";
 
     } catch (error) {
-        // ... (rest of error handling) ...
+        console.error("Error generating plan:", error);
+        if (plannerStatus) plannerStatus.textContent = `Error: ${error.message}`;
     } finally {
-        // ... (reset button state) ...
+        if (askButton) askButton.disabled = false;
     }
 }
 
@@ -7858,12 +8125,328 @@ async function saveGeneratedPlan() {
     }
     currentWeeklyPlan = {};
     aiSuggestedPlan = null;
-    showPlanning(); 
+    showPlanning();
+}
+
+/**
+ * Displays 3 options per day for user selection.
+ * @param {Array} planData - The plan with options array per day.
+ * Format: [{ day: 'Monday', type: 'cook-quick', options: [{source, id, name}, ...] }, ...]
+ */
+function displayOptionsPerDay(planData) {
+    const suggestionsDiv = document.getElementById('aiPlanSuggestions');
+    const suggestionsList = document.getElementById('aiSuggestionsList');
+    const confirmButton = suggestionsDiv?.querySelector('.btn-success');
+    const goBackButton = suggestionsDiv?.querySelector('.btn-outline-secondary');
+
+    if (!suggestionsDiv || !suggestionsList) {
+        console.error("Required elements for displaying options not found!");
+        return;
+    }
+
+    suggestionsList.innerHTML = '';
+
+    planData.forEach((item) => {
+        const listItem = document.createElement('div');
+        listItem.className = 'list-group-item';
+        listItem.id = `option-row-${item.day}`;
+
+        // Day header with meal type info
+        const mealTypeInfo = mealTypes.find(mt => mt.id === item.type);
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'd-flex justify-content-between align-items-center mb-2';
+        headerDiv.innerHTML = `
+            <h6 class="mb-0 fw-bold">${item.day}</h6>
+            ${mealTypeInfo ? `<span class="badge bg-secondary"><i class="${mealTypeInfo.icon} me-1"></i>${mealTypeInfo.label}</span>` : ''}
+        `;
+        listItem.appendChild(headerDiv);
+
+        // Handle different scenarios
+        if (item.recipeId) {
+            // Pre-selected recipe
+            const existingRecipe = recipes.find(r => r.id === item.recipeId);
+            const preSelectedDiv = document.createElement('div');
+            preSelectedDiv.className = 'text-muted';
+            preSelectedDiv.innerHTML = `<i class="bi bi-check-circle me-2"></i>Pre-selected: <strong>${existingRecipe?.name || 'Selected Recipe'}</strong>`;
+            listItem.appendChild(preSelectedDiv);
+        } else if (item.type === 'leftovers') {
+            // Leftovers day
+            const leftoversDiv = document.createElement('div');
+            leftoversDiv.className = 'text-muted';
+            leftoversDiv.innerHTML = `<i class="bi bi-recycle me-2"></i>Leftovers`;
+            listItem.appendChild(leftoversDiv);
+        } else if (item.options && item.options.length > 0) {
+            // Options to choose from
+            const optionsDiv = document.createElement('div');
+            optionsDiv.className = 'options-container';
+
+            item.options.forEach((opt, optIndex) => {
+                const radioId = `option-${item.day}-${optIndex}`;
+                const radioName = `option-choice-${item.day}`;
+                const sourceBadge = opt.source === 'existing'
+                    ? '<span class="badge bg-primary-subtle text-primary ms-2">Saved</span>'
+                    : '<span class="badge bg-success-subtle text-success ms-2">New Idea</span>';
+
+                const formCheck = document.createElement('div');
+                formCheck.className = 'form-check py-1';
+                formCheck.innerHTML = `
+                    <input class="form-check-input option-radio" type="radio" name="${radioName}" id="${radioId}"
+                           value="${optIndex}" data-day="${item.day}" data-source="${opt.source}"
+                           data-id="${opt.id || ''}" data-name="${escapeHtml(opt.name)}"
+                           ${optIndex === 0 ? 'checked' : ''}>
+                    <label class="form-check-label" for="${radioId}">
+                        ${escapeHtml(opt.name)}${sourceBadge}
+                    </label>
+                `;
+                optionsDiv.appendChild(formCheck);
+            });
+
+            listItem.appendChild(optionsDiv);
+
+            // Add inline refinement input
+            const refinementDiv = document.createElement('div');
+            refinementDiv.className = 'mt-2 refinement-inline';
+            refinementDiv.innerHTML = `
+                <div class="input-group input-group-sm">
+                    <input type="text" class="form-control" placeholder="Tweak options: e.g., make it spicier, no tomatoes..."
+                           id="refine-input-${item.day}" maxlength="200">
+                    <button class="btn btn-outline-primary btn-sm" onclick="regenerateDayOptions('${item.day}')" title="Regenerate options with tweak">
+                        <i class="bi bi-arrow-repeat"></i>
+                    </button>
+                </div>
+            `;
+            listItem.appendChild(refinementDiv);
+        } else {
+            // No options available
+            const noOptionsDiv = document.createElement('div');
+            noOptionsDiv.className = 'text-warning';
+            noOptionsDiv.innerHTML = `<i class="bi bi-exclamation-triangle me-2"></i>No suggestions available`;
+            listItem.appendChild(noOptionsDiv);
+        }
+
+        suggestionsList.appendChild(listItem);
+    });
+
+    // Update confirm button
+    if (confirmButton) {
+        confirmButton.textContent = 'Confirm Selections & Generate Recipes';
+        confirmButton.onclick = confirmSelectedOptions;
+        confirmButton.disabled = false;
+    }
+
+    if (goBackButton) {
+        goBackButton.onclick = cancelAISuggestions;
+    }
+
+    suggestionsDiv.style.display = 'block';
+}
+
+/**
+ * Confirms user's selected options and generates full recipes for new ideas.
+ */
+async function confirmSelectedOptions() {
+    const suggestionsDiv = document.getElementById('aiPlanSuggestions');
+    const plannerStatus = document.getElementById('aiPlannerStatus');
+    const confirmButton = suggestionsDiv?.querySelector('.btn-success');
+
+    if (!aiSuggestedPlan) {
+        alert("No plan data available.");
+        return;
+    }
+
+    // Gather user selections
+    const selections = [];
+    let hasNewIdeas = false;
+
+    aiSuggestedPlan.forEach(item => {
+        if (item.recipeId || item.type === 'leftovers' || !item.options?.length) {
+            // Keep as-is
+            selections.push({
+                day: item.day,
+                type: item.type,
+                recipeId: item.recipeId || null,
+                recipe: item.recipeId ? { id: item.recipeId, name: recipes.find(r => r.id === item.recipeId)?.name } : null
+            });
+        } else {
+            // Get selected option
+            const selectedRadio = document.querySelector(`input[name="option-choice-${item.day}"]:checked`);
+            if (selectedRadio) {
+                const source = selectedRadio.dataset.source;
+                const id = selectedRadio.dataset.id || null;
+                const name = selectedRadio.dataset.name;
+
+                if (source === 'existing' && id) {
+                    selections.push({
+                        day: item.day,
+                        type: item.type,
+                        recipe: { id, name, source: 'existing' }
+                    });
+                } else {
+                    // New idea - needs full recipe generation
+                    hasNewIdeas = true;
+                    selections.push({
+                        day: item.day,
+                        type: item.type,
+                        idea: name,
+                        recipe: null
+                    });
+                }
+            }
+        }
+    });
+
+    if (hasNewIdeas) {
+        // Generate full recipes for new ideas
+        if (plannerStatus) plannerStatus.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Generating recipes for new ideas...';
+        if (confirmButton) confirmButton.disabled = true;
+
+        try {
+            const newIdeas = selections.filter(s => s.idea && !s.recipe);
+            const response = await fetch('/.netlify/functions/generate-recipes-from-ideas', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    chosenIdeas: newIdeas.map(s => ({ day: s.day, chosenIdea: s.idea, type: s.type }))
+                })
+            });
+
+            if (!response.ok) throw new Error('Failed to generate recipes');
+
+            const generatedRecipes = await response.json();
+
+            // Merge generated recipes back into selections
+            generatedRecipes.forEach(gen => {
+                const sel = selections.find(s => s.day === gen.day);
+                if (sel && gen.recipe) {
+                    sel.recipe = gen.recipe;
+                    sel.recipe.source = 'new';
+                }
+            });
+        } catch (error) {
+            console.error("Error generating recipes:", error);
+            if (plannerStatus) plannerStatus.textContent = `Error: ${error.message}`;
+            if (confirmButton) confirmButton.disabled = false;
+            return;
+        }
+    }
+
+    // Update aiSuggestedPlan with final selections
+    aiSuggestedPlan = selections;
+
+    // Show final review
+    displayFinalPlan(selections);
+    if (plannerStatus) plannerStatus.textContent = "Review your final plan and save.";
+    if (confirmButton) {
+        confirmButton.textContent = 'Accept & Save Plan';
+        confirmButton.onclick = saveGeneratedPlan;
+        confirmButton.disabled = false;
+    }
+}
+
+/**
+ * Displays the final plan for review before saving.
+ */
+function displayFinalPlan(planData) {
+    const suggestionsList = document.getElementById('aiSuggestionsList');
+    if (!suggestionsList) return;
+
+    suggestionsList.innerHTML = '';
+
+    planData.forEach(item => {
+        const listItem = document.createElement('div');
+        listItem.className = 'list-group-item d-flex justify-content-between align-items-center';
+
+        const daySpan = document.createElement('span');
+        daySpan.className = 'fw-bold';
+        daySpan.textContent = item.day;
+
+        const recipeSpan = document.createElement('span');
+        if (item.type === 'leftovers') {
+            recipeSpan.innerHTML = '<i class="bi bi-recycle me-2 text-muted"></i>Leftovers';
+            recipeSpan.className = 'text-muted';
+        } else if (item.recipe?.name) {
+            const mealTypeInfo = mealTypes.find(mt => mt.id === item.type);
+            const icon = mealTypeInfo?.icon || 'bi-egg';
+            const sourceBadge = item.recipe.source === 'new'
+                ? '<span class="badge bg-success-subtle text-success ms-2">New</span>'
+                : '';
+            recipeSpan.innerHTML = `<i class="${icon} me-2"></i>${escapeHtml(item.recipe.name)}${sourceBadge}`;
+        } else {
+            recipeSpan.innerHTML = '<span class="text-warning"><i class="bi bi-question-circle me-2"></i>No selection</span>';
+        }
+
+        listItem.appendChild(daySpan);
+        listItem.appendChild(recipeSpan);
+        suggestionsList.appendChild(listItem);
+    });
+}
+
+/**
+ * Regenerates options for a single day with optional refinement feedback.
+ */
+async function regenerateDayOptions(day) {
+    const refineInput = document.getElementById(`refine-input-${day}`);
+    const feedback = refineInput?.value?.trim() || null;
+    const dayPlan = currentWeeklyPlan[day];
+
+    if (!dayPlan || !dayPlan.type?.startsWith('cook-')) return;
+
+    const optionRow = document.getElementById(`option-row-${day}`);
+    if (optionRow) {
+        const optionsContainer = optionRow.querySelector('.options-container');
+        if (optionsContainer) {
+            optionsContainer.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Regenerating...';
+        }
+    }
+
+    try {
+        const response = await fetch('/.netlify/functions/regenerate-single-day', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                dayPlan: {
+                    day,
+                    type: dayPlan.type,
+                    suggestionMode: dayPlan.suggestionMode || 'mix',
+                    maxCookTime: dayPlan.maxCookTime,
+                    style: dayPlan.style,
+                    ingredientsToUse: dayPlan.ingredientsToUse || [],
+                    mood: dayPlan.mood,
+                    effort: dayPlan.effort
+                },
+                existingRecipes: recipes.map(r => ({ id: r.id, name: r.name, tags: r.tags || [] })),
+                dietaryRestrictions: userDietaryRestrictions || [],
+                refinementFeedback: feedback
+            })
+        });
+
+        if (!response.ok) throw new Error('Failed to regenerate');
+
+        const result = await response.json();
+
+        // Update the options in aiSuggestedPlan
+        const itemIndex = aiSuggestedPlan.findIndex(item => item.day === day);
+        if (itemIndex >= 0 && result.options) {
+            aiSuggestedPlan[itemIndex].options = result.options;
+        }
+
+        // Re-render just this day's options
+        displayOptionsPerDay(aiSuggestedPlan);
+
+    } catch (error) {
+        console.error('Error regenerating options:', error);
+        if (optionRow) {
+            const optionsContainer = optionRow.querySelector('.options-container');
+            if (optionsContainer) {
+                optionsContainer.innerHTML = '<span class="text-danger">Error regenerating. Please try again.</span>';
+            }
+        }
+    }
 }
 
 /**
  * Displays the AI-suggested recipe IDEAS for user selection.
- * @param {Array} suggestedIdeas - The ideas structure from the AI. 
+ * @param {Array} suggestedIdeas - The ideas structure from the AI.
  * Format: [{ day: 'Monday', type: 'cook-quick', ideas: ['Idea A', 'Idea B'] }, ...]
  */
 function displayAIPlanIdeas(suggestedIdeas) {
@@ -8074,54 +8657,321 @@ function displayAISuggestions(suggestedPlan, mode = 'existing') { // Added mode 
     const suggestionsList = document.getElementById('aiSuggestionsList');
     const confirmButton = suggestionsDiv ? suggestionsDiv.querySelector('.btn-success') : null;
     const goBackButton = suggestionsDiv ? suggestionsDiv.querySelector('.btn-outline-secondary') : null;
-     const titleElement = suggestionsDiv ? suggestionsDiv.querySelector('h5') : null; // Get the title element
-
+    const titleElement = suggestionsDiv ? suggestionsDiv.querySelector('h5') : null;
 
     if (!suggestionsDiv || !suggestionsList || !confirmButton || !goBackButton || !titleElement) return;
 
-    suggestionsList.innerHTML = ''; 
-    
+    suggestionsList.innerHTML = '';
+
     // Update title based on mode
-     titleElement.innerHTML = `<i class="bi bi-lightbulb-fill text-warning"></i> Chef Bot's ${mode === 'new' ? 'Generated Plan' : 'Suggestions'}:`;
+    titleElement.innerHTML = `<i class="bi bi-lightbulb-fill text-warning"></i> Chef Bot's ${mode === 'new' ? 'Generated Plan' : 'Suggestions'}:`;
 
+    suggestedPlan.forEach((item, index) => {
+        const listItem = document.createElement('div');
+        listItem.className = 'list-group-item';
+        listItem.id = `suggestion-row-${item.day}`;
 
-    suggestedPlan.forEach(item => {
-        // ... (rest of the logic from your previous displayAISuggestions to render the list item) ...
-         const listItem = document.createElement('div');
-        listItem.className = 'list-group-item d-flex justify-content-between align-items-center';
+        const rowDiv = document.createElement('div');
+        rowDiv.className = 'suggestion-day-row';
 
         const daySpan = document.createElement('span');
-        daySpan.className = 'fw-bold me-3';
+        daySpan.className = 'day-name';
         daySpan.textContent = item.day;
 
         const detailSpan = document.createElement('span');
-        detailSpan.className = 'flex-grow-1 text-end'; 
+        detailSpan.className = 'recipe-detail';
+        detailSpan.id = `recipe-detail-${item.day}`;
+
+        const isCookType = item.type && item.type.startsWith('cook-');
+        const recipeName = item.recipe?.name || null;
 
         if (item.type === 'leftovers') {
             detailSpan.innerHTML = `<i class="bi bi-recycle me-2"></i> Leftovers`;
             detailSpan.classList.add('text-muted');
-        } else if (item.recipe && item.recipe.name) {
-             // Find original meal type icon
-             const mealTypeInfo = mealTypes.find(mt => mt.id === item.type);
-             const iconClass = mealTypeInfo ? mealTypeInfo.icon : 'bi-egg'; // Default icon
-             detailSpan.innerHTML = `<i class="${iconClass} me-2"></i> ${escapeHtml(item.recipe.name)}`;
-             // Maybe add a tooltip or small button here later to view recipe details?
+        } else if (recipeName) {
+            const mealTypeInfo = mealTypes.find(mt => mt.id === item.type);
+            const iconClass = mealTypeInfo ? mealTypeInfo.icon : 'bi-egg';
+            detailSpan.innerHTML = `<i class="${iconClass} me-2"></i> ${escapeHtml(recipeName)}`;
+        } else if (isCookType) {
+            detailSpan.innerHTML = `<i class="bi bi-question-circle me-2"></i> No suggestion`;
+            detailSpan.classList.add('text-warning');
         } else {
-             detailSpan.innerHTML = `<i class="bi bi-question-circle me-2"></i> No suggestion provided`;
-             detailSpan.classList.add('text-warning');
+            detailSpan.innerHTML = `<span class="text-muted">--</span>`;
         }
 
-        listItem.appendChild(daySpan);
-        listItem.appendChild(detailSpan);
+        rowDiv.appendChild(daySpan);
+        rowDiv.appendChild(detailSpan);
+
+        // Add action buttons for days that can be modified (cook types with suggestions)
+        if (isCookType) {
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'action-buttons';
+            actionsDiv.id = `actions-${item.day}`;
+
+            // Regenerate button
+            const regenBtn = document.createElement('button');
+            regenBtn.className = 'btn btn-outline-secondary suggestion-action-btn';
+            regenBtn.title = 'Get a different suggestion';
+            regenBtn.innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+            regenBtn.onclick = () => regenerateDaySuggestion(item.day);
+
+            // Alternatives button
+            const altBtn = document.createElement('button');
+            altBtn.className = 'btn btn-outline-secondary suggestion-action-btn';
+            altBtn.title = 'Show alternatives';
+            altBtn.innerHTML = '<i class="bi bi-shuffle"></i>';
+            altBtn.onclick = () => getAlternativesForDay(item.day);
+
+            // Refine button
+            const refineBtn = document.createElement('button');
+            refineBtn.className = 'btn btn-outline-secondary suggestion-action-btn';
+            refineBtn.title = 'Refine with feedback';
+            refineBtn.innerHTML = '<i class="bi bi-pencil"></i>';
+            refineBtn.onclick = () => showRefinementInput(item.day);
+
+            actionsDiv.appendChild(regenBtn);
+            actionsDiv.appendChild(altBtn);
+            actionsDiv.appendChild(refineBtn);
+            rowDiv.appendChild(actionsDiv);
+        }
+
+        listItem.appendChild(rowDiv);
+
+        // Container for alternatives (hidden by default)
+        const alternativesContainer = document.createElement('div');
+        alternativesContainer.className = 'alternatives-container d-none mt-2';
+        alternativesContainer.id = `alternatives-${item.day}`;
+        listItem.appendChild(alternativesContainer);
+
+        // Container for refinement input (hidden by default)
+        const refinementContainer = document.createElement('div');
+        refinementContainer.className = 'refinement-container d-none';
+        refinementContainer.id = `refinement-${item.day}`;
+        refinementContainer.innerHTML = `
+            <div class="input-group input-group-sm">
+                <input type="text" class="form-control" placeholder="e.g., make it vegetarian, faster..."
+                       id="refinement-input-${item.day}" maxlength="200">
+                <button class="btn btn-primary btn-sm" onclick="submitRefinement('${item.day}')">
+                    <i class="bi bi-send"></i>
+                </button>
+                <button class="btn btn-outline-secondary btn-sm" onclick="hideRefinementInput('${item.day}')">
+                    <i class="bi bi-x"></i>
+                </button>
+            </div>
+        `;
+        listItem.appendChild(refinementContainer);
+
         suggestionsList.appendChild(listItem);
     });
 
-    // **Ensure the confirm button now triggers the FINAL save**
+    // Ensure the confirm button triggers the FINAL save
     confirmButton.textContent = 'Accept & Save Plan';
-    confirmButton.onclick = saveGeneratedPlan; 
-    confirmButton.disabled = false; // Ensure it's enabled
+    confirmButton.onclick = saveGeneratedPlan;
+    confirmButton.disabled = false;
 
-    goBackButton.onclick = cancelAISuggestions; 
+    goBackButton.onclick = cancelAISuggestions;
 
     suggestionsDiv.style.display = 'block';
+}
+
+// ============================
+// ITERATION FUNCTIONS
+// ============================
+
+/**
+ * Regenerates a suggestion for a single day without affecting others.
+ * @param {string} day - The day to regenerate (e.g., "Monday")
+ */
+async function regenerateDaySuggestion(day) {
+    const dayPlan = currentWeeklyPlan[day];
+    if (!dayPlan || !dayPlan.type?.startsWith('cook-')) return;
+
+    const currentItem = aiSuggestedPlan?.find(item => item.day === day);
+    const excludeRecipes = currentItem?.recipe?.name ? [currentItem.recipe.name] : [];
+
+    const actionsDiv = document.getElementById(`actions-${day}`);
+    const recipeDetail = document.getElementById(`recipe-detail-${day}`);
+    if (actionsDiv) actionsDiv.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    try {
+        const response = await fetch('/.netlify/functions/regenerate-single-day', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                dayPlan: { day, type: dayPlan.type, suggestionMode: dayPlan.suggestionMode || 'mix',
+                    maxCookTime: dayPlan.maxCookTime, style: dayPlan.style,
+                    ingredientsToUse: dayPlan.ingredientsToUse || [], mood: dayPlan.mood, effort: dayPlan.effort },
+                existingRecipes: recipes.map(r => ({ id: r.id, name: r.name, tags: r.tags || [] })),
+                dietaryRestrictions: userDietaryRestrictions || [], excludeRecipes
+            })
+        });
+        if (!response.ok) throw new Error('Failed to regenerate');
+        const result = await response.json();
+        const itemIndex = aiSuggestedPlan.findIndex(item => item.day === day);
+        if (itemIndex >= 0) {
+            if (result.recipe) { aiSuggestedPlan[itemIndex].recipe = result.recipe; aiSuggestedPlan[itemIndex].ideas = undefined; }
+            else if (result.ideas) { displayDayIdeasForSelection(day, result.ideas); return; }
+        }
+        updateDaySuggestionDisplay(day);
+    } catch (error) {
+        console.error('Error regenerating day:', error);
+        if (recipeDetail) recipeDetail.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle"></i> Error</span>`;
+    }
+    restoreActionButtons(day);
+}
+
+async function getAlternativesForDay(day) {
+    const dayPlan = currentWeeklyPlan[day];
+    if (!dayPlan || !dayPlan.type?.startsWith('cook-')) return;
+    const currentItem = aiSuggestedPlan?.find(item => item.day === day);
+    const currentSuggestion = currentItem?.recipe?.name || null;
+    const actionsDiv = document.getElementById(`actions-${day}`);
+    if (actionsDiv) actionsDiv.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    try {
+        const response = await fetch('/.netlify/functions/get-day-alternatives', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                dayPlan: { day, type: dayPlan.type, suggestionMode: dayPlan.suggestionMode || 'mix',
+                    maxCookTime: dayPlan.maxCookTime, style: dayPlan.style,
+                    ingredientsToUse: dayPlan.ingredientsToUse || [], mood: dayPlan.mood, effort: dayPlan.effort },
+                currentSuggestion,
+                existingRecipes: recipes.map(r => ({ id: r.id, name: r.name, tags: r.tags || [] })),
+                dietaryRestrictions: userDietaryRestrictions || []
+            })
+        });
+        if (!response.ok) throw new Error('Failed to get alternatives');
+        const result = await response.json();
+        displayDayAlternatives(day, result.alternatives || []);
+    } catch (error) {
+        console.error('Error getting alternatives:', error);
+    }
+    restoreActionButtons(day);
+}
+
+function displayDayAlternatives(day, alternatives) {
+    const container = document.getElementById(`alternatives-${day}`);
+    if (!container) return;
+    if (alternatives.length === 0) {
+        container.innerHTML = '<small class="text-muted">No alternatives found.</small>';
+        container.classList.remove('d-none'); return;
+    }
+    let html = '<div class="alternatives-group"><small class="text-muted d-block mb-1">Select an alternative:</small>';
+    alternatives.forEach((alt, index) => {
+        const name = alt.name || alt; const id = alt.id || null;
+        html += `<div class="form-check"><input class="form-check-input" type="radio" name="alt-${day}" id="alt-${day}-${index}" value="${index}" data-name="${escapeHtml(name)}" data-id="${id || ''}"><label class="form-check-label" for="alt-${day}-${index}">${escapeHtml(name)}</label></div>`;
+    });
+    html += `<div class="mt-2"><button class="btn btn-sm btn-primary" onclick="selectAlternative('${day}')">Use Selected</button> <button class="btn btn-sm btn-outline-secondary" onclick="hideAlternatives('${day}')">Cancel</button></div></div>`;
+    container.innerHTML = html; container.classList.remove('d-none');
+}
+
+function displayDayIdeasForSelection(day, ideas) {
+    const container = document.getElementById(`alternatives-${day}`);
+    if (!container) return;
+    let html = '<div class="alternatives-group"><small class="text-muted d-block mb-1">Select an idea:</small>';
+    ideas.forEach((idea, index) => {
+        html += `<div class="form-check"><input class="form-check-input" type="radio" name="idea-${day}" id="idea-${day}-${index}" value="${index}" data-idea="${escapeHtml(idea)}"><label class="form-check-label" for="idea-${day}-${index}">${escapeHtml(idea)}</label></div>`;
+    });
+    html += `<div class="mt-2"><button class="btn btn-sm btn-primary" onclick="selectDayIdea('${day}')">Generate Recipe</button> <button class="btn btn-sm btn-outline-secondary" onclick="hideAlternatives('${day}')">Cancel</button></div></div>`;
+    container.innerHTML = html; container.classList.remove('d-none');
+}
+
+function selectAlternative(day) {
+    const selectedRadio = document.querySelector(`input[name="alt-${day}"]:checked`);
+    if (!selectedRadio) { alert('Please select an alternative.'); return; }
+    const name = selectedRadio.dataset.name; const id = selectedRadio.dataset.id || null;
+    const itemIndex = aiSuggestedPlan.findIndex(item => item.day === day);
+    if (itemIndex >= 0) aiSuggestedPlan[itemIndex].recipe = { id, name };
+    hideAlternatives(day); updateDaySuggestionDisplay(day);
+}
+
+async function selectDayIdea(day) {
+    const selectedRadio = document.querySelector(`input[name="idea-${day}"]:checked`);
+    if (!selectedRadio) { alert('Please select an idea.'); return; }
+    const idea = selectedRadio.dataset.idea; const dayPlan = currentWeeklyPlan[day];
+    const container = document.getElementById(`alternatives-${day}`);
+    if (container) container.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Generating...';
+    try {
+        const response = await fetch('/.netlify/functions/generate-recipes-from-ideas', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ideas: [{ day, idea, type: dayPlan.type }], dietaryRestrictions: userDietaryRestrictions || [] })
+        });
+        if (!response.ok) throw new Error('Failed');
+        const result = await response.json();
+        if (result[0]?.recipe) {
+            const itemIndex = aiSuggestedPlan.findIndex(item => item.day === day);
+            if (itemIndex >= 0) aiSuggestedPlan[itemIndex].recipe = result[0].recipe;
+        }
+        hideAlternatives(day); updateDaySuggestionDisplay(day);
+    } catch (error) { console.error('Error:', error); if (container) container.innerHTML = '<span class="text-danger">Error</span>'; }
+}
+
+function hideAlternatives(day) {
+    const container = document.getElementById(`alternatives-${day}`);
+    if (container) { container.classList.add('d-none'); container.innerHTML = ''; }
+}
+
+function showRefinementInput(day) {
+    const container = document.getElementById(`refinement-${day}`);
+    if (container) { container.classList.remove('d-none'); const input = document.getElementById(`refinement-input-${day}`); if (input) input.focus(); }
+}
+
+function hideRefinementInput(day) {
+    const container = document.getElementById(`refinement-${day}`);
+    if (container) { container.classList.add('d-none'); const input = document.getElementById(`refinement-input-${day}`); if (input) input.value = ''; }
+}
+
+async function submitRefinement(day) {
+    const input = document.getElementById(`refinement-input-${day}`);
+    const feedback = input?.value?.trim();
+    if (!feedback) { alert('Please enter feedback.'); return; }
+    const dayPlan = currentWeeklyPlan[day]; if (!dayPlan) return;
+    const currentItem = aiSuggestedPlan?.find(item => item.day === day);
+    const excludeRecipes = currentItem?.recipe?.name ? [currentItem.recipe.name] : [];
+    const actionsDiv = document.getElementById(`actions-${day}`);
+    if (actionsDiv) actionsDiv.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    hideRefinementInput(day);
+    try {
+        const response = await fetch('/.netlify/functions/regenerate-single-day', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                dayPlan: { day, type: dayPlan.type, suggestionMode: dayPlan.suggestionMode || 'mix',
+                    maxCookTime: dayPlan.maxCookTime, style: dayPlan.style,
+                    ingredientsToUse: dayPlan.ingredientsToUse || [], mood: dayPlan.mood, effort: dayPlan.effort },
+                existingRecipes: recipes.map(r => ({ id: r.id, name: r.name, tags: r.tags || [] })),
+                dietaryRestrictions: userDietaryRestrictions || [], excludeRecipes, refinementFeedback: feedback
+            })
+        });
+        if (!response.ok) throw new Error('Failed');
+        const result = await response.json();
+        const itemIndex = aiSuggestedPlan.findIndex(item => item.day === day);
+        if (itemIndex >= 0) {
+            if (result.recipe) aiSuggestedPlan[itemIndex].recipe = result.recipe;
+            else if (result.ideas) { displayDayIdeasForSelection(day, result.ideas); restoreActionButtons(day); return; }
+        }
+        updateDaySuggestionDisplay(day);
+    } catch (error) { console.error('Error:', error); }
+    restoreActionButtons(day);
+}
+
+function updateDaySuggestionDisplay(day) {
+    const item = aiSuggestedPlan?.find(i => i.day === day); if (!item) return;
+    const recipeDetail = document.getElementById(`recipe-detail-${day}`); if (!recipeDetail) return;
+    if (item.recipe?.name) {
+        const mealTypeInfo = mealTypes.find(mt => mt.id === item.type);
+        const iconClass = mealTypeInfo ? mealTypeInfo.icon : 'bi-egg';
+        recipeDetail.innerHTML = `<i class="${iconClass} me-2"></i> ${escapeHtml(item.recipe.name)}`;
+        recipeDetail.classList.remove('text-warning', 'text-muted');
+    } else {
+        recipeDetail.innerHTML = `<i class="bi bi-question-circle me-2"></i> No suggestion`;
+        recipeDetail.classList.add('text-warning');
+    }
+}
+
+function restoreActionButtons(day) {
+    const actionsDiv = document.getElementById(`actions-${day}`); if (!actionsDiv) return;
+    actionsDiv.innerHTML = `
+        <button class="btn btn-outline-secondary suggestion-action-btn" title="Regenerate" onclick="regenerateDaySuggestion('${day}')"><i class="bi bi-arrow-repeat"></i></button>
+        <button class="btn btn-outline-secondary suggestion-action-btn" title="Alternatives" onclick="getAlternativesForDay('${day}')"><i class="bi bi-shuffle"></i></button>
+        <button class="btn btn-outline-secondary suggestion-action-btn" title="Refine" onclick="showRefinementInput('${day}')"><i class="bi bi-pencil"></i></button>`;
 }

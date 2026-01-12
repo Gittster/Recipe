@@ -395,3 +395,110 @@ mark {
     margin-left: 0.75rem;
     vertical-align: middle;
 }
+
+/* --- 9. Weekly Planner Enhancements --- */
+/* Tag-style ingredient input */
+.tag-input-container {
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    background: #fff;
+    min-height: 38px;
+}
+.tag-input-container:focus-within {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
+}
+.tags-display {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    align-items: center;
+}
+.ingredient-tag {
+    display: inline-flex;
+    align-items: center;
+    background: var(--bs-primary);
+    color: white;
+    padding: 0.15rem 0.5rem;
+    border-radius: 1rem;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+.tag-remove {
+    background: none;
+    border: none;
+    color: white;
+    cursor: pointer;
+    margin-left: 0.25rem;
+    padding: 0 0.15rem;
+    font-size: 1rem;
+    line-height: 1;
+    opacity: 0.8;
+}
+.tag-remove:hover { opacity: 1; }
+.tag-input {
+    border: none;
+    outline: none;
+    flex: 1;
+    min-width: 80px;
+    font-size: 0.875rem;
+    padding: 0.25rem 0;
+    background: transparent;
+}
+.tag-input::placeholder {
+    color: #999;
+    font-size: 0.8rem;
+}
+
+/* Quick chips (below the tag input) */
+.quick-chip {
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    transition: all 0.15s ease-in-out;
+    user-select: none;
+}
+.quick-chip:hover { opacity: 0.85; transform: scale(1.02); }
+.quick-chip.bg-primary { color: white; }
+
+/* Legacy ingredient-chip class (backwards compat) */
+.ingredient-chip {
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    transition: all 0.15s ease-in-out;
+    user-select: none;
+}
+.ingredient-chip:hover { opacity: 0.85; transform: scale(1.02); }
+.ingredient-chip.bg-primary { color: white; }
+
+.suggestion-action-btn {
+    padding: 0.15rem 0.35rem;
+    font-size: 0.7rem;
+    border-radius: 0.25rem;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+}
+.suggestion-action-btn:hover { opacity: 1; }
+
+.refinement-container {
+    background-color: #f8f9fa;
+    border-radius: 0.375rem;
+    padding: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.alternatives-group .form-check { padding-left: 1.75rem; margin-bottom: 0.25rem; }
+.alternatives-group .form-check-label { font-size: 0.875rem; }
+
+.suggestion-day-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.suggestion-day-row .day-name { min-width: 90px; font-weight: 600; }
+.suggestion-day-row .recipe-detail { flex: 1; min-width: 150px; }
+.suggestion-day-row .action-buttons { display: flex; gap: 0.25rem; flex-shrink: 0; }
