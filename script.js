@@ -7342,11 +7342,9 @@ window.onload = () => {
 
 // Define meal types with icons and descriptions
 const mealTypes = [
-    // Added 'tag' property for filtering
-    { id: 'cook-leftovers', label: 'Cook - For Leftovers', icon: 'bi-stack', desc: 'Make a larger meal', tag: 'leftovers' },
-    { id: 'cook-1day', label: 'Cook - Single Meal', icon: 'bi-egg-fried', desc: 'Standard cooking', tag: null }, // No specific tag filter
-    { id: 'cook-quick', label: 'Cook - Quick Meal', icon: 'bi-stopwatch', desc: 'Under 30 mins', tag: 'quick' },
-    { id: 'leftovers', label: 'Leftovers', icon: 'bi-recycle', desc: 'Eat previously cooked meal', tag: null } // Leftovers type doesn't need recipe selection
+    { id: 'cook-leftovers', label: 'Cook for Leftovers', icon: 'bi-stack', desc: 'Make extra for later' },
+    { id: 'cook-single', label: 'Single Meal', icon: 'bi-egg-fried', desc: 'Cook one meal' },
+    { id: 'leftovers', label: 'Leftovers', icon: 'bi-recycle', desc: 'Eat previously cooked' }
 ];
 
 // Define days of the week
@@ -7491,10 +7489,16 @@ function renderDayCards() {
 
                             <div class="row gx-2 gy-1">
                                 <div class="col-6">
-                                    <label for="maxTime-${day}-${type.id}" class="form-label small fw-semibold mb-0">Max Time (min):</label>
-                                    <input type="number" class="form-control form-control-sm" id="maxTime-${day}-${type.id}"
-                                           placeholder="Any" min="0" value="${dayPlan.maxCookTime || ''}"
-                                           data-day="${day}" oninput="setDayPreference(this, 'maxCookTime')">
+                                    <label for="maxTime-${day}-${type.id}" class="form-label small fw-semibold mb-0">Max Time:</label>
+                                    <select class="form-select form-select-sm" id="maxTime-${day}-${type.id}"
+                                            data-day="${day}" onchange="setDayPreference(this, 'maxCookTime')">
+                                        <option value="" ${!dayPlan.maxCookTime ? 'selected' : ''}>Any</option>
+                                        <option value="15" ${dayPlan.maxCookTime == 15 ? 'selected' : ''}>15 min</option>
+                                        <option value="30" ${dayPlan.maxCookTime == 30 ? 'selected' : ''}>30 min</option>
+                                        <option value="45" ${dayPlan.maxCookTime == 45 ? 'selected' : ''}>45 min</option>
+                                        <option value="60" ${dayPlan.maxCookTime == 60 ? 'selected' : ''}>60 min</option>
+                                        <option value="90" ${dayPlan.maxCookTime == 90 ? 'selected' : ''}>90+ min</option>
+                                    </select>
                                 </div>
                                 <div class="col-6">
                                     <label for="style-${day}-${type.id}" class="form-label small fw-semibold mb-0">Style:</label>
@@ -7629,11 +7633,11 @@ function toggleMealTypeSelection(buttonElement) {
                  if (effortSelect) effortSelect.value = currentWeeklyPlan[day]?.effort || '';
                  if (ingredientsInput) ingredientsInput.value = (currentWeeklyPlan[day]?.ingredientsToUse || []).join(', ');
 
-                 // Update ingredient chip states
-                 const chipsContainer = suggestionOptionsDiv.querySelector(`#ingredient-chips-${day}-${typeId}`);
+                 // Update quick chip states
+                 const chipsContainer = suggestionOptionsDiv.querySelector(`#quick-chips-${day}-${typeId}`);
                  if (chipsContainer) {
                      const currentIngredients = (currentWeeklyPlan[day]?.ingredientsToUse || []).map(i => i.toLowerCase());
-                     chipsContainer.querySelectorAll('.ingredient-chip').forEach(chip => {
+                     chipsContainer.querySelectorAll('.quick-chip').forEach(chip => {
                          const chipIngredient = chip.dataset.ingredient.toLowerCase();
                          if (currentIngredients.includes(chipIngredient)) {
                              chip.classList.add('bg-primary');
