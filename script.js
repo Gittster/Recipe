@@ -2941,6 +2941,233 @@ function buildRatingStars(recipe, interactive = true) {
     return container;
 }
 
+// === Recipe Photo Functions ===
+
+// Upload a photo to Cloudinary for a recipe
+async function uploadRecipePhoto(recipeId, file) {
+    if (!currentUser) {
+        showToast('Please sign in to add photos', 'warning');
+        return null;
+    }
+
+    // Convert file to base64
+    const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const base64String = reader.result.split(',')[1]; // Remove data:image/...;base64, prefix
+            resolve(base64String);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+
+    try {
+        const response = await fetch('/.netlify/functions/upload-recipe-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                image: base64,
+                mimeType: file.type,
+                recipeId: recipeId,
+                userId: currentUser.uid
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Upload failed');
+        }
+
+        const result = await response.json();
+
+        // Update recipe with image URL
+        await updateRecipeImageUrl(recipeId, result.imageUrl, result.publicId);
+
+        showToast('Photo uploaded successfully', 'success');
+        return result;
+    } catch (error) {
+        console.error('Error uploading photo:', error);
+        showToast('Failed to upload photo: ' + error.message, 'danger');
+        return null;
+    }
+}
+
+// Update recipe with image URL in database
+async function updateRecipeImageUrl(recipeId, imageUrl, publicId) {
+    try {
+        if (currentUser) {
+            await db.collection('recipes').doc(recipeId).update({
+                imageUrl: imageUrl,
+                imagePublicId: publicId,
+                lastModified: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        } else {
+            await localDB.recipes.update(recipeId, {
+                imageUrl: imageUrl,
+                imagePublicId: publicId,
+                lastModified: new Date().toISOString()
+            });
+        }
+
+        // Update in-memory recipe
+        const recipeInMemory = recipes.find(r => r.id === recipeId);
+        if (recipeInMemory) {
+            recipeInMemory.imageUrl = imageUrl;
+            recipeInMemory.imagePublicId = publicId;
+        }
+    } catch (error) {
+        console.error('Error updating recipe image URL:', error);
+        throw error;
+    }
+}
+
+// Delete recipe photo
+async function deleteRecipePhoto(recipeId, publicId) {
+    if (!currentUser) {
+        showToast('Please sign in to delete photos', 'warning');
+        return false;
+    }
+
+    try {
+        // Delete from Cloudinary
+        const response = await fetch('/.netlify/functions/upload-recipe-image', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ publicId: publicId })
+        });
+
+        if (!response.ok) {
+            console.warn('Failed to delete from Cloudinary, continuing to remove from database');
+        }
+
+        // Remove from recipe in database
+        if (currentUser) {
+            await db.collection('recipes').doc(recipeId).update({
+                imageUrl: firebase.firestore.FieldValue.delete(),
+                imagePublicId: firebase.firestore.FieldValue.delete(),
+                lastModified: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        } else {
+            await localDB.recipes.update(recipeId, {
+                imageUrl: undefined,
+                imagePublicId: undefined,
+                lastModified: new Date().toISOString()
+            });
+        }
+
+        // Update in-memory recipe
+        const recipeInMemory = recipes.find(r => r.id === recipeId);
+        if (recipeInMemory) {
+            delete recipeInMemory.imageUrl;
+            delete recipeInMemory.imagePublicId;
+        }
+
+        showToast('Photo removed', 'success');
+        return true;
+    } catch (error) {
+        console.error('Error deleting photo:', error);
+        showToast('Failed to remove photo', 'danger');
+        return false;
+    }
+}
+
+// Open file picker for recipe photo
+function openPhotoUploader(recipeId) {
+    if (!currentUser) {
+        showToast('Please sign in to add photos', 'warning');
+        showLoginModal();
+        return;
+    }
+
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.capture = 'environment'; // Use back camera on mobile
+
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // Show loading state
+        const card = document.querySelector(`.recipe-card[data-recipe-id="${recipeId}"]`);
+        const photoSection = card?.querySelector('.recipe-photo-section');
+        if (photoSection) {
+            const placeholder = photoSection.querySelector('.recipe-photo-placeholder');
+            if (placeholder) {
+                placeholder.innerHTML = '<div class="spinner-border spinner-border-sm text-primary" role="status"></div><span class="mt-2 small">Uploading...</span>';
+            }
+        }
+
+        const result = await uploadRecipePhoto(recipeId, file);
+
+        if (result) {
+            // Refresh the card to show the new image
+            applyAllRecipeFilters();
+        }
+    };
+
+    input.click();
+}
+
+// Build photo section for expanded recipe card
+function buildPhotoSection(recipe, card) {
+    const section = document.createElement('div');
+    section.className = 'recipe-photo-section';
+
+    if (recipe.imageUrl) {
+        // Show the photo with delete option
+        const photoContainer = document.createElement('div');
+        photoContainer.className = 'd-flex align-items-start gap-2';
+
+        const img = document.createElement('img');
+        img.src = recipe.imageUrl;
+        img.alt = recipe.name + ' photo';
+        img.className = 'recipe-photo-large';
+        img.onclick = (e) => { e.stopPropagation(); openPhotoLightbox(recipe.imageUrl); };
+        photoContainer.appendChild(img);
+
+        if (currentUser) {
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn btn-outline-danger btn-sm';
+            deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+            deleteBtn.title = 'Remove photo';
+            deleteBtn.onclick = async (e) => {
+                e.stopPropagation();
+                if (confirm('Remove this photo?')) {
+                    const success = await deleteRecipePhoto(recipe.id, recipe.imagePublicId);
+                    if (success) {
+                        applyAllRecipeFilters();
+                    }
+                }
+            };
+            photoContainer.appendChild(deleteBtn);
+        }
+
+        section.appendChild(photoContainer);
+    } else if (currentUser) {
+        // Show upload placeholder
+        const placeholder = document.createElement('div');
+        placeholder.className = 'recipe-photo-placeholder';
+        placeholder.innerHTML = '<i class="bi bi-camera"></i><span class="small">Add a photo</span>';
+        placeholder.onclick = (e) => { e.stopPropagation(); openPhotoUploader(recipe.id); };
+        section.appendChild(placeholder);
+    }
+
+    return section;
+}
+
+// Open photo in lightbox
+function openPhotoLightbox(imageUrl) {
+    const lightbox = document.createElement('div');
+    lightbox.className = 'photo-lightbox';
+    lightbox.innerHTML = `
+        <span class="photo-lightbox-close">&times;</span>
+        <img src="${imageUrl}" alt="Recipe photo">
+    `;
+    lightbox.onclick = () => lightbox.remove();
+    document.body.appendChild(lightbox);
+}
+
 // Helper: Format instructions with proper numbered/bulleted lists
 function formatInstructions(text) {
     if (!text) return null;
@@ -3273,6 +3500,16 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
 
         titleRow.appendChild(titleInfo);
 
+        // Thumbnail (if recipe has image)
+        if (recipe.imageUrl) {
+            const thumbnail = document.createElement('img');
+            thumbnail.src = recipe.imageUrl;
+            thumbnail.alt = recipe.name + ' thumbnail';
+            thumbnail.className = 'recipe-thumbnail';
+            thumbnail.onclick = (e) => { e.stopPropagation(); openPhotoLightbox(recipe.imageUrl); };
+            titleRow.appendChild(thumbnail);
+        }
+
         // Expand indicator
         const expandIcon = document.createElement('i');
         expandIcon.className = 'bi bi-chevron-down expand-indicator';
@@ -3289,6 +3526,12 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
         const actionButtons = buildActionButtons(recipe, card);
         actionButtons.classList.add('mt-3', 'pt-2', 'border-top');
         details.appendChild(actionButtons);
+
+        // Photo section (upload/display)
+        const photoSection = buildPhotoSection(recipe, card);
+        if (photoSection.hasChildNodes()) {
+            details.appendChild(photoSection);
+        }
 
         // Ingredients table
         const table = document.createElement('table');
