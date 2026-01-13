@@ -2946,7 +2946,7 @@ function buildRatingStars(recipe, interactive = true) {
 // Upload a photo to Cloudinary for a recipe
 async function uploadRecipePhoto(recipeId, file) {
     if (!currentUser) {
-        showToast('Please sign in to add photos', 'warning');
+        alert('Please sign in to add photos');
         return null;
     }
 
@@ -2992,11 +2992,11 @@ async function uploadRecipePhoto(recipeId, file) {
         await updateRecipeImageUrl(recipeId, result.imageUrl, result.publicId);
         console.log('Database update complete');
 
-        showToast('Photo uploaded successfully', 'success');
+        // Photo uploaded successfully - UI will refresh
         return result;
     } catch (error) {
         console.error('Error uploading photo:', error);
-        showToast('Failed to upload photo: ' + error.message, 'danger');
+        alert('Failed to upload photo: ' + error.message);
         return null;
     }
 }
@@ -3033,7 +3033,7 @@ async function updateRecipeImageUrl(recipeId, imageUrl, publicId) {
 // Delete recipe photo
 async function deleteRecipePhoto(recipeId, publicId) {
     if (!currentUser) {
-        showToast('Please sign in to delete photos', 'warning');
+        alert('Please sign in to delete photos');
         return false;
     }
 
@@ -3071,11 +3071,11 @@ async function deleteRecipePhoto(recipeId, publicId) {
             delete recipeInMemory.imagePublicId;
         }
 
-        showToast('Photo removed', 'success');
+        // Photo removed - UI will refresh
         return true;
     } catch (error) {
         console.error('Error deleting photo:', error);
-        showToast('Failed to remove photo', 'danger');
+        alert('Failed to remove photo');
         return false;
     }
 }
@@ -3083,7 +3083,7 @@ async function deleteRecipePhoto(recipeId, publicId) {
 // Open file picker for recipe photo
 function openPhotoUploader(recipeId) {
     if (!currentUser) {
-        showToast('Please sign in to add photos', 'warning');
+        alert('Please sign in to add photos');
         showLoginModal();
         return;
     }
