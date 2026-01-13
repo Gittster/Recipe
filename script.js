@@ -7448,9 +7448,100 @@ function showChatbotModal() {
     }
 
     // --- Speech Recognition Logic ---
-    // (Your existing full speech recognition setup - ensure all element variables
-    // like chefBotMicButton, chatbotQueryInput, chefBotListeningStatus are correctly referenced)
-    // ... (Ensure it's placed here) ...
+    if (chefBotMicButton && chatbotQueryInput) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+        if (SpeechRecognition) {
+            const recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+
+            window.chefBotSpeechRecognition = recognition;
+            window.chefBotIsListening = false;
+
+            chefBotMicButton.onclick = () => {
+                if (window.chefBotIsListening) {
+                    recognition.stop();
+                } else {
+                    recognition.start();
+                }
+            };
+
+            recognition.onstart = () => {
+                window.chefBotIsListening = true;
+                chefBotMicButton.classList.add('btn-danger');
+                chefBotMicButton.classList.remove('btn-outline-secondary');
+                chefBotMicButton.innerHTML = '<i class="bi bi-mic-mute-fill"></i>';
+                if (chefBotListeningStatus) {
+                    chefBotListeningStatus.textContent = 'Listening... speak now';
+                    chefBotListeningStatus.classList.add('text-danger');
+                }
+            };
+
+            recognition.onend = () => {
+                window.chefBotIsListening = false;
+                chefBotMicButton.classList.remove('btn-danger');
+                chefBotMicButton.classList.add('btn-outline-secondary');
+                chefBotMicButton.innerHTML = '<i class="bi bi-mic-fill"></i>';
+                if (chefBotListeningStatus) {
+                    chefBotListeningStatus.textContent = '';
+                    chefBotListeningStatus.classList.remove('text-danger');
+                }
+            };
+
+            recognition.onresult = (event) => {
+                let finalTranscript = '';
+                let interimTranscript = '';
+
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript;
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+
+                if (finalTranscript) {
+                    chatbotQueryInput.value = finalTranscript;
+                    if (chefBotListeningStatus) {
+                        chefBotListeningStatus.textContent = '';
+                    }
+                } else if (interimTranscript) {
+                    chatbotQueryInput.value = interimTranscript;
+                    if (chefBotListeningStatus) {
+                        chefBotListeningStatus.textContent = 'Listening...';
+                    }
+                }
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                window.chefBotIsListening = false;
+                chefBotMicButton.classList.remove('btn-danger');
+                chefBotMicButton.classList.add('btn-outline-secondary');
+                chefBotMicButton.innerHTML = '<i class="bi bi-mic-fill"></i>';
+                if (chefBotListeningStatus) {
+                    if (event.error === 'not-allowed') {
+                        chefBotListeningStatus.textContent = 'Microphone access denied';
+                    } else if (event.error === 'no-speech') {
+                        chefBotListeningStatus.textContent = 'No speech detected, try again';
+                    } else {
+                        chefBotListeningStatus.textContent = 'Error: ' + event.error;
+                    }
+                    chefBotListeningStatus.classList.remove('text-danger');
+                }
+            };
+        } else {
+            // Speech recognition not supported
+            chefBotMicButton.disabled = true;
+            chefBotMicButton.title = 'Speech recognition not supported in this browser';
+            if (chefBotListeningStatus) {
+                chefBotListeningStatus.textContent = 'Voice input not supported';
+            }
+        }
+    }
 
     if (chatbotQueryInput) chatbotQueryInput.focus();
 }
