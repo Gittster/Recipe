@@ -3383,7 +3383,7 @@ function buildActionButtons(recipe, card) {
 // Helper: Build bottom action row (Mark as Made, Plan Meal)
 function buildBottomActionRow(recipe) {
     const row = document.createElement('div');
-    row.className = 'd-flex align-items-center justify-content-start gap-2 mt-3 pt-2 border-top';
+    row.className = 'd-flex align-items-center justify-content-start gap-2 recipe-bottom-actions';
 
     const madeBtn = document.createElement('button');
     madeBtn.className = 'btn btn-outline-info btn-sm';

@@ -249,6 +249,13 @@ mark {
     padding: 0.25rem 0.5rem;
 }
 
+/* Bottom action row (Mark as Made, Plan Meal) */
+.recipe-bottom-actions {
+    margin-top: 0.75rem;
+    padding: 0.75rem 0;
+    border-top: 1px solid #e9ecef;
+}
+
 /* Photo section spacing */
 .recipe-photo-section {
     margin-top: 0.75rem;
