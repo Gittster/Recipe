@@ -3462,7 +3462,7 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
 
         // Meta row: folder badge + rating
         const metaRow = document.createElement('div');
-        metaRow.className = 'd-flex flex-wrap align-items-center gap-2 mb-1';
+        metaRow.className = 'd-flex flex-wrap align-items-center recipe-meta-row';
 
         const currentFolder = recipe.folderId ? folders.find(f => f.id === recipe.folderId) : null;
         const folderBadge = document.createElement('span');
@@ -3479,10 +3479,10 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
         // Tags
         if (recipe.tags && recipe.tags.length > 0) {
             const tagsDiv = document.createElement('div');
-            tagsDiv.className = 'recipe-tags mt-1';
+            tagsDiv.className = 'recipe-tags';
             recipe.tags.forEach(tag => {
                 const tagBadge = document.createElement('span');
-                tagBadge.className = 'badge me-1 mb-1 bg-secondary';
+                tagBadge.className = 'badge bg-secondary';
                 let tagDisplay = tag;
                 let isTagHighlighted = false;
                 if (tagRegexes.length > 0) {
@@ -3531,7 +3531,7 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
 
         // Action buttons (first - most important)
         const actionButtons = buildActionButtons(recipe, card);
-        actionButtons.classList.add('mt-3', 'pt-2', 'border-top');
+        actionButtons.classList.add('border-top', 'border-bottom');
         details.appendChild(actionButtons);
 
         // Photo section (upload/display)
