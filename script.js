@@ -3512,7 +3512,7 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
 
         titleRow.appendChild(titleInfo);
 
-        // Thumbnail (if recipe has image)
+        // Thumbnail (if recipe has image) - positioned at far right
         if (recipe.imageUrl) {
             const thumbnail = document.createElement('img');
             thumbnail.src = recipe.imageUrl;
@@ -3521,11 +3521,6 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
             thumbnail.onclick = (e) => { e.stopPropagation(); openPhotoLightbox(recipe.imageUrl); };
             titleRow.appendChild(thumbnail);
         }
-
-        // Expand indicator
-        const expandIcon = document.createElement('i');
-        expandIcon.className = 'bi bi-chevron-down expand-indicator';
-        titleRow.appendChild(expandIcon);
 
         header.appendChild(titleRow);
         body.appendChild(header);
