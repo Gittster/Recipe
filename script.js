@@ -2950,6 +2950,8 @@ async function uploadRecipePhoto(recipeId, file) {
         return null;
     }
 
+    console.log('Starting photo upload for recipe:', recipeId);
+
     // Convert file to base64
     const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -2960,6 +2962,8 @@ async function uploadRecipePhoto(recipeId, file) {
         reader.onerror = reject;
         reader.readAsDataURL(file);
     });
+
+    console.log('Base64 conversion complete, uploading to Cloudinary...');
 
     try {
         const response = await fetch('/.netlify/functions/upload-recipe-image', {
@@ -2973,15 +2977,20 @@ async function uploadRecipePhoto(recipeId, file) {
             })
         });
 
+        console.log('Cloudinary response status:', response.status);
+
         if (!response.ok) {
             const errorData = await response.json();
             throw new Error(errorData.error || 'Upload failed');
         }
 
         const result = await response.json();
+        console.log('Cloudinary result:', result);
 
         // Update recipe with image URL
+        console.log('Updating recipe in database...');
         await updateRecipeImageUrl(recipeId, result.imageUrl, result.publicId);
+        console.log('Database update complete');
 
         showToast('Photo uploaded successfully', 'success');
         return result;
@@ -3098,10 +3107,13 @@ function openPhotoUploader(recipeId) {
             }
         }
 
-        const result = await uploadRecipePhoto(recipeId, file);
-
-        if (result) {
-            // Refresh the card to show the new image
+        try {
+            const result = await uploadRecipePhoto(recipeId, file);
+            console.log('Upload result:', result);
+        } catch (err) {
+            console.error('Upload error:', err);
+        } finally {
+            // Always refresh the UI to show new image or reset spinner
             applyAllRecipeFilters();
         }
     };
