@@ -3594,9 +3594,26 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
             details.appendChild(instructionsP);
         }
 
-        // Metadata row (dates + interactive rating) - at bottom
-        const detailsMetaRow = document.createElement('div');
-        detailsMetaRow.className = 'd-flex flex-wrap align-items-center gap-3 mt-3 pt-2 border-top text-muted small';
+        // Metadata section - rating and dates
+        const metaSection = document.createElement('div');
+        metaSection.className = 'recipe-meta-section mt-3 pt-3 border-top';
+
+        // Rating row (if logged in)
+        if (currentUser) {
+            const ratingRow = document.createElement('div');
+            ratingRow.className = 'd-flex align-items-center gap-2 mb-2';
+            const ratingLabel = document.createElement('span');
+            ratingLabel.className = 'text-muted small';
+            ratingLabel.textContent = 'Your rating:';
+            ratingRow.appendChild(ratingLabel);
+            const interactiveRating = buildRatingStars(recipe, true);
+            ratingRow.appendChild(interactiveRating);
+            metaSection.appendChild(ratingRow);
+        }
+
+        // Dates row
+        const datesRow = document.createElement('div');
+        datesRow.className = 'd-flex flex-wrap gap-3 text-muted small';
 
         if (recipe.timestamp) {
             let date;
@@ -3606,8 +3623,8 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
                 date = new Date(recipe.timestamp);
             }
             const dateAdded = document.createElement('span');
-            dateAdded.innerHTML = `<i class="bi bi-clock-history me-1"></i>Added: ${date.toLocaleDateString()}`;
-            detailsMetaRow.appendChild(dateAdded);
+            dateAdded.innerHTML = `<i class="bi bi-plus-circle me-1"></i>Added ${date.toLocaleDateString()}`;
+            datesRow.appendChild(dateAdded);
         }
 
         if (recipe.lastModified) {
@@ -3618,15 +3635,15 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
                 modifiedDate = new Date(recipe.lastModified);
             }
             const dateModified = document.createElement('span');
-            dateModified.innerHTML = `<i class="bi bi-pencil-square me-1"></i>Edited: ${modifiedDate.toLocaleDateString()}`;
-            detailsMetaRow.appendChild(dateModified);
+            dateModified.innerHTML = `<i class="bi bi-pencil me-1"></i>Edited ${modifiedDate.toLocaleDateString()}`;
+            datesRow.appendChild(dateModified);
         }
 
-        // Interactive rating stars (in expanded view)
-        if (currentUser) {
-            const interactiveRating = buildRatingStars(recipe, true);
-            detailsMetaRow.appendChild(interactiveRating);
+        if (datesRow.hasChildNodes()) {
+            metaSection.appendChild(datesRow);
         }
+
+        const detailsMetaRow = metaSection;
 
         if (detailsMetaRow.hasChildNodes()) {
             details.appendChild(detailsMetaRow);

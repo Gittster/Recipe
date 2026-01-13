@@ -188,9 +188,20 @@ mark {
     opacity: 1;
 }
 
-/* Compact rating stars */
+/* Compact rating stars (in collapsed header) */
 .rating-stars-compact i {
     font-size: 0.75rem;
+}
+
+/* Interactive rating stars (in expanded view) */
+.recipe-meta-section .rating-stars i {
+    font-size: 1.25rem;
+    cursor: pointer;
+    transition: transform 0.1s ease;
+}
+
+.recipe-meta-section .rating-stars i:hover {
+    transform: scale(1.15);
 }
 
 /* Compact recipe title */
