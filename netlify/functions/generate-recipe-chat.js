@@ -98,8 +98,26 @@ exports.handler = async (event) => {
     ];
 
     console.log("generate-recipe-chat.js: Attempting to generate content with Gemini.");
+
+    // Retry wrapper to handle transient rate-limit/heavy-use errors from Gemini
+    async function retryGenerateContent(modelInstance, payload, attempts = 5, baseDelay = 500) {
+        for (let i = 0; i < attempts; i++) {
+            try {
+                return await modelInstance.generateContent(payload);
+            } catch (err) {
+                const msg = err && err.message ? err.message : '';
+                const shouldRetry = /429|rate limit|quota|temporar|timeout|service unavailable/i.test(msg);
+                if (i === attempts - 1 || !shouldRetry) throw err;
+                const jitter = Math.floor(Math.random() * 300) + 100;
+                const delay = baseDelay * Math.pow(2, i) + jitter;
+                console.warn(`generate-recipe-chat.js: Retry attempt ${i + 1} failed: ${msg}. Backing off ${delay}ms.`);
+                await new Promise(r => setTimeout(r, delay));
+            }
+        }
+    }
+
     try {
-        const result = await model.generateContent({
+        const result = await retryGenerateContent(model, {
             contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
             generationConfig,
             safetySettings,
