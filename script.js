@@ -21,6 +21,15 @@ let currentWeeklyPlan = {};
 // Track which recipe cards are expanded (persists across re-renders)
 const expandedRecipeIds = new Set();
 
+function debounce(fn, wait) {
+    let timer;
+    return function(...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(this, args), wait);
+    };
+}
+window.debouncedApplyFilters = debounce(() => applyAllRecipeFilters(), 300);
+
 function toggleRecipeCard(recipeId) {
     const card = document.querySelector(`.recipe-card[data-recipe-id="${recipeId}"]`);
     if (!card) return;
@@ -71,29 +80,32 @@ document.addEventListener('DOMContentLoaded', () => {
         userSettingsModalInstance = new bootstrap.Modal(settingsModalElement);
     }
 
-    // Ensure the sidebar is visible on desktop (md and up) and the main view is offset
+    // Sidebar viewport adjustment — open on desktop, hide on mobile
     const sidebar = document.getElementById('appSidebar');
     const backdrop = document.getElementById('sidebarBackdrop');
     const mainView = document.getElementById('mainView');
+    const topBar = document.getElementById('topBar');
+    const menuBar = document.getElementById('menuBar');
+
     function adjustSidebarForViewport() {
         if (!sidebar) return;
         if (window.innerWidth >= 768) {
             sidebar.classList.add('open');
             if (backdrop) backdrop.classList.remove('show');
-            if (mainView) mainView.style.marginLeft = '280px';
+            if (topBar) { topBar.style.marginLeft = '280px'; topBar.style.zIndex = '1060'; }
+            if (menuBar) { menuBar.style.marginLeft = '280px'; menuBar.style.zIndex = '1060'; }
         } else {
             sidebar.classList.remove('open');
+            if (backdrop) backdrop.classList.remove('show');
+            if (topBar) { topBar.style.marginLeft = ''; topBar.style.zIndex = ''; }
+            if (menuBar) { menuBar.style.marginLeft = ''; menuBar.style.zIndex = ''; }
             if (mainView) mainView.style.marginLeft = '';
         }
-        // Refresh folder rendering so counts/hightlights update when sidebar becomes visible
         if (typeof renderFolders === 'function') renderFolders();
     }
 
-    // Initial adjustment and on resize
     adjustSidebarForViewport();
-    window.addEventListener('resize', () => {
-        adjustSidebarForViewport();
-    });
+    window.addEventListener('resize', adjustSidebarForViewport);
 });
 
 /**
@@ -714,39 +726,6 @@ function initializeLocalDB() {
 // Call this when the script loads
 initializeLocalDB();
 
-// Desktop sidebar behavior: ensure sidebar can be toggled on desktop and headers are shifted when open
-document.addEventListener('DOMContentLoaded', () => {
-    const sidebar = document.getElementById('appSidebar');
-    const backdrop = document.getElementById('sidebarBackdrop');
-    const mainView = document.getElementById('mainView');
-    const topBar = document.getElementById('topBar');
-    const menuBar = document.getElementById('menuBar');
-
-    if (!sidebar) return;
-
-    function adjustSidebarForViewport() {
-        if (window.innerWidth >= 768) {
-            // Desktop default: open sidebar but allow closing
-            if (!sidebar.classList.contains('open')) sidebar.classList.add('open');
-            if (backdrop) backdrop.classList.remove('show');
-            // Shift headers via inline styles so they appear above the sidebar
-            if (topBar) { topBar.style.marginLeft = '280px'; topBar.style.zIndex = '1060'; }
-            if (menuBar) { menuBar.style.marginLeft = '280px'; menuBar.style.zIndex = '1060'; }
-            // mainView margin is handled by CSS rule .sidebar.open ~ #mainView
-        } else {
-            // Mobile default: hide sidebar
-            sidebar.classList.remove('open');
-            if (backdrop) backdrop.classList.remove('show');
-            if (topBar) { topBar.style.marginLeft = ''; topBar.style.zIndex = ''; }
-            if (menuBar) { menuBar.style.marginLeft = ''; menuBar.style.zIndex = ''; }
-            if (mainView) mainView.style.marginLeft = '';
-        }
-    }
-
-    adjustSidebarForViewport();
-    window.addEventListener('resize', adjustSidebarForViewport);
-});
-
 // --- Helper function to generate simple local IDs ---
 function generateLocalUUID() {
     return Date.now().toString(36) + Math.random().toString(36).substring(2);
@@ -951,7 +930,7 @@ function showRecipeFilter() {
             <!-- Unified Search Bar -->
             <div class="search-bar-wrapper flex-grow-1 position-relative">
                 <i class="bi bi-search position-absolute"></i>
-                <input type="text" class="form-control form-control-lg" id="unifiedSearchInput" placeholder="Search my recipes..." oninput="applyAllRecipeFilters()">
+                <input type="text" class="form-control form-control-lg" id="unifiedSearchInput" placeholder="Search my recipes..." oninput="debouncedApplyFilters()">
             </div>
 
             <!-- Add Recipe Icon -->
@@ -1876,6 +1855,24 @@ function showSuccessMessage(message) {
         successAlert.style.opacity = '0';
         setTimeout(() => successAlert.remove(), 500);
     }, 2500); // Start fading out after 2.5 seconds
+}
+
+function showErrorMessage(message) {
+    const topBar = document.getElementById('topBar');
+    const topOffset = (topBar ? topBar.offsetHeight : 0) + 16;
+    const errorAlert = document.createElement('div');
+    errorAlert.className = 'alert alert-danger text-center position-fixed start-50 translate-middle-x shadow-sm';
+    errorAlert.style.top = `${topOffset}px`;
+    errorAlert.style.zIndex = 1060;
+    errorAlert.style.width = '90%';
+    errorAlert.style.maxWidth = '400px';
+    errorAlert.textContent = message;
+    document.body.appendChild(errorAlert);
+    setTimeout(() => {
+        errorAlert.style.transition = 'opacity 0.5s ease';
+        errorAlert.style.opacity = '0';
+        setTimeout(() => errorAlert.remove(), 500);
+    }, 3500);
 }
 
 function showRandomRecipe() {
@@ -2915,60 +2912,6 @@ async function saveChatHistoryToRecipe(recipeId, historyToSave, isLocal) {
     }
 }
 
-// You'll need a generic function to save a NEW recipe object
-// This is similar to your existing `saveRecipe` but takes data as an argument
-// **Modify saveNewRecipeToStorage to RETURN the ID**
-async function saveNewRecipeToStorage(recipeDataObject) {
-    console.log("saveNewRecipeToStorage called with:", recipeDataObject);
-    let savedId = null; // Changed from 'success' boolean
-
-    // ... (your existing dataToSave setup) ...
-     const dataToSave = {
-        name: recipeDataObject.name || "Untitled Recipe",
-        ingredients: recipeDataObject.ingredients || [],
-        instructions: recipeDataObject.instructions || "",
-        tags: recipeDataObject.tags || [],
-        rating: recipeDataObject.rating || 0,
-    };
-
-
-    if (currentUser) {
-        dataToSave.uid = currentUser.uid;
-        dataToSave.timestamp = firebase.firestore.FieldValue.serverTimestamp();
-        try {
-            const docRef = await db.collection('recipes').add(dataToSave);
-            savedId = docRef.id; // Store the Firestore ID
-            console.log("✅ New recipe saved to Firestore with ID:", savedId);
-            // Moved success message out, as this function might be called multiple times during plan save
-        } catch (error) {
-            console.error("❌ Error saving new recipe to Firestore:", error);
-            // Keep savedId as null
-        }
-    } else {
-        if (!localDB) {
-             console.error("Local storage not available for saveNewRecipeToStorage.");
-             return null; // Return null if storage unavailable
-        }
-        dataToSave.localId = generateLocalUUID(); // Generate local ID
-        dataToSave.timestamp = new Date().toISOString();
-        try {
-            // Dexie's add() returns the auto-generated primary key OR the provided one if defined
-            // Since we provide 'localId', we use that.
-             await localDB.recipes.add(dataToSave); 
-             savedId = dataToSave.localId; // Store the local ID
-            console.log("✅ New recipe saved to LocalDB with localId:", savedId);
-        } catch (error) {
-            console.error("❌ Error saving new recipe to LocalDB:", error.stack || error);
-            // Keep savedId as null
-        }
-    }
-    
-    // Don't reload recipes here if called during plan generation
-    // loadInitialRecipes(); // Refresh the main list 
-
-    return savedId; // Return the ID (or null if failed)
-}
-
 // Helper: Build rating stars
 function buildRatingStars(recipe, interactive = true) {
     const container = document.createElement('div');
@@ -3873,9 +3816,9 @@ async function assignRecipeToFolder(recipeId, folderId) {
     }
 }
 
-async function saveNewRecipeToStorage(recipeDataObject) {
+async function saveNewRecipeToStorage(recipeDataObject, { reload = true } = {}) {
     console.log("saveNewRecipeToStorage called with:", recipeDataObject);
-    let success = false;
+    let savedId = null;
 
     const dataToSave = {
         name: recipeDataObject.name || "Untitled Recipe",
@@ -3883,7 +3826,6 @@ async function saveNewRecipeToStorage(recipeDataObject) {
         instructions: recipeDataObject.instructions || "",
         tags: recipeDataObject.tags || [],
         rating: recipeDataObject.rating || 0,
-        // Timestamp and UID/localId will be added below
     };
 
     if (currentUser) {
@@ -3891,34 +3833,36 @@ async function saveNewRecipeToStorage(recipeDataObject) {
         dataToSave.timestamp = firebase.firestore.FieldValue.serverTimestamp();
         try {
             const docRef = await db.collection('recipes').add(dataToSave);
-            console.log("✅ New recipe from AI saved to Firestore with ID:", docRef.id);
+            savedId = docRef.id;
+            console.log("✅ New recipe saved to Firestore with ID:", savedId);
             showSuccessMessage(`Recipe "${dataToSave.name}" saved to your account!`);
-            success = true;
         } catch (error) {
             console.error("❌ Error saving new recipe to Firestore:", error);
-            alert("Error saving new recipe: " + error.message);
+            showErrorMessage("Error saving recipe: " + error.message);
         }
     } else {
         if (!localDB) {
-            alert("Local storage not available. Please sign in to save recipes.");
-            return false;
+            showErrorMessage("Local storage not available. Please sign in to save recipes.");
+            return null;
         }
         dataToSave.localId = generateLocalUUID();
         dataToSave.timestamp = new Date().toISOString();
         try {
             await localDB.recipes.add(dataToSave);
-            console.log("✅ New recipe from AI saved to LocalDB with localId:", dataToSave.localId);
+            savedId = dataToSave.localId;
+            console.log("✅ New recipe saved to LocalDB with localId:", savedId);
             showSuccessMessage(`Recipe "${dataToSave.name}" saved locally!`);
-            success = true;
         } catch (error) {
             console.error("❌ Error saving new recipe to LocalDB:", error.stack || error);
-            alert("Error saving new recipe locally: " + error.message);
+            showErrorMessage("Error saving recipe locally: " + error.message);
         }
     }
-    if (success) {
-        loadInitialRecipes(); // Refresh the main list
+
+    if (savedId && reload) {
+        loadInitialRecipes();
     }
-    return success;
+
+    return savedId;
 }
 
 function hashRecipe(recipe) {
@@ -8617,7 +8561,7 @@ async function saveGeneratedPlan() {
                 try {
                      console.log(`Saving newly generated recipe: ${item.recipe.name}`);
                      // saveNewRecipeToStorage should return the ID of the saved recipe (Firestore or Local)
-                     const savedRecipeId = await saveNewRecipeToStorage(item.recipe); 
+                     const savedRecipeId = await saveNewRecipeToStorage(item.recipe, { reload: false });
                      if (savedRecipeId) {
                          recipeIdToSave = savedRecipeId;
                          console.log(`Saved new recipe, got ID: ${savedRecipeId}`);
