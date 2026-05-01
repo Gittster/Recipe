@@ -70,6 +70,30 @@ document.addEventListener('DOMContentLoaded', () => {
     if (settingsModalElement) {
         userSettingsModalInstance = new bootstrap.Modal(settingsModalElement);
     }
+
+    // Ensure the sidebar is visible on desktop (md and up) and the main view is offset
+    const sidebar = document.getElementById('appSidebar');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    const mainView = document.getElementById('mainView');
+    function adjustSidebarForViewport() {
+        if (!sidebar) return;
+        if (window.innerWidth >= 768) {
+            sidebar.classList.add('open');
+            if (backdrop) backdrop.classList.remove('show');
+            if (mainView) mainView.style.marginLeft = '280px';
+        } else {
+            sidebar.classList.remove('open');
+            if (mainView) mainView.style.marginLeft = '';
+        }
+        // Refresh folder rendering so counts/hightlights update when sidebar becomes visible
+        if (typeof renderFolders === 'function') renderFolders();
+    }
+
+    // Initial adjustment and on resize
+    adjustSidebarForViewport();
+    window.addEventListener('resize', () => {
+        adjustSidebarForViewport();
+    });
 });
 
 /**
@@ -212,7 +236,7 @@ function clearRecipeFormModal(recipeData = null) {
     const errorDiv = document.getElementById('recipeFormModalError');
 
     if (nameInput) nameInput.value = recipeData?.name || '';
-    if (instructionsInput) instructionsInput.value = recipeData?.instructions || '';
+    if (instructionsInput) instructionsInput.value = Array.isArray(recipeData?.instructions) ? recipeData.instructions.join('\n') : (recipeData?.instructions || '');
     if (errorDiv) errorDiv.style.display = 'none';
 
     currentModalTags = recipeData?.tags ? [...recipeData.tags] : [];
@@ -689,6 +713,39 @@ function initializeLocalDB() {
 
 // Call this when the script loads
 initializeLocalDB();
+
+// Desktop sidebar behavior: ensure sidebar can be toggled on desktop and headers are shifted when open
+document.addEventListener('DOMContentLoaded', () => {
+    const sidebar = document.getElementById('appSidebar');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    const mainView = document.getElementById('mainView');
+    const topBar = document.getElementById('topBar');
+    const menuBar = document.getElementById('menuBar');
+
+    if (!sidebar) return;
+
+    function adjustSidebarForViewport() {
+        if (window.innerWidth >= 768) {
+            // Desktop default: open sidebar but allow closing
+            if (!sidebar.classList.contains('open')) sidebar.classList.add('open');
+            if (backdrop) backdrop.classList.remove('show');
+            // Shift headers via inline styles so they appear above the sidebar
+            if (topBar) { topBar.style.marginLeft = '280px'; topBar.style.zIndex = '1060'; }
+            if (menuBar) { menuBar.style.marginLeft = '280px'; menuBar.style.zIndex = '1060'; }
+            // mainView margin is handled by CSS rule .sidebar.open ~ #mainView
+        } else {
+            // Mobile default: hide sidebar
+            sidebar.classList.remove('open');
+            if (backdrop) backdrop.classList.remove('show');
+            if (topBar) { topBar.style.marginLeft = ''; topBar.style.zIndex = ''; }
+            if (menuBar) { menuBar.style.marginLeft = ''; menuBar.style.zIndex = ''; }
+            if (mainView) mainView.style.marginLeft = '';
+        }
+    }
+
+    adjustSidebarForViewport();
+    window.addEventListener('resize', adjustSidebarForViewport);
+});
 
 // --- Helper function to generate simple local IDs ---
 function generateLocalUUID() {
@@ -3184,54 +3241,95 @@ function openPhotoLightbox(imageUrl) {
 function formatInstructions(text) {
     if (!text) return null;
 
+    // If instructions are already an array (new format), decide whether it's already numbered
+    if (Array.isArray(text)) {
+        if (text.length === 0) return null;
+        if (text.length === 1) {
+            // Single-item array — fall through to string processing
+            text = String(text[0]);
+        } else {
+            const numberingRegex = /^\s*\d+[\.\)]\s*/;
+            const hasNumbering = text.some(item => numberingRegex.test(String(item)));
+
+            if (hasNumbering) {
+                // Render as ordered list, but strip any leading numeric tokens to avoid doubling
+                const ol = document.createElement('ol');
+                ol.className = 'ps-3 mb-0';
+                text.forEach(step => {
+                    const li = document.createElement('li');
+                    li.className = 'mb-2';
+                    const displayText = String(step).replace(/^\s*\d+[\.\)]\s*/, '').trim();
+                    li.textContent = displayText;
+                    ol.appendChild(li);
+                });
+                return ol;
+            } else {
+                // Do NOT artificially add numbering. Render plain blocks for each step instead.
+                const container = document.createElement('div');
+                text.forEach(step => {
+                    const p = document.createElement('div');
+                    p.className = 'mb-2';
+                    p.textContent = String(step).trim();
+                    container.appendChild(p);
+                });
+                return container;
+            }
+        }
+    }
+
+    // At this point, text is expected to be a string
+    if (typeof text !== 'string') text = String(text);
+
     // Patterns to detect numbered steps:
     // - "1." "2." etc. (with or without newlines)
     // - "1)" "2)" etc.
     // - "Step 1:" "Step 2:" etc.
 
     // First, try to split by numbered patterns (handles both newline-separated and inline)
-    // This regex matches: newline/start + optional space + number + . or ) or : + space
-    const numberedSplitPattern = /(?:^|[\n\r]+)\s*(?:step\s*)?\d+\s*[.):\-]\s*|(?<=\s)\s*(?:step\s*)?\d+\s*[.):\-]\s+/gi;
+    // This regex matches: newline/start + optional space + number + . or ) or : + at least one space
+    // We require trailing whitespace after the punctuation to avoid matching numbers inside words like "3-inch".
+    const numberedSplitPattern = /(?:^|[\n\r]+)\s*(?:step\s*)?\d+\s*[\.\)\:\-]\s+/gi;
 
     // Simpler approach: look for sequential numbers and split
     const steps = [];
     let currentStep = '';
 
-    // Split text into potential steps by looking for number patterns
-    const parts = text.split(/(\d+\s*[.):\-]\s*)/i);
+    // Split text into potential steps by looking for number patterns that end with whitespace
+    const parts = text.split(/(\b\d+\s*[\.\)\:\-]\s+)/i);
 
-    let expectingContent = false;
     let stepNumber = 0;
 
     for (let i = 0; i < parts.length; i++) {
-        const part = parts[i].trim();
+        const rawPart = parts[i];
+        if (!rawPart) continue;
+        const part = rawPart.trim();
         if (!part) continue;
 
         // Check if this part is a step number like "1." or "2)" or "3:"
-        const stepMatch = part.match(/^(\d+)\s*[.):\-]\s*$/);
+        const stepMatch = part.match(/^(\d+)\s*[\.\)\:\-]\s*$/);
         if (stepMatch) {
             const num = parseInt(stepMatch[1]);
-            // Check if this looks like a sequential step (1, 2, 3...) or starts from 1
             if (num === 1 || num === stepNumber + 1) {
-                // Save previous step if exists
+                // Sequential step marker: push previous accumulated content as a step (cleaned)
                 if (currentStep.trim()) {
-                    steps.push(currentStep.trim());
+                    const cleaned = currentStep.replace(/^\s*\d+[\.\)\:\-]\s*/,'').trim();
+                    if (cleaned) steps.push(cleaned);
                 }
                 currentStep = '';
                 stepNumber = num;
-                expectingContent = true;
             } else {
-                // Not a sequential step number, treat as content
-                currentStep += part + ' ';
+                // Not sequential: treat as part of content
+                currentStep += rawPart + ' ';
             }
         } else {
-            currentStep += part + ' ';
+            currentStep += rawPart + ' ';
         }
     }
 
     // Don't forget the last step
     if (currentStep.trim()) {
-        steps.push(currentStep.trim());
+        const cleaned = currentStep.replace(/^\s*\d+[\.\)\:\-]\s*/,'').trim();
+        if (cleaned) steps.push(cleaned);
     }
 
     // If we found multiple steps, create an ordered list
@@ -3241,7 +3339,9 @@ function formatInstructions(text) {
         steps.forEach(step => {
             const li = document.createElement('li');
             li.className = 'mb-2';
-            li.textContent = step;
+            // If step already contains a leading numbering token, strip it to avoid doubling when the <ol> adds numbers
+            const displayText = String(step).replace(/^\s*\d+[\.\)\:\-]\s*/,'').trim();
+            li.textContent = displayText;
             ol.appendChild(li);
         });
         return ol;
@@ -3266,6 +3366,84 @@ function formatInstructions(text) {
 
     // No list detected, return null for plain text fallback
     return null;
+}
+
+// Helper: Format instructions to HTML string for templates
+function formatInstructionsHTML(text) {
+    if (!text) return 'No instructions provided.';
+
+    // If array
+    if (Array.isArray(text)) {
+        if (text.length === 0) return 'No instructions provided.';
+        const numberingRegex = /^\s*\d+[\.\)]\s*/;
+        const hasNumbering = text.some(item => numberingRegex.test(String(item)));
+        if (hasNumbering) {
+            const items = text.map(step => String(step).replace(/^\s*\d+[\.\)]\s*/, '').trim());
+            return `<ol class="ps-3 mb-0">${items.map(i => `<li class="mb-2">${escapeHtml(i)}</li>`).join('')}</ol>`;
+        } else {
+            return `<div>${text.map(i => `<div class="mb-2">${escapeHtml(String(i).trim())}</div>`).join('')}</div>`;
+        }
+    }
+
+    // If string, try to split into steps (require whitespace after punctuation to avoid 3-inch)
+    if (typeof text !== 'string') text = String(text);
+    const parts = text.split(/(\b\d+\s*[\.\)\:\-]\s+)/i);
+    const steps = [];
+    let currentStep = '';
+    let stepNumber = 0;
+
+    for (let i = 0; i < parts.length; i++) {
+        const rawPart = parts[i];
+        if (!rawPart) continue;
+        const part = rawPart.trim();
+        if (!part) continue;
+        const stepMatch = part.match(/^(\d+)\s*[\.\)\:\-]\s*$/);
+        if (stepMatch) {
+            const num = parseInt(stepMatch[1]);
+            if (num === 1 || num === stepNumber + 1) {
+                if (currentStep.trim()) {
+                    const cleaned = currentStep.replace(/^\s*\d+[\.\)\:\-]\s*/,'').trim();
+                    if (cleaned) steps.push(cleaned);
+                }
+                currentStep = '';
+                stepNumber = num;
+            } else {
+                currentStep += rawPart + ' ';
+            }
+        } else {
+            currentStep += rawPart + ' ';
+        }
+    }
+    if (currentStep.trim()) {
+        const cleaned = currentStep.replace(/^\s*\d+[\.\)\:\-]\s*/,'').trim();
+        if (cleaned) steps.push(cleaned);
+    }
+
+    if (steps.length > 1) {
+        return `<ol class="ps-3 mb-0">${steps.map(s => `<li class="mb-2">${escapeHtml(s.replace(/^\s*\d+[\.\)\:\-]\s*/,'').trim())}</li>`).join('')}</ol>`;
+    }
+
+    // bullets
+    const bulletPattern = /(?:^|\n)\s*[-*•]\s+/;
+    if (bulletPattern.test(text)) {
+        const items = text.split(/(?:^|\n)\s*[-*•]\s+/).filter(item => item.trim());
+        if (items.length > 1) {
+            return `<ul class="ps-3 mb-0">${items.map(i => `<li class="mb-2">${escapeHtml(i.trim())}</li>`).join('')}</ul>`;
+        }
+    }
+
+    // Default
+    return `<div class="mb-2">${escapeHtml(text.trim())}</div>`;
+}
+
+// Simple HTML escape helper
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 // Helper: Build ingredient match indicator for collapsed cards during search
@@ -4062,7 +4240,7 @@ async function openInlineEditor(recipeId, cardElement) {
     instructionsInput.className = 'form-control form-control-sm';
     instructionsInput.rows = 5;
     instructionsInput.id = `editRecipeInstructions-${recipeData.id}`;
-    instructionsInput.value = recipeData.instructions || '';
+    instructionsInput.value = Array.isArray(recipeData.instructions) ? recipeData.instructions.join('\n') : (recipeData.instructions || '');
     editorContentDiv.appendChild(createFormGroup([instrLabel, instructionsInput]));
 
     // Tags
@@ -5116,7 +5294,7 @@ function formatRecipeForCalendar(ingredients, instructions) {
     }
     
     description += "\n\n--- INSTRUCTIONS ---\n";
-    description += instructions || "No instructions provided.";
+    description += Array.isArray(instructions) ? instructions.join('\n') : (instructions || "No instructions provided.");
     
     return description;
 }
@@ -7239,7 +7417,7 @@ function generateRecipeDisplayHTML(recipe) {
                  ${(recipe.ingredients && recipe.ingredients.length === 0) ? '<tr><td colspan="3" class="text-muted">No ingredients listed.</td></tr>' : ''}
             </tbody>
         </table>
-        <p class="chatbot-recipe-instructions"><strong>Instructions:</strong> ${recipe.instructions || 'No instructions provided.'}</p>
+        <div class="chatbot-recipe-instructions"><strong>Instructions:</strong> ${formatInstructionsHTML(recipe.instructions)}</div>
     `;
 }
 
@@ -9283,6 +9461,43 @@ function hideRefinementInput(day) {
     if (container) { container.classList.add('d-none'); const input = document.getElementById(`refinement-input-${day}`); if (input) input.value = ''; }
 }
 
+// Global sidebar toggle that respects desktop layout and allows closing on larger viewports
+window.toggleSidebar = function () {
+    const sidebar = document.getElementById('appSidebar');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    const mainView = document.getElementById('mainView');
+    const topBar = document.getElementById('topBar');
+    const menuBar = document.getElementById('menuBar');
+
+    if (!sidebar) return;
+    const isOpen = sidebar.classList.contains('open');
+
+    if (isOpen) {
+        sidebar.classList.remove('open');
+        if (backdrop) backdrop.classList.remove('show');
+        // Reset layout offsets for desktop
+        if (window.innerWidth >= 768) {
+            if (mainView) mainView.style.marginLeft = '';
+            if (topBar) topBar.style.marginLeft = '';
+            if (menuBar) menuBar.style.marginLeft = '';
+            if (topBar) topBar.style.zIndex = '';
+        }
+    } else {
+        sidebar.classList.add('open');
+        // Show backdrop only on small screens
+        if (window.innerWidth < 768) {
+            if (backdrop) backdrop.classList.add('show');
+        }
+        // Apply layout offsets for desktop so header/menu are pushed right
+        if (window.innerWidth >= 768) {
+            if (mainView) mainView.style.marginLeft = '280px';
+            if (topBar) topBar.style.marginLeft = '280px';
+            if (menuBar) menuBar.style.marginLeft = '280px';
+            // Ensure top bar sits above the sidebar when shifted
+            if (topBar) topBar.style.zIndex = '1060';
+        }
+    }
+};
 async function submitRefinement(day) {
     const input = document.getElementById(`refinement-input-${day}`);
     const feedback = input?.value?.trim();

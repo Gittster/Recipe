@@ -63,7 +63,7 @@ exports.handler = async (event) => {
       The JSON object must have the following keys: "name", "ingredients", "instructions", and "tags".
       - "name" should be a string.
       - "ingredients" should be an array of objects, where each object has "name" (string), "quantity" (string), and "unit" (string).
-      - "instructions" should be a single string. If there are steps, combine them.
+      - "instructions" should be a JSON array of step strings. Each step MUST begin with a step number in the format "N." or "N)" (e.g., "1. Preheat the oven..."). Do NOT return a single string containing multiple steps.
       - "tags" should be an array of relevant lowercase strings based on the recipe content.
 
       Respond ONLY with a valid, minified JSON object. Do not include markdown formatting like \`\`\`json.
@@ -97,7 +97,32 @@ exports.handler = async (event) => {
                 // responseText = responseText.replace(/^```json\s*/im, '');
                 // responseText = responseText.replace(/\s*```$/im, '');
 
-                const recipeJson = JSON.parse(responseText);
+                let recipeJson = JSON.parse(responseText);
+
+                // Normalize instructions into an array where each element starts with numbering like "1." or "1)"
+                if (typeof recipeJson.instructions === 'string') {
+                    const rawLines = recipeJson.instructions.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+                    const steps = [];
+                    rawLines.forEach(line => {
+                        const parts = line.split(/(?=\b\d+[\.\)])/).map(p => p.trim()).filter(Boolean);
+                        parts.forEach(p => {
+                            if (!/^\d+[\.\)]\s*/.test(p)) {
+                                steps.push((steps.length + 1) + '. ' + p);
+                            } else {
+                                steps.push(p);
+                            }
+                        });
+                    });
+                    recipeJson.instructions = steps;
+                } else if (Array.isArray(recipeJson.instructions)) {
+                    recipeJson.instructions = recipeJson.instructions.map((s, idx) => {
+                        const str = String(s).trim();
+                        return /^\d+[\.\)]\s*/.test(str) ? str : (idx + 1) + '. ' + str;
+                    }).filter(Boolean);
+                } else {
+                    recipeJson.instructions = [];
+                }
+
                 return { statusCode: 200, headers: headers, body: JSON.stringify(recipeJson) };
             }
         }

@@ -72,46 +72,37 @@ You are a creative and experienced chef. Analyze the provided image of a finishe
 Based on the visual appearance of the food, generate a plausible recipe for it.
 Your goal is to create a complete, usable recipe.
 
-1.  Invent an appealing and descriptive Recipe Name (string).
-2.  List the likely Ingredients as an array of objects. Each object *must* have "name" (string), "quantity" (string), and "unit" (string) fields.
-    * For "name": Identify the core ingredients visible or strongly implied by the dish.
-    * For "quantity" and "unit": Provide your best culinary estimate for a standard preparation of this dish (e.g., serving 2-4 people). Examples: "1", "1/2", "200", "to taste". If a precise numeric quantity is impossible to guess, use descriptive terms like "1 large" for an onion, or "a pinch" for salt, but still try to populate the quantity field. If the unit is obvious (e.g., "1" for "onion", the unit could be "medium" or "large" or even an empty string if implied by quantity). For spices, "1 tsp" or "to taste" is acceptable. You MUST attempt to provide a value for both quantity and unit for every ingredient. If truly indeterminable, quantity can be an empty string and unit can be an empty string or a general term like "piece(s)".
-3.  Write clear, step-by-step Instructions (string) on how to prepare the dish.
-4.  Generate 3-5 relevant Tags (array of strings) for the dish (e.g., "dinner", "chicken", "roasted", "comfort food").
-
-Format your response strictly as a JSON object with the structure:
+Return ONLY a single valid JSON object with this exact structure:
 {
   "name": "Generated Recipe Name",
-  "ingredients": [
-    { "name": "Example Chicken Breast", "quantity": "2", "unit": "pieces" },
-    { "name": "Olive Oil", "quantity": "1", "unit": "tbsp" },
-    { "name": "Salt", "quantity": "a pinch", "unit": "" }
-  ],
-  "instructions": "1. Preheat your oven to 375°F (190°C).\n2. Season the chicken breasts with salt and pepper.\n3. Sear the chicken in olive oil until golden brown.\n4. Transfer to the oven and bake for 20-25 minutes, or until cooked through.",
-  "tags": ["main course", "chicken", "easy", "baked"]
+  "ingredients": [ { "name": "Example Chicken Breast", "quantity": "2", "unit": "pieces" }, ... ],
+  "instructions": ["1. Preheat your oven to 375°F (190°C).", "2. Season the chicken..."],
+  "tags": ["main course", "chicken", "easy"]
 }
-If the image does not appear to be food or a recognizable dish, return JSON with an error field: {"error": "No recognizable food detected in the image."}.
-Ensure the output is ONLY the JSON object, with no surrounding text or markdown.
+
+Important constraints:
+- "instructions" MUST be a JSON array where each element is one step string and MUST begin with a step number in the format "N." or "N)" (for example: "1. Preheat the oven...").
+- Do NOT return a single string containing multiple numbered steps.
+- Preserve measurements such as "3-inch" or "3 in" inside step text; do not allow them to be treated as standalone step numbers.
+- If no food is detected, return {"error": "No recognizable food detected in the image."} (still JSON only).
+- Output ONLY the JSON object with no surrounding text, markdown, or code fences.
         `;
     } else { // Default to 'extract' (original functionality)
         console.log("Using 'extract' (default) prompt.");
         fullPrompt = `
 You are an expert recipe transcriber. Analyze the provided image which contains a recipe (likely text).
-Extract the following information:
-1. Recipe Name (string)
-2. Ingredients (array of objects, where each object has "name": string, "quantity": string, "unit": string. If quantity or unit are not clearly separable or present, make a reasonable interpretation or use an empty string.)
-3. Instructions (string, preferably with numbered steps or clear separation between steps).
-4. Tags (array of strings, generate 3-5 relevant keywords for the recipe like cuisine type, main ingredient, or dish type).
-
-Format your response strictly as a JSON object with the following structure:
+Extract the following information and return ONLY a valid JSON object with this shape:
 {
   "name": "The extracted recipe name",
   "ingredients": [ { "name": "Flour", "quantity": "1", "unit": "cup" } ],
-  "instructions": "1. First instruction. 2. Second instruction.",
+  "instructions": ["1. First instruction.", "2. Second instruction."],
   "tags": ["dessert", "baking", "easy"]
 }
-If any part of the recipe is unreadable or unclear, make your best guess or use a placeholder like "UNKNOWN" or an empty string for that specific part. If no recipe is detected in the image, return an error field in the JSON like {"error": "No recipe detected in the image."}.
-Ensure the output is ONLY the JSON object, with no surrounding text or markdown.
+Important constraints:
+- "instructions" MUST be a JSON array where each element is one step string and MUST begin with a step number in the format "N." or "N)". Do NOT return a single string containing multiple steps.
+- If parts are unreadable, make a best effort guess or use empty strings, but keep JSON valid.
+- If no recipe is detected, return {"error": "No recipe detected in the image."} (JSON only).
+- Output ONLY the JSON object, no markdown, no code fences, no extra text.
         `;
     }
 
@@ -193,8 +184,33 @@ Ensure the output is ONLY the JSON object, with no surrounding text or markdown.
                 console.warn("AI returned an error in its JSON:", recipeJson.error);
                 return { statusCode: 400, headers, body: JSON.stringify({ error: recipeJson.error }) }; // Send error to client
             }
+
+            // Normalize instructions into array form where each element starts with a numbering token like "1." or "1)"
+            if (typeof recipeJson.instructions === 'string') {
+                const rawLines = recipeJson.instructions.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+                const steps = [];
+                rawLines.forEach(line => {
+                    const parts = line.split(/(?=\b\d+[\.\)])/).map(p => p.trim()).filter(Boolean);
+                    parts.forEach(p => {
+                        if (!/^\d+[\.\)]\s*/.test(p)) {
+                            steps.push((steps.length + 1) + '. ' + p);
+                        } else {
+                            steps.push(p);
+                        }
+                    });
+                });
+                recipeJson.instructions = steps;
+            } else if (Array.isArray(recipeJson.instructions)) {
+                recipeJson.instructions = recipeJson.instructions.map((s, idx) => {
+                    const str = String(s).trim();
+                    return /^\d+[\.\)]\s*/.test(str) ? str : (idx + 1) + '. ' + str;
+                }).filter(Boolean);
+            } else {
+                recipeJson.instructions = [];
+            }
+
             // Basic validation for core recipe fields
-            if (recipeJson.name && Array.isArray(recipeJson.ingredients) && recipeJson.instructions) {
+            if (recipeJson.name && Array.isArray(recipeJson.ingredients) && Array.isArray(recipeJson.instructions)) {
                 recipeJson.tags = recipeJson.tags || []; // Ensure tags array exists
                 console.log("Recipe JSON is valid, returning 200.");
                 return { statusCode: 200, headers, body: JSON.stringify(recipeJson) };

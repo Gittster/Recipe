@@ -67,20 +67,19 @@ exports.handler = async (event) => {
         A user wants a recipe. Their request is: "${userPrompt}"
 
         Please generate a recipe based on this request.
-        The recipe should include a name, a list of ingredients (each with name, quantity, and unit),
-        step-by-step instructions, and a few relevant tags (as an array of strings).
-        All string values in the JSON must be properly escaped.
-        For "quantity", provide values as JSON numbers (e.g., 1, 0.5, 200) or as strings (e.g., "1/2", "to taste").
-        Do not use unquoted bare fractions like 1/2 as values for "quantity".
-
-        Respond ONLY with a valid JSON object in the following format:
+        The recipe must be returned ONLY as valid JSON with the following exact shape:
         {
           "name": "Recipe Name",
           "ingredients": [ { "name": "Ingredient 1", "quantity": "1", "unit": "cup" } ],
-          "instructions": "1. Step one.",
+          "instructions": ["1. Step one.", "2. Step two."],
           "tags": ["tag1"]
         }
-        Ensure the output is strictly JSON.
+
+        Important constraints:
+        - "instructions" MUST be a JSON array where each element is one step string and MUST begin with a step number in the format "N." or "N)" (for example: "1. Preheat the oven..." or "1) Preheat the oven...").
+        - Do NOT provide a single long string containing multiple numbered steps; use one array element per numbered step.
+        - Preserve measurements like "3-inch" or "3 in" inside step text; do not let them be misinterpreted as step numbers.
+        - Use low creativity (temperature will be lowered) and avoid any surrounding explanation, markdown, or code fences. Return ONLY the JSON object.
     `;
 
     const generationConfig = {
@@ -142,7 +141,34 @@ exports.handler = async (event) => {
                 try {
                     const recipeJson = JSON.parse(responseText);
                     console.log("generate-recipe-chat.js: Successfully parsed JSON.");
-                    if (recipeJson.name && Array.isArray(recipeJson.ingredients) && recipeJson.instructions && Array.isArray(recipeJson.tags)) {
+
+                    // Normalize "instructions" into an array where each element begins with a number (e.g., "1.")
+                    if (typeof recipeJson.instructions === 'string') {
+                        const rawLines = recipeJson.instructions.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+                        const steps = [];
+                        rawLines.forEach(line => {
+                            // Split lines that may contain multiple numbered steps like "1. Do A. 2. Do B."
+                            const parts = line.split(/(?=\b\d+[\.\)])/).map(p => p.trim()).filter(Boolean);
+                            parts.forEach(p => {
+                                if (!/^\d+[\.\)]\s*/.test(p)) {
+                                    steps.push((steps.length + 1) + '. ' + p);
+                                } else {
+                                    steps.push(p);
+                                }
+                            });
+                        });
+                        recipeJson.instructions = steps;
+                    } else if (Array.isArray(recipeJson.instructions)) {
+                        recipeJson.instructions = recipeJson.instructions.map((s, idx) => {
+                            const str = String(s).trim();
+                            return /^\d+[\.\)]\s*/.test(str) ? str : (idx + 1) + '. ' + str;
+                        }).filter(Boolean);
+                    } else {
+                        recipeJson.instructions = [];
+                    }
+
+                    // Basic validation
+                    if (recipeJson.name && Array.isArray(recipeJson.ingredients) && Array.isArray(recipeJson.instructions) && Array.isArray(recipeJson.tags)) {
                         console.log("generate-recipe-chat.js: Recipe JSON is valid, returning 200.");
                         return { statusCode: 200, headers: headers, body: JSON.stringify(recipeJson) };
                     } else {
@@ -199,3 +225,10 @@ exports.handler = async (event) => {
         return { statusCode: 500, headers: headers, body: JSON.stringify({ error: `Failed to generate recipe: ${errorMessage}` }) };
     }
 };
+
+// Compatibility: ensure both named and default exports point to the handler function
+if (typeof exports.handler === 'function') {
+    try { module.exports.handler = exports.handler; } catch (e) { /* ignore */ }
+    try { module.exports.default = exports.handler; } catch (e) { /* ignore */ }
+}
+

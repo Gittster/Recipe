@@ -11,6 +11,11 @@
    =================================== */
 
 /* --- 1. General & Root Styles --- */
+:root {
+    --top-bar-height: 56px;
+    --menu-bar-height: 48px;
+}
+
 body, html {
     height: 100%;
     margin: 0;
@@ -28,18 +33,37 @@ mark {
     background-color: #f8f9fa; /* A slightly off-white background for the whole app */
 }
 
+/* Top bar: fixed height and sits above main content */
 #topBar {
-    z-index: 1030; /* Ensure it's above other content */
+    z-index: 1065; /* Ensure it's above other content */
+    height: var(--top-bar-height);
+    display: flex;
+    align-items: center;
+}
+
+#menuBar {
+    height: var(--menu-bar-height);
+    display: block;
+    background: #fff;
+    border-bottom: 1px solid #dee2e6;
 }
 
 #mainView {
     width: 100%;
     margin: 0 auto;
     padding: 1rem;
-    /* Crucial: Prevents content from being hidden by the fixed bottom nav on mobile */
+    /* Prevents content from being hidden by the fixed bottom nav on mobile */
     padding-bottom: 80px !important;
     overflow-y: auto;
 }
+
+/* On desktop, reserve top padding so the menu/top bars do not overlap content when scrolling */
+@media (min-width: 768px) {
+    #mainView {
+        padding-top: calc(var(--top-bar-height) + var(--menu-bar-height));
+    }
+}
+
 
 #bottomNavBar {
     height: 65px;
@@ -149,6 +173,28 @@ mark {
 .sidebar-backdrop.show {
     opacity: 1;
     visibility: visible;
+}
+
+/* Desktop: show sidebar permanently and offset main content */
+@media (min-width: 768px) {
+    .sidebar {
+        /* keep sidebar available, but only show when .open is set so JS can toggle it */
+        box-shadow: none;
+    }
+    .sidebar-backdrop {
+        display: none !important;
+    }
+    /* Shift mainView only when the sidebar has the 'open' class (allows collapsing on desktop) */
+    .sidebar.open ~ #mainView {
+        margin-left: 280px; /* make room for the sidebar */
+        padding-left: 1rem;
+        transition: margin-left 0.25s ease;
+    }
+    /* topBar/menuBar are shifted by JS inline styles when sidebar is opened on desktop */
+    #topBar .container-fluid, #menuBar .container-fluid {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
 }
 
 /* --- 4. Component: Recipe Cards & Search --- */

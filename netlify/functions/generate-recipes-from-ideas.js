@@ -53,7 +53,7 @@ ${recipeRequests}
 For EACH recipe, provide:
 - A unique and appropriate name.
 - A list of ingredients (each object with "name", "quantity", "unit"). Format quantity as string if needed (e.g., "1/2", "to taste").
-- Step-by-step instructions.
+- Step-by-step instructions; return the instructions as a JSON array where each step string MUST begin with a step number in the format "N." or "N)" (for example: "1. Do this..."). Do NOT return a single string containing multiple numbered steps.
 - A few relevant tags (array of strings, e.g., ["dinner", "quick", "ai-generated"]).
 
 Output ONLY a single valid JSON array where each element corresponds to one requested recipe. Each element MUST include the original "day" and "type" from the request, plus the generated "recipe" object containing "name", "ingredients", "instructions", and "tags".
@@ -66,7 +66,7 @@ Example output format for TWO requested recipes:
     "recipe": { 
       "name": "Speedy Chicken Stir-fry", 
       "ingredients": [ { "name": "Chicken Breast", "quantity": "1", "unit": "lb" }, ... ], 
-      "instructions": "1. Chop chicken...", 
+      "instructions": ["1. Chop chicken..."], 
       "tags": ["quick", "chicken", "stir-fry", "ai-generated"] 
     } 
   },
@@ -76,7 +76,7 @@ Example output format for TWO requested recipes:
     "recipe": { 
       "name": "Large Batch Chili", 
       "ingredients": [ { "name": "Ground Beef", "quantity": "2", "unit": "lbs" }, ... ], 
-      "instructions": "1. Brown beef...", 
+      "instructions": ["1. Brown beef..."], 
       "tags": ["chili", "leftovers", "beef", "ai-generated"] 
     } 
   }
@@ -108,6 +108,35 @@ Ensure the entire output is a single, valid JSON array. Do not include any other
                 const fullRecipesResult = JSON.parse(responseText);
                 if (!Array.isArray(fullRecipesResult)) throw new Error("AI response was not a JSON array.");
                 
+                // Normalize each recipe's instructions into a numbered-array form
+                fullRecipesResult.forEach(item => {
+                    if (item && item.recipe) {
+                        const r = item.recipe;
+                        if (typeof r.instructions === 'string') {
+                            const rawLines = r.instructions.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+                            const steps = [];
+                            rawLines.forEach(line => {
+                                const parts = line.split(/(?=\b\d+[\.\)])/).map(p => p.trim()).filter(Boolean);
+                                parts.forEach(p => {
+                                    if (!/^\d+[\.\)]\s*/.test(p)) {
+                                        steps.push((steps.length + 1) + '. ' + p);
+                                    } else {
+                                        steps.push(p);
+                                    }
+                                });
+                            });
+                            r.instructions = steps;
+                        } else if (Array.isArray(r.instructions)) {
+                            r.instructions = r.instructions.map((s, idx) => {
+                                const str = String(s).trim();
+                                return /^\d+[\.\)]\s*/.test(str) ? str : (idx + 1) + '. ' + str;
+                            }).filter(Boolean);
+                        } else {
+                            r.instructions = [];
+                        }
+                    }
+                });
+
                 // **Basic Validation:** Check if the number of recipes matches roughly the number of ideas requested
                 if (fullRecipesResult.length < chosenIdeas.length * 0.8) { // Allow for some potential AI misses
                      console.warn(`AI returned ${fullRecipesResult.length} recipes for ${chosenIdeas.length} ideas.`);
