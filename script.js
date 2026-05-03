@@ -954,19 +954,17 @@ function showRecipeFilter() {
     view.className = 'section-recipes container py-3';
 
     view.innerHTML = `
-        <div class="recipe-header-bar d-flex align-items-center gap-2 mb-3">
-            <!-- Pancake/Menu Icon to toggle sidebar -->
-            <button class="btn btn-outline-secondary d-lg-none" type="button" onclick="toggleSidebar()" title="Toggle Folders">
+        <div class="recipe-header-bar d-flex d-md-none align-items-center gap-2 mb-3">
+            <!-- Mobile sidebar toggle -->
+            <button class="btn btn-outline-secondary" type="button" onclick="toggleSidebar()" title="Toggle Folders">
                 <i class="bi bi-list fs-4"></i>
             </button>
-
-            <!-- Unified Search Bar -->
+            <!-- Mobile search -->
             <div class="search-bar-wrapper flex-grow-1 position-relative">
                 <i class="bi bi-search position-absolute"></i>
-                <input type="text" class="form-control form-control-lg" id="unifiedSearchInput" placeholder="Search my recipes..." oninput="debouncedApplyFilters()">
+                <input type="text" class="form-control form-control-lg" id="mobileSearchInput" placeholder="Search my recipes..." oninput="debouncedApplyFilters()">
             </div>
-
-            <!-- Add Recipe Icon -->
+            <!-- Mobile add -->
             <button class="btn btn-primary" type="button" onclick="openAddRecipeMethodChoiceModal()" title="Add New Recipe">
                 <i class="bi bi-plus-lg fs-4"></i>
             </button>
@@ -1084,7 +1082,8 @@ function normalizeFractions(text) {
 }
 
 function applyAllRecipeFilters() {
-    const searchInput = document.getElementById('unifiedSearchInput');
+    if (!document.getElementById('recipeResults')) return;
+    const searchInput = document.getElementById('unifiedSearchInput') || document.getElementById('mobileSearchInput');
     const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : "";
     const searchTermsArray = searchTerm.split(' ').filter(term => term.length > 0);
 

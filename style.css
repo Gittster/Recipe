@@ -19,6 +19,7 @@
 body, html {
     height: 100%;
     margin: 0;
+    overflow: hidden;
 }
 
 mark {
@@ -57,12 +58,6 @@ mark {
     overflow-y: auto;
 }
 
-/* On desktop, reserve top padding so the menu/top bars do not overlap content when scrolling */
-@media (min-width: 768px) {
-    #mainView {
-        padding-top: calc(var(--top-bar-height) + var(--menu-bar-height));
-    }
-}
 
 
 #bottomNavBar {
@@ -569,17 +564,6 @@ mark {
 }
 
 /* --- 8. Media Queries --- */
-/* Desktop Layout */
-@media (min-width: 768px) {
-    #mainView {
-    width: 100%;
-    margin: 0 auto;
-    padding: 1rem;
-    overflow-y: auto;
-    scroll-padding-bottom: 80px; 
-    padding-bottom: 80px !important; 
-}  
-}
 
 /* Small Mobile Layout for Shopping List Header */
 @media (max-width: 575.98px) {
