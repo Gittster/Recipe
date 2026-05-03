@@ -23,38 +23,6 @@
 
     <div class="d-flex flex-column vh-100 app-container">
         
-        <div id="topBar" class="p-2 shadow-sm bg-light">
-            <div class="container-fluid d-flex justify-content-center justify-content-md-between align-items-center">
-                <div class="d-flex align-items-center gap-2">
-                    <!-- Desktop toggle: visible md+ -->
-                    <button id="desktopSidebarToggle" class="btn btn-outline-secondary d-none d-md-inline-flex" type="button" onclick="toggleSidebar()" title="Toggle Folders">
-                        <i class="bi bi-list fs-4"></i>
-                    </button>
-                    <h5 id="currentPageTitle" class="mb-0 text-md-start text-center">Recipes</h5>
-                </div>
-                <!-- Desktop nav -->
-                <div class="d-none d-md-flex gap-1 align-items-center">
-                    <button class="btn btn-sm btn-link text-dark text-decoration-none fw-medium" data-view="recipes" onclick="showRecipeFilter()">Recipes</button>
-                    <button class="btn btn-sm btn-link text-dark text-decoration-none fw-medium" data-view="history" onclick="viewHistory()">History</button>
-                    <button class="btn btn-sm btn-link text-dark text-decoration-none fw-medium" data-view="plan" onclick="showPlanning()">Planning</button>
-                    <button class="btn btn-sm btn-link text-dark text-decoration-none fw-medium" onclick="showChatbotModal()">Chef Bot <i class="bi bi-robot"></i></button>
-                </div>
-                <div id="userAuthAreaDesktop" class="d-none d-md-flex align-items-center">
-                    </div>
-            </div>
-        </div>
-
-        <!-- Frozen search bar — desktop only -->
-        <div id="menuBar" class="px-4 py-3 d-none d-md-flex bg-white border-bottom align-items-center gap-3">
-            <div class="search-bar-wrapper flex-grow-1 position-relative">
-                <i class="bi bi-search position-absolute"></i>
-                <input type="text" class="form-control" id="unifiedSearchInput" placeholder="Search my recipes..." oninput="debouncedApplyFilters()">
-            </div>
-            <button class="btn btn-primary flex-shrink-0" type="button" onclick="openAddRecipeMethodChoiceModal()" title="Add New Recipe">
-                <i class="bi bi-plus-lg fs-5"></i>
-            </button>
-        </div>
-
         <div class="sidebar" id="appSidebar">
             <div class="sidebar-header">
                 <h5 class="sidebar-title"><i class="bi bi-sort-down me-2"></i>Sort Recipes</h5>
@@ -81,9 +49,42 @@
 
         <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()"></div>
 
+        <!-- Single content wrapper — shifted as one unit when sidebar opens -->
+        <div id="contentWrapper" class="d-flex flex-column flex-grow-1" style="min-height:0">
 
-        <div id="mainView" class="flex-grow-1 bg-body-tertiary overflow-auto p-md-3">
+            <div id="topBar" class="p-2 shadow-sm bg-light">
+                <div class="container-fluid d-flex justify-content-center justify-content-md-between align-items-center">
+                    <div class="d-flex align-items-center gap-2">
+                        <button id="desktopSidebarToggle" class="btn btn-outline-secondary d-none d-md-inline-flex" type="button" onclick="toggleSidebar()" title="Toggle Folders">
+                            <i class="bi bi-list fs-4"></i>
+                        </button>
+                        <h5 id="currentPageTitle" class="mb-0 text-md-start text-center">Recipes</h5>
+                    </div>
+                    <div class="d-none d-md-flex gap-1 align-items-center">
+                        <button class="btn btn-sm btn-link text-dark text-decoration-none fw-medium" data-view="recipes" onclick="showRecipeFilter()">Recipes</button>
+                        <button class="btn btn-sm btn-link text-dark text-decoration-none fw-medium" data-view="history" onclick="viewHistory()">History</button>
+                        <button class="btn btn-sm btn-link text-dark text-decoration-none fw-medium" data-view="plan" onclick="showPlanning()">Planning</button>
+                        <button class="btn btn-sm btn-link text-dark text-decoration-none fw-medium" onclick="showChatbotModal()">Chef Bot <i class="bi bi-robot"></i></button>
+                    </div>
+                    <div id="userAuthAreaDesktop" class="d-none d-md-flex align-items-center"></div>
+                </div>
             </div>
+
+            <!-- Frozen search bar — desktop only -->
+            <div id="menuBar" class="px-4 py-3 d-none d-md-flex bg-white border-bottom align-items-center gap-3">
+                <div class="search-bar-wrapper flex-grow-1 position-relative">
+                    <i class="bi bi-search position-absolute"></i>
+                    <input type="text" class="form-control" id="unifiedSearchInput" placeholder="Search my recipes..." oninput="debouncedApplyFilters()">
+                </div>
+                <button class="btn btn-primary flex-shrink-0" type="button" onclick="openAddRecipeMethodChoiceModal()" title="Add New Recipe">
+                    <i class="bi bi-plus-lg fs-5"></i>
+                </button>
+            </div>
+
+            <div id="mainView" class="flex-grow-1 bg-body-tertiary overflow-auto p-md-3">
+            </div>
+
+        </div>
 
         <nav id="bottomNavBar" class="fixed-bottom bg-light border-top d-flex justify-content-around p-1 d-md-none">
             <button class="btn btn-nav flex-fill text-center active" data-view="recipes" onclick="showRecipeFilter()">

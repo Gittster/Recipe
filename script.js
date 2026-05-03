@@ -92,26 +92,21 @@ document.addEventListener('DOMContentLoaded', () => {
         userSettingsModalInstance = new bootstrap.Modal(settingsModalElement);
     }
 
-    // Sidebar viewport adjustment — open on desktop, hide on mobile
+    // Sidebar viewport adjustment — shift the single content wrapper on desktop
     const sidebar = document.getElementById('appSidebar');
     const backdrop = document.getElementById('sidebarBackdrop');
-    const mainView = document.getElementById('mainView');
-    const topBar = document.getElementById('topBar');
-    const menuBar = document.getElementById('menuBar');
+    const contentWrapper = document.getElementById('contentWrapper');
 
     function adjustSidebarForViewport() {
         if (!sidebar) return;
         if (window.innerWidth >= 768) {
             sidebar.classList.add('open');
             if (backdrop) backdrop.classList.remove('show');
-            if (topBar) { topBar.style.marginLeft = '280px'; topBar.style.zIndex = '1060'; }
-            if (menuBar) { menuBar.style.marginLeft = '280px'; menuBar.style.zIndex = '1060'; }
+            if (contentWrapper) contentWrapper.style.marginLeft = '280px';
         } else {
             sidebar.classList.remove('open');
             if (backdrop) backdrop.classList.remove('show');
-            if (topBar) { topBar.style.marginLeft = ''; topBar.style.zIndex = ''; }
-            if (menuBar) { menuBar.style.marginLeft = ''; menuBar.style.zIndex = ''; }
-            if (mainView) mainView.style.marginLeft = '';
+            if (contentWrapper) contentWrapper.style.marginLeft = '';
         }
         if (typeof renderFolders === 'function') renderFolders();
     }
@@ -9496,13 +9491,11 @@ function hideRefinementInput(day) {
     if (container) { container.classList.add('d-none'); const input = document.getElementById(`refinement-input-${day}`); if (input) input.value = ''; }
 }
 
-// Global sidebar toggle that respects desktop layout and allows closing on larger viewports
+// Global sidebar toggle
 window.toggleSidebar = function () {
     const sidebar = document.getElementById('appSidebar');
     const backdrop = document.getElementById('sidebarBackdrop');
-    const mainView = document.getElementById('mainView');
-    const topBar = document.getElementById('topBar');
-    const menuBar = document.getElementById('menuBar');
+    const contentWrapper = document.getElementById('contentWrapper');
 
     if (!sidebar) return;
     const isOpen = sidebar.classList.contains('open');
@@ -9510,26 +9503,13 @@ window.toggleSidebar = function () {
     if (isOpen) {
         sidebar.classList.remove('open');
         if (backdrop) backdrop.classList.remove('show');
-        // Reset layout offsets for desktop
-        if (window.innerWidth >= 768) {
-            if (mainView) mainView.style.marginLeft = '';
-            if (topBar) topBar.style.marginLeft = '';
-            if (menuBar) menuBar.style.marginLeft = '';
-            if (topBar) topBar.style.zIndex = '';
-        }
+        if (contentWrapper) contentWrapper.style.marginLeft = '';
     } else {
         sidebar.classList.add('open');
-        // Show backdrop only on small screens
         if (window.innerWidth < 768) {
             if (backdrop) backdrop.classList.add('show');
-        }
-        // Apply layout offsets for desktop so header/menu are pushed right
-        if (window.innerWidth >= 768) {
-            if (mainView) mainView.style.marginLeft = '280px';
-            if (topBar) topBar.style.marginLeft = '280px';
-            if (menuBar) menuBar.style.marginLeft = '280px';
-            // Ensure top bar sits above the sidebar when shifted
-            if (topBar) topBar.style.zIndex = '1060';
+        } else {
+            if (contentWrapper) contentWrapper.style.marginLeft = '280px';
         }
     }
 };

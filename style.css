@@ -191,16 +191,8 @@ mark {
     .sidebar-backdrop {
         display: none !important;
     }
-    /* Shift mainView only when the sidebar has the 'open' class (allows collapsing on desktop) */
-    .sidebar.open ~ #mainView {
-        margin-left: 280px; /* make room for the sidebar */
-        padding-left: 1rem;
+    #contentWrapper {
         transition: margin-left 0.25s ease;
-    }
-    /* topBar/menuBar are shifted by JS inline styles when sidebar is opened on desktop */
-    #topBar .container-fluid, #menuBar .container-fluid {
-        padding-left: 1rem;
-        padding-right: 1rem;
     }
 }
 
