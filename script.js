@@ -14,6 +14,7 @@ let addRecipeMethodModalInstance = null;
 let currentAddRecipeMethod = null;
 let recipeFormModalInstance = null; // for #recipeFormModal
 let pasteTextModalInstance = null;  // for #pasteTextModal
+let urlInputModalInstance = null;   // for #urlInputModal
 let dedicatedRecipePhotoInput = null; // <<< ADD THIS DECLARATION HERE
 let userSettingsModalInstance = null;
 let currentWeeklyPlan = {};
@@ -75,6 +76,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const pasteModalEl = document.getElementById('pasteTextModal');
     if(pasteModalEl) pasteTextModalInstance = new bootstrap.Modal(pasteModalEl);
+    const urlInputModalEl = document.getElementById('urlInputModal');
+    if (urlInputModalEl) {
+        urlInputModalInstance = new bootstrap.Modal(urlInputModalEl);
+        // Allow pressing Enter in the URL field to trigger fetch
+        const urlInput = document.getElementById('recipeUrlInput');
+        if (urlInput) {
+            urlInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') handleRecipeFromUrl();
+            });
+        }
+    }
     const settingsModalElement = document.getElementById('userSettingsModal');
     if (settingsModalElement) {
         userSettingsModalInstance = new bootstrap.Modal(settingsModalElement);
@@ -614,6 +626,27 @@ function selectAddRecipeMethod(method) {
                 showPasteTextModal(); // This function will show a modal for pasting text
             } else {
                 console.error("showPasteTextModal function is not defined!");
+            }
+            break;
+
+        case 'url':
+            console.log("URL import method selected.");
+            if (urlInputModalInstance) {
+                // Reset the modal state each time it opens
+                const urlInput = document.getElementById('recipeUrlInput');
+                const statusDiv = document.getElementById('urlFetchStatus');
+                const fetchBtn = document.getElementById('fetchRecipeUrlBtn');
+                if (urlInput) urlInput.value = '';
+                if (statusDiv) { statusDiv.textContent = ''; statusDiv.className = 'form-text small mt-2'; }
+                if (fetchBtn) fetchBtn.disabled = false;
+                urlInputModalInstance.show();
+                // Auto-focus the input after the modal animates in
+                const urlInputModalEl = document.getElementById('urlInputModal');
+                if (urlInputModalEl) {
+                    urlInputModalEl.addEventListener('shown.bs.modal', () => {
+                        document.getElementById('recipeUrlInput')?.focus();
+                    }, { once: true });
+                }
             }
             break;
 
@@ -1191,6 +1224,65 @@ async function handlePastedRecipeTextFromModal() {
     } finally {
         // --- Restore UI after completion or error ---
         parseButton.disabled = false;
+    }
+}
+
+/**
+ * Fetches a recipe from a URL by calling the fetch-recipe-from-url Netlify function.
+ * Hides the URL modal and opens the review form when successful.
+ */
+async function handleRecipeFromUrl() {
+    const urlInput = document.getElementById('recipeUrlInput');
+    const statusDiv = document.getElementById('urlFetchStatus');
+    const fetchBtn = document.getElementById('fetchRecipeUrlBtn');
+
+    if (!urlInput || !statusDiv || !fetchBtn) {
+        console.error("URL modal elements not found.");
+        return;
+    }
+
+    const url = urlInput.value.trim();
+    if (!url) {
+        statusDiv.textContent = "Please enter a URL first.";
+        statusDiv.className = "form-text small mt-2 text-danger";
+        return;
+    }
+
+    // Basic client-side URL check
+    try { new URL(url); } catch (_) {
+        statusDiv.textContent = "That doesn't look like a valid URL. Make sure it starts with https://";
+        statusDiv.className = "form-text small mt-2 text-danger";
+        return;
+    }
+
+    statusDiv.className = "form-text small mt-2 text-info";
+    statusDiv.innerHTML = '🤖 Fetching and parsing recipe... <span class="spinner-border spinner-border-sm"></span>';
+    fetchBtn.disabled = true;
+
+    try {
+        const response = await fetch("/.netlify/functions/fetch-recipe-from-url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url })
+        });
+
+        const parsedRecipeData = await response.json();
+
+        if (!response.ok || parsedRecipeData.error) {
+            throw new Error(parsedRecipeData.error || `Request failed (status ${response.status})`);
+        }
+
+        console.log("Imported recipe from URL:", parsedRecipeData);
+
+        if (urlInputModalInstance) urlInputModalInstance.hide();
+
+        openRecipeFormModal(parsedRecipeData, 'review-ai');
+
+    } catch (error) {
+        console.error("Error fetching recipe from URL:", error);
+        statusDiv.textContent = `Error: ${error.message}`;
+        statusDiv.className = "form-text small mt-2 text-danger";
+        fetchBtn.disabled = false;
     }
 }
 
