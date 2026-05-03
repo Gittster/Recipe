@@ -95,8 +95,13 @@ On the very first message (empty history), greet the user briefly and ask these 
         systemInstruction: systemPrompt,
     });
 
+    // Gemini requires at least one content turn — seed with a silent opener on first call
+    const contentsToSend = contents.length > 0
+        ? contents
+        : [{ role: 'user', parts: [{ text: "Let's start." }] }];
+
     try {
-        const result = await callWithRetry(model, contents, { temperature: 0.85, maxOutputTokens: 1024 });
+        const result = await callWithRetry(model, contentsToSend, { temperature: 0.85, maxOutputTokens: 1024 });
         const raw = result.response.text().trim();
 
         // Extract plan JSON
