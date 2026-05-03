@@ -4904,6 +4904,9 @@ function showPlanning() {
                 
                 <div class="btn-toolbar" role="toolbar" aria-label="Planned meals actions">
                     <div class="btn-group btn-group-sm w-100" role="group">
+                        <button class="btn btn-warning fw-semibold" onclick="showEasyModePlanner()" title="Conversational AI meal planner">
+                            <i class="bi bi-stars"></i> Easy Mode
+                        </button>
                         <button class="btn btn-primary" onclick="showAIWeeklyPlanner()" title="Use AI to generate a weekly plan">
                             <i class="bi bi-robot"></i> Chef Bot
                         </button>
@@ -9490,6 +9493,251 @@ function hideRefinementInput(day) {
     const container = document.getElementById(`refinement-${day}`);
     if (container) { container.classList.add('d-none'); const input = document.getElementById(`refinement-input-${day}`); if (input) input.value = ''; }
 }
+
+// ─── Easy Mode Conversational Planner ────────────────────────────────────────
+
+let _easyModeMessages = [];
+let _easyModePlan = null;
+
+async function showEasyModePlanner() {
+    const view = document.getElementById('mainView');
+    if (!view) return;
+    updatePageTitle('Easy Week Planner');
+    setActiveNavButton('plan');
+    view.className = 'section-planning container py-3';
+
+    view.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h4 class="mb-1"><i class="bi bi-stars text-warning me-2"></i>Easy Week Planner</h4>
+                <p class="text-muted small mb-0">Tell me about your week and I'll handle the rest.</p>
+            </div>
+            <button class="btn btn-sm btn-outline-secondary" onclick="showPlanning()">
+                <i class="bi bi-arrow-left me-1"></i>Back
+            </button>
+        </div>
+
+        <div id="easyModeChat" class="easy-mode-chat"></div>
+
+        <div id="easyModePlanPreview" class="d-none mb-3"></div>
+
+        <div class="d-flex gap-2 mb-3">
+            <input type="text" id="easyModeInput" class="form-control"
+                placeholder="Type your reply…"
+                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();_easyModeSend();}">
+            <button class="btn btn-primary flex-shrink-0" onclick="_easyModeSend()" id="easyModeSendBtn">
+                <i class="bi bi-send-fill"></i>
+            </button>
+        </div>
+
+        <div id="easyModeSaveArea" class="d-none">
+            <button class="btn btn-success w-100 py-2 fw-semibold" onclick="_easyModeSave()">
+                <i class="bi bi-calendar-check me-2"></i>Save this plan to my week
+            </button>
+        </div>
+    `;
+
+    _easyModeMessages = [];
+    _easyModePlan = null;
+
+    // Kick off the first AI message (no user input yet)
+    await _easyModeCallAI();
+}
+
+function _easyModeAddMsg(role, text) {
+    const chat = document.getElementById('easyModeChat');
+    if (!chat) return;
+    const div = document.createElement('div');
+    div.className = `easy-mode-msg ${role}`;
+    div.textContent = text;
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+}
+
+function _easyModeAddTyping() {
+    const chat = document.getElementById('easyModeChat');
+    if (!chat) return null;
+    const id = `typing-${Date.now()}`;
+    const div = document.createElement('div');
+    div.id = id;
+    div.className = 'easy-mode-msg ai easy-mode-typing';
+    div.innerHTML = '<span></span><span></span><span></span>';
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+    return id;
+}
+
+function _easyModeRemoveTyping(id) {
+    const el = id && document.getElementById(id);
+    if (el) el.remove();
+}
+
+function _easyModeSetInputEnabled(enabled) {
+    const input = document.getElementById('easyModeInput');
+    const btn = document.getElementById('easyModeSendBtn');
+    if (input) input.disabled = !enabled;
+    if (btn) btn.disabled = !enabled;
+    if (enabled && input) input.focus();
+}
+
+async function _easyModeSend() {
+    const input = document.getElementById('easyModeInput');
+    const text = input ? input.value.trim() : '';
+    if (!text) return;
+    if (input) input.value = '';
+    _easyModeAddMsg('user', text);
+    _easyModeMessages.push({ role: 'user', text });
+    await _easyModeCallAI();
+}
+
+async function _easyModeCallAI() {
+    _easyModeSetInputEnabled(false);
+    const typingId = _easyModeAddTyping();
+
+    // Gather context
+    const recipeContext = recipes.map(r => ({
+        id: r.id || r.localId || null,
+        name: r.name,
+        tags: r.tags || [],
+        rating: r.rating || 0,
+    }));
+    const madeHistory = await _easyModeGetHistory();
+    const dietaryRestrictions = await _easyModeGetDietary();
+
+    try {
+        const resp = await fetch('/.netlify/functions/conversational-planner', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: _easyModeMessages,
+                context: { recipes: recipeContext, madeHistory, dietaryRestrictions },
+            }),
+        });
+        const data = await resp.json();
+        _easyModeRemoveTyping(typingId);
+
+        if (data.error) {
+            _easyModeAddMsg('ai', 'Something went wrong — please try again.');
+        } else {
+            _easyModeAddMsg('ai', data.message);
+            _easyModeMessages.push({ role: 'model', text: data.message });
+
+            if (data.plan) {
+                _easyModePlan = data.plan;
+                _easyModeRenderPlan(data.plan);
+                const saveArea = document.getElementById('easyModeSaveArea');
+                if (saveArea) saveArea.classList.remove('d-none');
+            }
+        }
+    } catch (err) {
+        _easyModeRemoveTyping(typingId);
+        _easyModeAddMsg('ai', 'Connection error — please try again.');
+    }
+
+    _easyModeSetInputEnabled(true);
+}
+
+function _easyModeRenderPlan(plan) {
+    const preview = document.getElementById('easyModePlanPreview');
+    if (!preview || !plan?.days) return;
+    const rows = plan.days.map(d => `
+        <li class="list-group-item py-2 px-3 d-flex align-items-center gap-2">
+            <span class="text-muted fw-semibold" style="min-width:96px;font-size:.85rem">${d.day}</span>
+            ${d.skip
+                ? '<span class="text-muted fst-italic small">Day off</span>'
+                : `<span class="small">${d.recipeName || '—'}</span>${!d.recipeId ? '<span class="badge bg-light text-muted border ms-auto" style="font-size:.7rem">new</span>' : ''}`
+            }
+        </li>`).join('');
+    preview.innerHTML = `
+        <div class="card">
+            <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                <span class="fw-semibold small"><i class="bi bi-calendar-week me-2"></i>Proposed Week</span>
+                <span class="badge bg-success-subtle text-success border border-success-subtle">Ready to save</span>
+            </div>
+            <ul class="list-group list-group-flush">${rows}</ul>
+        </div>`;
+    preview.classList.remove('d-none');
+}
+
+async function _easyModeSave() {
+    if (!_easyModePlan?.days) return;
+
+    const saveBtn = document.querySelector('#easyModeSaveArea button');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+
+    // Compute dates for the upcoming week starting Monday
+    const today = new Date();
+    const dow = today.getDay();
+    const daysToMon = dow === 0 ? 1 : dow === 1 ? 0 : 8 - dow;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() + daysToMon);
+    const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+    const dateMap = {};
+    dayNames.forEach((name, i) => {
+        const d = new Date(monday);
+        d.setDate(monday.getDate() + i);
+        dateMap[name] = d.toISOString().split('T')[0];
+    });
+
+    let saved = 0, failed = 0;
+    for (const day of _easyModePlan.days) {
+        if (day.skip || !day.recipeName) continue;
+        const planDate = dateMap[day.day];
+        if (!planDate) continue;
+
+        const entry = { date: planDate, recipeName: day.recipeName };
+        if (day.recipeId) entry[currentUser ? 'recipeId' : 'recipeLocalId'] = day.recipeId;
+
+        try {
+            if (currentUser) {
+                entry.uid = currentUser.uid;
+                await db.collection('planning').add(entry);
+            } else if (localDB) {
+                entry.localId = generateLocalUUID();
+                await localDB.planning.add(entry);
+            }
+            saved++;
+        } catch (err) {
+            console.error('Failed to save plan entry:', err);
+            failed++;
+        }
+    }
+
+    if (failed > 0) {
+        showErrorMessage(`Saved ${saved} meals, ${failed} failed.`);
+    } else {
+        showSuccessMessage(`${saved} meal${saved !== 1 ? 's' : ''} added to your plan!`);
+    }
+    showPlanning();
+}
+
+async function _easyModeGetHistory() {
+    try {
+        if (currentUser) {
+            const snap = await db.collection('history')
+                .where('uid', '==', currentUser.uid)
+                .orderBy('timestamp', 'desc')
+                .limit(40)
+                .get();
+            return snap.docs.map(d => d.data());
+        } else if (localDB) {
+            return await localDB.history.orderBy('timestamp', 'desc').limit(40).toArray();
+        }
+    } catch (e) { console.warn('Easy mode: could not load history', e); }
+    return [];
+}
+
+async function _easyModeGetDietary() {
+    try {
+        if (currentUser) {
+            const doc = await db.collection('users').doc(currentUser.uid).get();
+            return doc.data()?.preferences?.dietaryRestrictions || [];
+        }
+    } catch (e) {}
+    return [];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Global sidebar toggle
 window.toggleSidebar = function () {
