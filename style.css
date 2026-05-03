@@ -13,7 +13,7 @@
 /* --- 1. General & Root Styles --- */
 :root {
     --top-bar-height: 56px;
-    --menu-bar-height: 48px;
+    --menu-bar-height: 64px;
 }
 
 body, html {
@@ -64,6 +64,7 @@ mark {
 #mainView {
     flex: 1 1 auto;
     min-height: 0; /* allows flex child to scroll rather than expand */
+    max-width: none !important; /* prevent Bootstrap .container from overflowing when sidebar is open */
     padding: 1rem;
     padding-bottom: 80px !important;
     overflow-y: auto;
