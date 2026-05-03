@@ -36,10 +36,22 @@ mark {
 
 /* Top bar: fixed height and sits above main content */
 #topBar {
-    z-index: 1065; /* Ensure it's above other content */
+    z-index: 1065;
     height: var(--top-bar-height);
     display: flex;
     align-items: center;
+}
+
+/* Grid layout so nav buttons stay centred regardless of title length */
+@media (min-width: 768px) {
+    #topBar .container-fluid {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+    }
+    #topBar .container-fluid > :last-child {
+        justify-self: end;
+    }
 }
 
 #menuBar {
@@ -50,10 +62,9 @@ mark {
 }
 
 #mainView {
-    width: 100%;
-    margin: 0 auto;
+    flex: 1 1 auto;
+    min-height: 0; /* allows flex child to scroll rather than expand */
     padding: 1rem;
-    /* Prevents content from being hidden by the fixed bottom nav on mobile */
     padding-bottom: 80px !important;
     overflow-y: auto;
 }
