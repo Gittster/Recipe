@@ -9622,6 +9622,10 @@ async function _easyModeCallAI() {
             _easyModeAddMsg('ai', data.message);
             _easyModeMessages.push({ role: 'model', text: data.message });
 
+            if (data.choices && data.choices.length) {
+                _easyModeRenderChoices(data.choices);
+            }
+
             if (data.plan) {
                 _easyModePlan = data.plan;
                 _easyModeRenderPlan(data.plan);
@@ -9635,6 +9639,46 @@ async function _easyModeCallAI() {
     }
 
     _easyModeSetInputEnabled(true);
+}
+
+function _easyModeRenderChoices(choices) {
+    const chat = document.getElementById('easyModeChat');
+    if (!chat) return;
+    choices.forEach(choice => {
+        const wrap = document.createElement('div');
+        wrap.className = 'easy-mode-choices';
+        wrap.dataset.choiceId = choice.id;
+        const label = document.createElement('div');
+        label.className = 'easy-mode-choice-label';
+        label.textContent = choice.question;
+        wrap.appendChild(label);
+        const btnRow = document.createElement('div');
+        btnRow.className = 'easy-mode-choice-btns';
+        choice.options.forEach(opt => {
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-outline-secondary btn-sm easy-mode-choice-btn';
+            btn.textContent = opt;
+            btn.onclick = () => {
+                if (btn.disabled) return;
+                // Disable all buttons in this group
+                wrap.querySelectorAll('button').forEach(b => {
+                    b.disabled = true;
+                    b.classList.remove('active', 'btn-secondary');
+                });
+                btn.classList.add('active', 'btn-secondary');
+                btn.classList.remove('btn-outline-secondary');
+                // Send the answer as a user message
+                const userText = `${choice.question} → ${opt}`;
+                _easyModeAddMsg('user', userText);
+                _easyModeMessages.push({ role: 'user', text: userText });
+                _easyModeCallAI();
+            };
+            btnRow.appendChild(btn);
+        });
+        wrap.appendChild(btnRow);
+        chat.appendChild(wrap);
+        chat.scrollTop = chat.scrollHeight;
+    });
 }
 
 function _easyModeRenderPlan(plan) {
@@ -9712,26 +9756,32 @@ async function _easyModeSave() {
 }
 
 async function _easyModeGetHistory() {
+    const timeout = new Promise(resolve => setTimeout(() => resolve([]), 3000));
     try {
+        let query;
         if (currentUser) {
-            const snap = await db.collection('history')
+            query = db.collection('history')
                 .where('uid', '==', currentUser.uid)
-                .orderBy('timestamp', 'desc')
                 .limit(40)
-                .get();
-            return snap.docs.map(d => d.data());
+                .get()
+                .then(snap => snap.docs.map(d => d.data()));
         } else if (localDB) {
-            return await localDB.history.orderBy('timestamp', 'desc').limit(40).toArray();
+            query = localDB.history.limit(40).toArray();
+        } else {
+            return [];
         }
+        return await Promise.race([query, timeout]);
     } catch (e) { console.warn('Easy mode: could not load history', e); }
     return [];
 }
 
 async function _easyModeGetDietary() {
+    const timeout = new Promise(resolve => setTimeout(() => resolve([]), 3000));
     try {
         if (currentUser) {
-            const doc = await db.collection('users').doc(currentUser.uid).get();
-            return doc.data()?.preferences?.dietaryRestrictions || [];
+            const query = db.collection('users').doc(currentUser.uid).get()
+                .then(doc => doc.data()?.preferences?.dietaryRestrictions || []);
+            return await Promise.race([query, timeout]);
         }
     } catch (e) {}
     return [];

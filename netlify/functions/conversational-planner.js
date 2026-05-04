@@ -67,11 +67,7 @@ ${recipeLines || 'No recipes saved yet.'}
 
 INSTRUCTIONS:
 - Be conversational and warm, not robotic or listy
-- Prefer recipes from their collection; suggest new ones only when nothing fits
-- Avoid repeating recently made meals unless the user asks
 - Keep suggestions practical (weeknights = quick; weekends = ok to be more involved)
-- When you have enough info to propose a week, lay it out naturally in your message:
-  e.g. "How does this sound — Monday I'm thinking the Chicken Parmesan since you've made it a few times and it's a weekday crowd-pleaser. Tuesday off since you said you're busy. Wednesday..."
 - If the user wants to swap or adjust something, just update that day and confirm the rest
 - Whenever your message contains a plan (full or partial), append a machine-readable block on its own line at the very end in EXACTLY this format (no markdown, no code fences):
   |||PLAN|||{"days":[{"day":"Monday","recipeName":"Chicken Parmesan","recipeId":"abc123","skip":false},{"day":"Tuesday","recipeName":null,"recipeId":null,"skip":true},{"day":"Wednesday","recipeName":"New Recipe Idea","recipeId":null,"skip":false},...all 7 days]}|||END|||
@@ -79,10 +75,22 @@ INSTRUCTIONS:
   Set skip:true for days they won't cook.
 - If you don't yet have enough info to propose a plan, omit the |||PLAN||| block entirely.
 
-On the very first message (empty history), greet the user briefly and ask these three things in a friendly, single message:
-1. Anything they know they want to make this week?
-2. Any leftovers or ingredients they want to use up?
-3. Any nights they won't be cooking?`;
+GATHERING INFO — FIRST MESSAGE:
+On the very first message, greet the user briefly then ask your questions using a mix of multiple-choice buttons and a free-text follow-up. Format each multiple-choice question like this (one per line, no extra text around it):
+  |||CHOICE|||{"id":"<id>","question":"<short question>","options":["<A>","<B>","<C>","<D>"]}|||END|||
+
+Ask these questions in a single friendly message:
+1. Free-text: anything they know they want to make, leftovers to use up, or nights off?
+2. Multiple-choice (id: "new_recipes"): How adventurous are you feeling this week?
+   Options: "Stick to what we know", "Mostly familiar, one new idea", "Mix it up — half and half", "Surprise me with new stuff"
+3. Multiple-choice (id: "effort"): What's your energy level for cooking this week?
+   Options: "Quick & easy all week", "Normal mix", "I've got time — let's go all out"
+
+HOW TO USE THE ANSWERS:
+- "new_recipes" answer controls how many suggestions come from outside their recipe collection vs. from it.
+  Stick to what we know → 0 new recipes; Mostly familiar → max 1 new; Mix it up → up to 3 new; Surprise me → freely suggest new recipes
+- Default (if not asked): prefer recipes from their collection, avoid recently made meals unless user asks
+- "effort" answer shapes complexity: Quick → all recipes under 30 min or tagged easy/quick; Normal → mix; All out → can include involved weekend recipes any day`;
 
     const contents = messages.map(m => ({
         role: m.role === 'user' ? 'user' : 'model',
@@ -101,7 +109,7 @@ On the very first message (empty history), greet the user briefly and ask these 
         : [{ role: 'user', parts: [{ text: "Let's start." }] }];
 
     try {
-        const result = await callWithRetry(model, contentsToSend, { temperature: 0.85, maxOutputTokens: 1024 });
+        const result = await callWithRetry(model, contentsToSend, { temperature: 0.85, maxOutputTokens: 4096 });
         const raw = result.response.text().trim();
 
         // Extract plan JSON
@@ -111,10 +119,21 @@ On the very first message (empty history), greet the user briefly and ask these 
             try { plan = JSON.parse(planMatch[1].trim()); } catch (e) { console.warn('Plan JSON parse failed:', e.message); }
         }
 
-        // Strip the machine-readable block from the displayed message
-        const message = raw.replace(/\|\|\|PLAN\|\|\|[\s\S]*?\|\|\|END\|\|\|/g, '').trim();
+        // Extract choice blocks
+        const choices = [];
+        const choiceRegex = /\|\|\|CHOICE\|\|\|([\s\S]*?)\|\|\|END\|\|\|/g;
+        let choiceMatch;
+        while ((choiceMatch = choiceRegex.exec(raw)) !== null) {
+            try { choices.push(JSON.parse(choiceMatch[1].trim())); } catch (e) { console.warn('Choice JSON parse failed:', e.message); }
+        }
 
-        return { statusCode: 200, headers, body: JSON.stringify({ message, plan }) };
+        // Strip all machine-readable blocks from the displayed message
+        const message = raw
+            .replace(/\|\|\|PLAN\|\|\|[\s\S]*?\|\|\|END\|\|\|/g, '')
+            .replace(/\|\|\|CHOICE\|\|\|[\s\S]*?\|\|\|END\|\|\|/g, '')
+            .trim();
+
+        return { statusCode: 200, headers, body: JSON.stringify({ message, plan, choices: choices.length ? choices : undefined }) };
     } catch (err) {
         console.error('Gemini error:', err);
         return { statusCode: 500, headers, body: JSON.stringify({ error: 'AI request failed: ' + err.message }) };

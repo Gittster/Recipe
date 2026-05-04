@@ -760,3 +760,32 @@ mark {
     0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
     30% { transform: translateY(-5px); opacity: 1; }
 }
+
+.easy-mode-choices {
+    align-self: flex-start;
+    max-width: 92%;
+    margin-bottom: 0.5rem;
+}
+
+.easy-mode-choice-label {
+    font-size: 0.8rem;
+    color: #6c757d;
+    margin-bottom: 0.35rem;
+    padding-left: 0.1rem;
+}
+
+.easy-mode-choice-btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.easy-mode-choice-btn {
+    border-radius: 999px !important;
+    font-size: 0.82rem;
+    white-space: nowrap;
+}
+
+.easy-mode-choice-btn.active {
+    cursor: default;
+}
