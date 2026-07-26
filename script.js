@@ -1078,7 +1078,11 @@ function normalizeFractions(text) {
 
 function applyAllRecipeFilters() {
     if (!document.getElementById('recipeResults')) return;
-    const searchInput = document.getElementById('unifiedSearchInput') || document.getElementById('mobileSearchInput');
+    const unifiedInput = document.getElementById('unifiedSearchInput');
+    const mobileInput = document.getElementById('mobileSearchInput');
+    const searchInput = (unifiedInput && unifiedInput.offsetParent !== null) ? unifiedInput
+        : (mobileInput && mobileInput.offsetParent !== null) ? mobileInput
+        : (unifiedInput || mobileInput);
     const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : "";
     const searchTermsArray = searchTerm.split(' ').filter(term => term.length > 0);
 
