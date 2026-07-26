@@ -2413,79 +2413,6 @@ function escapeHtml(unsafe) {
 }
 
 // In script.js
-async function renderFolders() {
-    const folderList = document.getElementById('folderList');
-    const folderActions = document.getElementById('folderActionsContainer');
-    const addFolderContainer = document.getElementById('addFolderContainer');
-    
-    if (!folderList || !folderActions || !addFolderContainer) return;
-
-    folderList.innerHTML = ''; 
-    folderList.className = 'nav nav-pills flex-column folder-list-container';
-    
-    // --- Render Edit/Done Button ---
-    if (folders.length > 0) {
-        // ADD the "w-100" class to make the button full-width
-        folderActions.innerHTML = `<button class="btn btn-outline-secondary btn-sm w-100" onclick="toggleFolderEditMode()">${isFolderEditMode ? 'Done' : 'Edit'}</button>`;
-    } else {
-        folderActions.innerHTML = '';
-    }
-    
-    // --- Toggle UI based on Edit Mode ---
-    if (isFolderEditMode) {
-        folderList.classList.add('edit-mode-active');
-        addFolderContainer.style.display = 'none';
-    } else {
-        folderList.classList.remove('edit-mode-active');
-        addFolderContainer.style.display = 'block';
-    }
-
-    // --- The rest of the function remains exactly the same ---
-    // --- Render "All Recipes" Link ---
-    const allRecipesCount = recipes.length;
-    const allRecipesItem = document.createElement('li');
-    allRecipesItem.className = 'nav-item';
-    allRecipesItem.innerHTML = `
-        <a class="nav-link d-flex justify-content-between align-items-center" href="#">
-            <span><i class="bi bi-collection me-2"></i> All Recipes</span>
-            <span class="badge bg-light text-dark rounded-pill">${allRecipesCount}</span>
-        </a>`;
-    const allRecipesLink = allRecipesItem.querySelector('a');
-    if (currentFolderId === null) allRecipesLink.classList.add('active');
-    allRecipesLink.onclick = (e) => filterByFolder(e, null);
-    folderList.appendChild(allRecipesItem);
-
-    // --- Render Individual Folders ---
-    if (currentUser && folders.length > 0) {
-        folders.forEach(folder => {
-            const recipeCount = recipes.filter(r => r.folderId === folder.id).length;
-            const li = document.createElement('li');
-            li.className = 'nav-item';
-            li.innerHTML = `
-                <a class="nav-link d-flex justify-content-between align-items-center" href="#">
-                    <span><i class="bi bi-folder me-2"></i>${escapeHtml(folder.name)}</span>
-                    <div class="d-flex align-items-center">
-                        ${recipeCount > 0 ? `<span class="badge bg-light text-dark rounded-pill">${recipeCount}</span>` : ''}
-                        <span class="delete-folder-icon-container ms-2">
-                            <i class="bi bi-trash-fill text-danger" title="Delete Folder"></i>
-                        </span>
-                    </div>
-                </a>`;
-
-            const folderLink = li.querySelector('a');
-            if (folder.id === currentFolderId) folderLink.classList.add('active');
-            folderLink.onclick = (e) => filterByFolder(e, folder.id);
-
-            const deleteIcon = li.querySelector('.delete-folder-icon-container');
-            deleteIcon.onclick = (e) => {
-                e.stopPropagation(); e.preventDefault();
-                confirmDeleteFolder(folder.id, folder.name);
-            };
-            folderList.appendChild(li);
-        });
-    }
-}
-
 async function confirmDeleteFolder(folderId, folderName) {
     const title = `Delete Folder?`;
     const bodyContent = `
@@ -6543,33 +6470,58 @@ function clearCheckedIngredients() {
 
   clearBtn.parentElement.appendChild(confirmArea);
 
+  const cleanupAndRestore = () => {
+    confirmArea.remove();
+    clearBtn.style.display = 'block'; // restore button (still hidden again by updateClearCheckedButton if nothing's checked)
+  };
+
   // Yes clears
-  yesBtn.onclick = () => {
-    db.collection("shopping").doc(currentUser.uid).get().then(doc => {
-      if (!doc.exists) return;
+  yesBtn.onclick = async () => {
+    if (currentUser) {
+      // --- LOGGED IN: Firestore shopping list ---
+      try {
+        const doc = await db.collection("shopping").doc(currentUser.uid).get();
+        if (!doc.exists) { cleanupAndRestore(); return; }
 
-      const data = doc.data();
-      const filtered = data.ingredients.filter(ing => !ing.checked);
+        const data = doc.data();
+        const filtered = (data.ingredients || []).filter(ing => !ing.checked);
 
-      return db.collection("shopping").doc(currentUser.uid).set({ ingredients, uid: currentUser.uid })
-        .then(() => {
-          renderShoppingList(filtered);
-          console.log("✅ Cleared checked items");
+        await db.collection("shopping").doc(currentUser.uid).set({ ingredients: filtered, uid: currentUser.uid });
+        renderShoppingList(filtered);
+        console.log("✅ Cleared checked items");
+      } catch (err) {
+        console.error("❌ Failed to clear checked items:", err);
+        alert("Error clearing checked items: " + err.message);
+      } finally {
+        cleanupAndRestore();
+      }
+    } else {
+      // --- NOT LOGGED IN: LocalDB shopping list ---
+      if (!localDB) {
+        alert("Local storage not available.");
+        cleanupAndRestore();
+        return;
+      }
+      try {
+        const localList = await localDB.shoppingList.get("localUserShoppingList");
+        if (!localList) { cleanupAndRestore(); return; }
 
-          // Cleanup UI
-          confirmArea.remove();
-          clearBtn.style.display = 'none'; // still hidden if no checked left
-        });
-    }).catch(err => {
-      console.error("❌ Failed to clear checked items:", err);
-    });
+        const filtered = (localList.ingredients || []).filter(ing => !ing.checked);
+
+        await localDB.shoppingList.put({ ...localList, ingredients: filtered, updatedAt: new Date().toISOString() });
+        renderShoppingList(filtered);
+        console.log("✅ Cleared checked items (local)");
+      } catch (err) {
+        console.error("❌ Failed to clear checked items (local):", err);
+        alert("Error clearing checked items: " + err.message);
+      } finally {
+        cleanupAndRestore();
+      }
+    }
   };
 
   // No cancels
-  noBtn.onclick = () => {
-    confirmArea.remove();
-    clearBtn.style.display = 'block'; // restore button
-  };
+  noBtn.onclick = cleanupAndRestore;
 }
 
 

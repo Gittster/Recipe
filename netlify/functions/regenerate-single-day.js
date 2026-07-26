@@ -21,12 +21,13 @@ exports.handler = async (event) => {
     try {
         const body = JSON.parse(event.body);
         dayPlan = body.dayPlan;
-        existingRecipes = body.existingRecipes || [];
-        dietaryRestrictions = body.dietaryRestrictions || [];
-        excludeRecipes = body.excludeRecipes || [];
-        refinementFeedback = body.refinementFeedback ? body.refinementFeedback.trim().substring(0, 200) : null;
+        existingRecipes = Array.isArray(body.existingRecipes) ? body.existingRecipes : [];
+        dietaryRestrictions = Array.isArray(body.dietaryRestrictions) ? body.dietaryRestrictions : [];
+        excludeRecipes = Array.isArray(body.excludeRecipes) ? body.excludeRecipes : [];
+        refinementFeedback = (body.refinementFeedback && typeof body.refinementFeedback === 'string')
+            ? body.refinementFeedback.trim().substring(0, 200) : null;
 
-        if (!dayPlan || !dayPlan.day || !dayPlan.type) throw new Error('dayPlan with day and type required');
+        if (!dayPlan || typeof dayPlan !== 'object' || !dayPlan.day || !dayPlan.type) throw new Error('dayPlan with day and type required');
     } catch (error) {
         return { statusCode: 400, headers, body: JSON.stringify({ error: error.message }) };
     }
@@ -43,7 +44,7 @@ exports.handler = async (event) => {
     prompt += `Day: ${dayPlan.day}, Type: ${dayPlan.type}, Mode: ${dayPlan.suggestionMode || 'mix'}\n`;
     if (dayPlan.maxCookTime) prompt += `Max time: ${dayPlan.maxCookTime} min\n`;
     if (dayPlan.style) prompt += `Style: ${dayPlan.style}\n`;
-    if (dayPlan.ingredientsToUse?.length) prompt += `Must use: ${dayPlan.ingredientsToUse.join(', ')}\n`;
+    if (Array.isArray(dayPlan.ingredientsToUse) && dayPlan.ingredientsToUse.length) prompt += `Must use: ${dayPlan.ingredientsToUse.join(', ')}\n`;
     if (dayPlan.mood) prompt += `Mood: ${dayPlan.mood}\n`;
     if (dayPlan.effort) prompt += `Effort: ${dayPlan.effort}\n`;
     if (excludeRecipes.length) prompt += `Exclude these: ${excludeRecipes.join(', ')}\n`;
@@ -55,7 +56,7 @@ exports.handler = async (event) => {
         prompt += '\nProvide 3 NEW recipe ideas (not from saved recipes).\n';
     } else if (mode === 'existing') {
         if (existingRecipes.length > 0) {
-            const filtered = existingRecipes.filter(r => !excludeRecipes.includes(r.name));
+            const filtered = existingRecipes.filter(r => r && !excludeRecipes.includes(r.name));
             prompt += `\nSaved recipes: ${JSON.stringify(filtered.map(r => ({ id: r.id, name: r.name })))}\n`;
             prompt += 'Select 3 recipes from this list that best match the criteria.\n';
         } else {
@@ -64,7 +65,7 @@ exports.handler = async (event) => {
     } else {
         // Mix mode
         if (existingRecipes.length > 0) {
-            const filtered = existingRecipes.filter(r => !excludeRecipes.includes(r.name));
+            const filtered = existingRecipes.filter(r => r && !excludeRecipes.includes(r.name));
             prompt += `\nSaved recipes: ${JSON.stringify(filtered.map(r => ({ id: r.id, name: r.name })))}\n`;
             prompt += 'Provide 2 options from saved recipes + 1 new idea. If fewer saved recipes match, fill with new ideas.\n';
         } else {

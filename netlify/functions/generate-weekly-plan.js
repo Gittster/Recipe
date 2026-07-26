@@ -41,6 +41,9 @@ exports.handler = async (event) => {
         if (!planStructure || !Array.isArray(planStructure) || planStructure.length === 0) {
             throw new Error('"planStructure" is required and must be a non-empty array.');
         }
+        if (!Array.isArray(existingRecipes)) {
+            throw new Error('"existingRecipes" must be an array (can be empty).');
+        }
         if (!Array.isArray(dietaryRestrictions)) {
             throw new Error('"dietaryRestrictions" must be an array (can be empty).');
         }
@@ -105,7 +108,7 @@ exports.handler = async (event) => {
     prompt += `Weekly Plan Structure:\n${JSON.stringify(planStructure, null, 2)}\n\n`;
 
     if (existingRecipes.length > 0) {
-        const recipeList = existingRecipes.map(r => ({ id: r.id, name: r.name, tags: r.tags || [], rating: r.rating || 0 }));
+        const recipeList = existingRecipes.filter(Boolean).map(r => ({ id: r.id, name: r.name, tags: r.tags || [], rating: r.rating || 0 }));
         prompt += `User's Saved Recipes:\n${JSON.stringify(recipeList, null, 2)}\n\n`;
     } else {
         prompt += `User has no saved recipes.\n\n`;

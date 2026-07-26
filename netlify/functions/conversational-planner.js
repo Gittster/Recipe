@@ -29,34 +29,48 @@ exports.handler = async (event) => {
     try { body = JSON.parse(event.body); }
     catch { return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON body' }) }; }
 
-    const { messages = [], context = {} } = body;
-    const { recipes = [], madeHistory = [], dietaryRestrictions = [] } = context;
+    if (!body || typeof body !== 'object') {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: 'Request body must be a JSON object.' }) };
+    }
 
     const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
     if (!apiKey) return { statusCode: 500, headers, body: JSON.stringify({ error: 'API key not configured' }) };
 
-    // Compute upcoming Monday date for context
-    const today = new Date();
-    const dow = today.getDay();
-    const daysToMon = dow === 0 ? 1 : dow === 1 ? 0 : 8 - dow;
-    const monday = new Date(today);
-    monday.setDate(today.getDate() + daysToMon);
-    const weekLabel = monday.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+    // Everything below reads client-supplied fields that could be missing, null,
+    // or the wrong shape (a stale payload, or the client sending malformed
+    // localStorage/IndexedDB data back) - keep it inside a try/catch so a bad
+    // shape returns a clean 400 instead of an uncaught exception (which Netlify
+    // surfaces to the client as an opaque 502).
+    let systemPrompt, contentsToSend;
+    try {
+        const messages = Array.isArray(body.messages) ? body.messages : [];
+        const context = (body.context && typeof body.context === 'object') ? body.context : {};
+        const recipes = Array.isArray(context.recipes) ? context.recipes : [];
+        const madeHistory = Array.isArray(context.madeHistory) ? context.madeHistory : [];
+        const dietaryRestrictions = Array.isArray(context.dietaryRestrictions) ? context.dietaryRestrictions : [];
 
-    // Build recipe frequency map from history
-    const freq = {};
-    madeHistory.forEach(h => { if (h.recipeName) freq[h.recipeName] = (freq[h.recipeName] || 0) + 1; });
+        // Compute upcoming Monday date for context
+        const today = new Date();
+        const dow = today.getDay();
+        const daysToMon = dow === 0 ? 1 : dow === 1 ? 0 : 8 - dow;
+        const monday = new Date(today);
+        monday.setDate(today.getDate() + daysToMon);
+        const weekLabel = monday.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
 
-    const recentNames = [...new Set(madeHistory.slice(0, 20).map(h => h.recipeName).filter(Boolean))].slice(0, 6);
+        // Build recipe frequency map from history
+        const freq = {};
+        madeHistory.forEach(h => { if (h && h.recipeName) freq[h.recipeName] = (freq[h.recipeName] || 0) + 1; });
 
-    const recipeLines = recipes.slice(0, 60).map(r => {
-        const f = freq[r.name] ? ` (made ${freq[r.name]}×)` : '';
-        const stars = r.rating ? ` ★${r.rating}` : '';
-        const tags = (r.tags || []).slice(0, 4).join(', ');
-        return `• ${r.name}${stars}${f}${tags ? `  [${tags}]` : ''}  id:${r.id || ''}`;
-    }).join('\n');
+        const recentNames = [...new Set(madeHistory.slice(0, 20).map(h => h && h.recipeName).filter(Boolean))].slice(0, 6);
 
-    const systemPrompt = `You are a warm, casual weekly meal planning assistant — like a helpful friend who knows the user's kitchen well.
+        const recipeLines = recipes.slice(0, 60).map(r => {
+            const f = freq[r.name] ? ` (made ${freq[r.name]}×)` : '';
+            const stars = r.rating ? ` ★${r.rating}` : '';
+            const tags = Array.isArray(r.tags) ? r.tags.slice(0, 4).join(', ') : '';
+            return `• ${r.name}${stars}${f}${tags ? `  [${tags}]` : ''}  id:${r.id || ''}`;
+        }).join('\n');
+
+        systemPrompt = `You are a warm, casual weekly meal planning assistant — like a helpful friend who knows the user's kitchen well.
 
 WEEK: starting ${weekLabel}
 DIETARY RESTRICTIONS: ${dietaryRestrictions.length ? dietaryRestrictions.join(', ') : 'none'}
@@ -92,21 +106,25 @@ HOW TO USE THE ANSWERS:
 - Default (if not asked): prefer recipes from their collection, avoid recently made meals unless user asks
 - "effort" answer shapes complexity: Quick → all recipes under 30 min or tagged easy/quick; Normal → mix; All out → can include involved weekend recipes any day`;
 
-    const contents = messages.map(m => ({
-        role: m.role === 'user' ? 'user' : 'model',
-        parts: [{ text: m.text }],
-    }));
+        const contents = messages.map(m => ({
+            role: (m && m.role === 'user') ? 'user' : 'model',
+            parts: [{ text: (m && m.text) || '' }],
+        }));
+
+        // Gemini requires at least one content turn - seed with a silent opener on first call
+        contentsToSend = contents.length > 0
+            ? contents
+            : [{ role: 'user', parts: [{ text: "Let's start." }] }];
+    } catch (contextError) {
+        console.error("conversational-planner.js: Error building prompt/context:", contextError);
+        return { statusCode: 400, headers, body: JSON.stringify({ error: `Bad Request: messages or context was malformed (${contextError.message}).` }) };
+    }
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
         model: 'gemini-2.5-flash',
         systemInstruction: systemPrompt,
     });
-
-    // Gemini requires at least one content turn — seed with a silent opener on first call
-    const contentsToSend = contents.length > 0
-        ? contents
-        : [{ role: 'user', parts: [{ text: "Let's start." }] }];
 
     try {
         const result = await callWithRetry(model, contentsToSend, { temperature: 0.85, maxOutputTokens: 4096 });

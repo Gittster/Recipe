@@ -29,6 +29,9 @@ exports.handler = async (event) => {
         if (!chosenIdeas || !Array.isArray(chosenIdeas) || chosenIdeas.length === 0) {
             throw new Error('"chosenIdeas" is required and must be a non-empty array.');
         }
+        if (chosenIdeas.some(idea => !idea || typeof idea !== 'object' || !idea.chosenIdea)) {
+            throw new Error('Each item in "chosenIdeas" must be an object with at least a "chosenIdea" field.');
+        }
         console.log(`generate-recipes-from-ideas.js: Received ${chosenIdeas.length} chosen ideas.`);
     } catch (error) {
         console.error("generate-recipes-from-ideas.js: Error parsing request body:", error);
