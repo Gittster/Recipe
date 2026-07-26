@@ -22,6 +22,104 @@ let currentWeeklyPlan = {};
 // Track which recipe cards are expanded (persists across re-renders)
 const expandedRecipeIds = new Set();
 
+// ===================== Error Logging =====================
+// Captures uncaught exceptions, unhandled promise rejections, and every
+// existing console.error() call across the app (170+ call sites) without
+// needing to touch each one individually, and ships them with debugging
+// context to a Netlify function that stores them in Firestore.
+(function setupErrorLogging() {
+    const ERROR_LOG_ENDPOINT = "/.netlify/functions/log-error";
+    const MAX_ERROR_LOGS_PER_SESSION = 25;
+    const DEDUPE_WINDOW_MS = 10000;
+    const MAX_BREADCRUMBS = 15;
+
+    let errorLogCount = 0;
+    const recentSignatures = new Map(); // "level:message" -> last-sent timestamp
+    const breadcrumbs = []; // rolling buffer of recent console activity for context
+
+    function stringifyArg(arg) {
+        if (typeof arg === 'string') return arg;
+        if (arg instanceof Error) return arg.message;
+        try { return JSON.stringify(arg); } catch (_) { return String(arg); }
+    }
+
+    function pushBreadcrumb(level, args) {
+        try {
+            breadcrumbs.push(`[${level}] ${args.map(stringifyArg).join(' ')}`);
+            if (breadcrumbs.length > MAX_BREADCRUMBS) breadcrumbs.shift();
+        } catch (_) { /* breadcrumb capture must never throw */ }
+    }
+
+    function sendErrorLog({ message, stack, level }) {
+        try {
+            if (!message) return;
+            const signature = `${level}:${message}`;
+            const now = Date.now();
+            const lastSent = recentSignatures.get(signature);
+            if (lastSent && (now - lastSent) < DEDUPE_WINDOW_MS) return;
+            if (errorLogCount >= MAX_ERROR_LOGS_PER_SESSION) return;
+            recentSignatures.set(signature, now);
+            errorLogCount++;
+
+            const payload = {
+                message: String(message).slice(0, 2000),
+                stack: stack ? String(stack).slice(0, 4000) : null,
+                level: level || 'error',
+                context: {
+                    url: window.location.href,
+                    userAgent: navigator.userAgent,
+                    viewport: { width: window.innerWidth, height: window.innerHeight },
+                    currentView: document.getElementById('currentPageTitle')?.textContent || null,
+                    userId: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.uid : null,
+                    isLocalMode: !(typeof currentUser !== 'undefined' && currentUser),
+                    breadcrumbs: breadcrumbs.slice(-10)
+                }
+            };
+
+            fetch(ERROR_LOG_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).catch(() => { /* Logging failures must never surface to the user */ });
+        } catch (_) { /* logging must never throw */ }
+    }
+
+    const originalConsoleError = console.error.bind(console);
+    console.error = function (...args) {
+        originalConsoleError(...args);
+        pushBreadcrumb('error', args);
+        const errorArg = args.find(a => a instanceof Error);
+        sendErrorLog({
+            message: args.map(stringifyArg).join(' '),
+            stack: errorArg ? errorArg.stack : null,
+            level: 'console.error'
+        });
+    };
+
+    const originalConsoleWarn = console.warn.bind(console);
+    console.warn = function (...args) {
+        originalConsoleWarn(...args);
+        pushBreadcrumb('warn', args);
+    };
+
+    window.addEventListener('error', (event) => {
+        sendErrorLog({
+            message: event.message || (event.error && event.error.message),
+            stack: event.error ? event.error.stack : null,
+            level: 'uncaught-exception'
+        });
+    });
+
+    window.addEventListener('unhandledrejection', (event) => {
+        const reason = event.reason;
+        sendErrorLog({
+            message: reason instanceof Error ? reason.message : String(reason),
+            stack: reason instanceof Error ? reason.stack : null,
+            level: 'unhandled-rejection'
+        });
+    });
+})();
+
 function debounce(fn, wait) {
     let timer;
     return function(...args) {

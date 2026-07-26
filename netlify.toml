@@ -4,6 +4,9 @@
 [functions]
   node_bundler = "esbuild"
 
+[functions.log-error]
+  external_node_modules = ["firebase-admin"]
+
 [dev]
   port = 8888
   targetPort = 5500
