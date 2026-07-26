@@ -69,23 +69,47 @@ exports.handler = async (event) => {
 
     // Prepare a concise recipe context string
     let recipeContextString = "No specific recipe context provided for this question.";
-    if (recipeContext) {
-        const ingredientsString = recipeContext.ingredients ? recipeContext.ingredients.map(i => `${i.quantity || ''} ${i.unit || ''} ${i.name || 'Unknown ingredient'}`.trim()).join('; ') : 'Not specified';
-        const instructionsSummary = recipeContext.instructions ? recipeContext.instructions.substring(0, 700) + (recipeContext.instructions.length > 700 ? "..." : "") : 'Not specified';
-        recipeContextString = `
-            Current Recipe Context:
-            Name: ${recipeContext.name}
-            Ingredients: ${ingredientsString || 'None listed'}
-            Instructions (summary): ${instructionsSummary || 'None listed'}
-            Tags: ${recipeContext.tags ? recipeContext.tags.join(', ') : 'None'}
-        `.trim().replace(/\s+/g, ' '); // Compact the string
+    let apiHistory;
+    try {
+        if (recipeContext) {
+            // recipeContext.instructions can be either a string or an array of steps
+            // depending on how/when the recipe was created (see script.js's own
+            // Array.isArray(recipeData.instructions) handling for the same reason).
+            // Calling .substring() on an array here throws, which Netlify surfaces
+            // to the client as an opaque 502 rather than a handled error response.
+            const ingredientsList = Array.isArray(recipeContext.ingredients) ? recipeContext.ingredients : [];
+            const instructionsText = Array.isArray(recipeContext.instructions)
+                ? recipeContext.instructions.join(' ')
+                : (typeof recipeContext.instructions === 'string' ? recipeContext.instructions : '');
+            const tagsList = Array.isArray(recipeContext.tags) ? recipeContext.tags : [];
+
+            const ingredientsString = ingredientsList.length > 0
+                ? ingredientsList.map(i => `${i.quantity || ''} ${i.unit || ''} ${i.name || 'Unknown ingredient'}`.trim()).join('; ')
+                : 'Not specified';
+            const instructionsSummary = instructionsText
+                ? instructionsText.substring(0, 700) + (instructionsText.length > 700 ? "..." : "")
+                : 'Not specified';
+            recipeContextString = `
+                Current Recipe Context:
+                Name: ${recipeContext.name}
+                Ingredients: ${ingredientsString || 'None listed'}
+                Instructions (summary): ${instructionsSummary || 'None listed'}
+                Tags: ${tagsList.length > 0 ? tagsList.join(', ') : 'None'}
+            `.trim().replace(/\s+/g, ' '); // Compact the string
+        }
+
+        // Construct the history for the API call (Gemini format)
+        apiHistory = conversationHistory.map(turn => ({
+            role: turn && turn.role, // Should be 'user' or 'model' sent from client
+            parts: [{ text: (turn && turn.text) || '' }]
+        }));
+    } catch (contextError) {
+        console.error("ask-about-recipe.js: Error building recipe context/history:", contextError, {
+            recipeName: recipeContext && recipeContext.name,
+            historyLength: conversationHistory.length
+        });
+        return { statusCode: 400, headers, body: JSON.stringify({ error: `Bad Request: recipeContext or history was malformed (${contextError.message}).` }) };
     }
-    
-    // Construct the history for the API call (Gemini format)
-    const apiHistory = conversationHistory.map(turn => ({
-        role: turn.role, // Should be 'user' or 'model' sent from client
-        parts: [{ text: turn.text }]
-    }));
 
     // Construct the current user's turn/prompt
     const currentUserTurnPrompt = `
