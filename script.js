@@ -6698,11 +6698,22 @@ function updateAuthUI(user) {
                     <span class="text-truncate fw-medium" style="font-size: 0.9rem;">${escapeHtml(user.email || "User")}</span>
                 </div>
                 <div><hr class="dropdown-divider my-1"></div>
+                <a class="dropdown-item d-flex align-items-center user-info-settings-link" href="#">
+                    <i class="bi bi-gear-fill me-2 fs-5 text-secondary"></i> Settings
+                </a>
                 <a class="dropdown-item d-flex align-items-center user-info-logout-link" href="#" style="color: #dc3545;">
                     <i class="bi bi-box-arrow-right me-2 fs-5"></i> Log out
                 </a>
             `;
-            
+
+            const settingsLink = dropdownMenu.querySelector('.user-info-settings-link');
+            if (settingsLink) {
+                settingsLink.onclick = (e) => {
+                    e.preventDefault();
+                    openUserSettingsModal();
+                };
+            }
+
             const signOutLink = dropdownMenu.querySelector('.user-info-logout-link');
             if (signOutLink) {
                 signOutLink.onclick = (e) => {
