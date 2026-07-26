@@ -5986,6 +5986,13 @@ async function openUserSettingsModal() {
     }
 }
 
+function sendTestError() {
+    console.error(`Test error from Settings > Send Test Error (${new Date().toLocaleTimeString()})`, new Error("This is a test error to verify error logging is wired up correctly."));
+    if (typeof showSuccessMessage === 'function') {
+        showSuccessMessage("Test error sent. Check 'View Error Logs' in a few seconds.");
+    }
+}
+
 async function openErrorLogsModal() {
     if (!errorLogsModalInstance || !currentUser) return;
     errorLogsModalInstance.show();
