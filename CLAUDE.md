@@ -27,7 +27,8 @@ A recipe management web application that stores recipes locally using IndexedDB 
 │   ├── log-error.js               # Client-side error logging -> Firestore
 │   ├── ocr.js                     # OCR text extraction
 │   ├── parse-recipe-text.js       # Parse recipe from text
-│   └── process-recipe-image.js    # Extract recipe from image
+│   ├── process-recipe-image.js    # Extract recipe from image
+│   └── update-error-log.js        # Admin-only: marks an errorLogs doc handled/unhandled
 └── netlify.toml        # Netlify configuration
 ```
 
@@ -40,6 +41,8 @@ A recipe management web application that stores recipes locally using IndexedDB 
 Client-side errors are automatically captured and sent to the `log-error` Netlify function, which writes them to the `errorLogs` Firestore collection. This covers uncaught exceptions, unhandled promise rejections, and every existing `console.error()` call in `script.js` (via a wrapped `console.error`, set up once near the top of the file) — no need to instrument individual call sites. Each entry includes the error message/stack, current view, viewport size, user agent, logged-in user ID (or local-mode flag), and a rolling breadcrumb trail of recent console activity. Client-side dedup (10s window) and a 25-log session cap keep repeated/looping errors from flooding Firestore.
 
 **Viewing logs**: Signed-in users see a "View Error Logs" link in Settings > General. It calls `get-error-logs.js` with the user's Firebase ID token in the `Authorization: Bearer` header; the function verifies the token server-side and checks the email against `ADMIN_EMAILS` before returning anything — non-admins get a 403 with a friendly message. The gate is enforced server-side, not just hidden in the UI.
+
+**Marking logs handled**: each entry has a "Mark as Handled" button (calls `update-error-log.js`, same admin-token gate as `get-error-logs.js`) that sets `handled`/`handledAt`/`handledBy` on the Firestore doc. The viewer's "Hide handled" checkbox (checked by default) filters them out of the list client-side from the already-fetched batch, no refetch needed.
 
 **Adding call-site-specific context**: pass a trailing plain object to `console.error()` to attach structured debugging context beyond the generic fields captured automatically (e.g. `console.error("Error in recipe chat send:", err, { recipeId, recipeName, userQuestion })`). It's excluded from the logged message text and stored separately as `context.extra`, shown in the viewer as a "Context" block. Only add this where the call site has genuinely useful local state (e.g. what the user typed, which recipe/id was involved) — most of the 170 existing `console.error()` calls don't need it.
 

@@ -86,6 +86,11 @@ exports.handler = async (event) => {
                 stack: data.stack || null,
                 level: data.level || null,
                 context: data.context || null,
+                handled: !!data.handled,
+                handledBy: data.handledBy || null,
+                handledAt: (data.handledAt && typeof data.handledAt.toDate === 'function')
+                    ? data.handledAt.toDate().toISOString()
+                    : null,
                 createdAt: (data.createdAt && typeof data.createdAt.toDate === 'function')
                     ? data.createdAt.toDate().toISOString()
                     : null
