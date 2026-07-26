@@ -21,6 +21,26 @@ let errorLogsModalInstance = null;
 let lastFetchedErrorLogs = [];
 let currentWeeklyPlan = {};
 
+// Wraps fetch() with a timeout so a hung request (slow cold start, dropped
+// connection, etc.) can't leave the UI spinning forever with no way to recover.
+// On timeout it throws a plain Error with a friendly message, so it flows
+// through each call site's existing `catch (err) { ... err.message ... }`
+// handling without needing to touch every call site's error-display logic.
+async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { ...options, signal: controller.signal });
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            throw new Error('The request took too long and timed out. Please check your connection and try again.');
+        }
+        throw err;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
 // Track which recipe cards are expanded (persists across re-renders)
 const expandedRecipeIds = new Set();
 
@@ -1147,7 +1167,7 @@ async function handlePastedRecipeTextFromModal() {
 
     try {
         // --- Call the new Netlify function ---
-        const response = await fetch("/.netlify/functions/parse-recipe-text", {
+        const response = await fetchWithTimeout("/.netlify/functions/parse-recipe-text", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ recipeText: text })
@@ -1315,7 +1335,7 @@ async function handlePastedRecipeTextFromModal() {
 
     try {
         // --- Call the new Netlify function ---
-        const response = await fetch("/.netlify/functions/parse-recipe-text", {
+        const response = await fetchWithTimeout("/.netlify/functions/parse-recipe-text", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ recipeText: text })
@@ -1379,7 +1399,7 @@ async function handleRecipeFromUrl() {
     fetchBtn.disabled = true;
 
     try {
-        const response = await fetch("/.netlify/functions/fetch-recipe-from-url", {
+        const response = await fetchWithTimeout("/.netlify/functions/fetch-recipe-from-url", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ url })
@@ -1504,11 +1524,11 @@ async function handleRecipePhoto(event, directFill = true, promptType = 'extract
 
             try {
                 console.log("Fetching /.netlify/functions/process-recipe-image");
-                const response = await fetch("/.netlify/functions/process-recipe-image", {
+                const response = await fetchWithTimeout("/.netlify/functions/process-recipe-image", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload)
-                });
+                }, 60000); // Image upload + AI processing can legitimately take longer than the default
                 
                 const responseText = await response.text();
                 console.log("Raw response from Netlify function (first 500 chars):", responseText.substring(0, 500));
@@ -2855,7 +2875,7 @@ function openRecipeSpecificChatModal(recipe) {
             if (updateArea) updateArea.style.display = 'none';
 
             try {
-                const response = await fetch('/.netlify/functions/ask-about-recipe', {
+                const response = await fetchWithTimeout('/.netlify/functions/ask-about-recipe', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -3109,7 +3129,7 @@ async function uploadRecipePhoto(recipeId, file) {
     console.log('Base64 conversion complete, uploading to Cloudinary...');
 
     try {
-        const response = await fetch('/.netlify/functions/upload-recipe-image', {
+        const response = await fetchWithTimeout('/.netlify/functions/upload-recipe-image', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -3118,7 +3138,7 @@ async function uploadRecipePhoto(recipeId, file) {
                 recipeId: recipeId,
                 userId: currentUser.uid
             })
-        });
+        }, 60000); // Image upload can legitimately take longer than the default timeout
 
         console.log('Cloudinary response status:', response.status);
 
@@ -3182,7 +3202,7 @@ async function deleteRecipePhoto(recipeId, publicId) {
 
     try {
         // Delete from Cloudinary
-        const response = await fetch('/.netlify/functions/upload-recipe-image', {
+        const response = await fetchWithTimeout('/.netlify/functions/upload-recipe-image', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ publicId: publicId })
@@ -5959,7 +5979,7 @@ async function loadErrorLogs() {
 
     try {
         const idToken = await currentUser.getIdToken();
-        const response = await fetch('/.netlify/functions/get-error-logs?limit=100', {
+        const response = await fetchWithTimeout('/.netlify/functions/get-error-logs?limit=100', {
             headers: { 'Authorization': `Bearer ${idToken}` }
         });
         const data = await response.json();
@@ -6045,7 +6065,7 @@ async function toggleErrorLogHandled(logId, handled) {
     if (!currentUser) return;
     try {
         const idToken = await currentUser.getIdToken();
-        const response = await fetch('/.netlify/functions/update-error-log', {
+        const response = await fetchWithTimeout('/.netlify/functions/update-error-log', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
             body: JSON.stringify({ id: logId, handled })
@@ -7787,7 +7807,7 @@ function showChatbotModal() {
 
             try {
                 console.log("askChefBotBtn: About to fetch Netlify function 'generate-recipe-chat'."); // Log 3
-                const response = await fetch("/.netlify/functions/generate-recipe-chat", {
+                const response = await fetchWithTimeout("/.netlify/functions/generate-recipe-chat", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -8796,7 +8816,7 @@ async function generatePlanWithChefBot() {
     if (askButton) askButton.disabled = true;
 
     try {
-        const response = await fetch('/.netlify/functions/generate-weekly-plan', {
+        const response = await fetchWithTimeout('/.netlify/functions/generate-weekly-plan', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestPayload)
@@ -9096,7 +9116,7 @@ async function confirmSelectedOptions() {
 
         try {
             const newIdeas = selections.filter(s => s.idea && !s.recipe);
-            const response = await fetch('/.netlify/functions/generate-recipes-from-ideas', {
+            const response = await fetchWithTimeout('/.netlify/functions/generate-recipes-from-ideas', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -9194,7 +9214,7 @@ async function regenerateDayOptions(day) {
     }
 
     try {
-        const response = await fetch('/.netlify/functions/regenerate-single-day', {
+        const response = await fetchWithTimeout('/.netlify/functions/regenerate-single-day', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -9367,7 +9387,7 @@ async function generateFullRecipesFromIdeas() {
     // --- Actual Backend Call ---
     try {
         // *** This needs a NEW Netlify function: '/.netlify/functions/generate-recipes-from-ideas' ***
-        const response = await fetch('/.netlify/functions/generate-recipes-from-ideas', {
+        const response = await fetchWithTimeout('/.netlify/functions/generate-recipes-from-ideas', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             // Send the array of chosen ideas { day, chosenIdea, type }
@@ -9588,7 +9608,7 @@ async function regenerateDaySuggestion(day) {
     if (actionsDiv) actionsDiv.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
 
     try {
-        const response = await fetch('/.netlify/functions/regenerate-single-day', {
+        const response = await fetchWithTimeout('/.netlify/functions/regenerate-single-day', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -9622,7 +9642,7 @@ async function getAlternativesForDay(day) {
     const actionsDiv = document.getElementById(`actions-${day}`);
     if (actionsDiv) actionsDiv.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
     try {
-        const response = await fetch('/.netlify/functions/get-day-alternatives', {
+        const response = await fetchWithTimeout('/.netlify/functions/get-day-alternatives', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -9686,7 +9706,7 @@ async function selectDayIdea(day) {
     const container = document.getElementById(`alternatives-${day}`);
     if (container) container.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Generating...';
     try {
-        const response = await fetch('/.netlify/functions/generate-recipes-from-ideas', {
+        const response = await fetchWithTimeout('/.netlify/functions/generate-recipes-from-ideas', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ideas: [{ day, idea, type: dayPlan.type }], dietaryRestrictions: userDietaryRestrictions || [] })
         });
@@ -9826,7 +9846,7 @@ async function _easyModeCallAI() {
     const dietaryRestrictions = await _easyModeGetDietary();
 
     try {
-        const resp = await fetch('/.netlify/functions/conversational-planner', {
+        const resp = await fetchWithTimeout('/.netlify/functions/conversational-planner', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -10043,7 +10063,7 @@ async function submitRefinement(day) {
     if (actionsDiv) actionsDiv.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
     hideRefinementInput(day);
     try {
-        const response = await fetch('/.netlify/functions/regenerate-single-day', {
+        const response = await fetchWithTimeout('/.netlify/functions/regenerate-single-day', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 dayPlan: { day, type: dayPlan.type, suggestionMode: dayPlan.suggestionMode || 'mix',

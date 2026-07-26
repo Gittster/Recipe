@@ -39,8 +39,12 @@ exports.handler = async (event) => {
     const genAI = new GoogleGenerativeAI(API_KEY);
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
-    // Retry wrapper to handle transient rate-limit/heavy-use errors from Gemini
-    async function retryGenerateContent(modelInstance, payload, attempts = 5, baseDelay = 500) {
+    // Retry wrapper to handle transient rate-limit/heavy-use errors from Gemini.
+    // Kept short and bounded: Netlify's function timeout isn't being raised, so
+    // this stays at 2 attempts / a short fixed delay rather than the longer
+    // exponential backoff used (and since retuned down) elsewhere - enough for
+    // one quick retry on a blip without eating the whole timeout budget.
+    async function retryGenerateContent(modelInstance, payload, attempts = 2, baseDelay = 300) {
         for (let i = 0; i < attempts; i++) {
             try {
                 return await modelInstance.generateContent(payload);
@@ -48,7 +52,7 @@ exports.handler = async (event) => {
                 const msg = err && err.message ? err.message : '';
                 const shouldRetry = /429|rate limit|quota|temporar|timeout|service unavailable/i.test(msg);
                 if (i === attempts - 1 || !shouldRetry) throw err;
-                const jitter = Math.floor(Math.random() * 300) + 100;
+                const jitter = Math.floor(Math.random() * 150);
                 const delay = baseDelay * Math.pow(2, i) + jitter;
                 console.warn(`parse-recipe-text.js: Retry attempt ${i + 1} failed: ${msg}. Backing off ${delay}ms.`);
                 await new Promise(r => setTimeout(r, delay));
@@ -79,12 +83,12 @@ exports.handler = async (event) => {
     const safetySettings = [ /* ... your settings ... */ ];
 
     try {
-        const result = await model.generateContent({
+        const result = await retryGenerateContent(model, {
             contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
             generationConfig,
             safetySettings,
         });
-        
+
         // --- All of your existing robust response parsing and cleaning ---
         if (result.response && result.response.candidates && result.response.candidates.length > 0) {
             const candidate = result.response.candidates[0];

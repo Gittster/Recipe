@@ -98,8 +98,12 @@ exports.handler = async (event) => {
 
     console.log("generate-recipe-chat.js: Attempting to generate content with Gemini.");
 
-    // Retry wrapper to handle transient rate-limit/heavy-use errors from Gemini
-    async function retryGenerateContent(modelInstance, payload, attempts = 5, baseDelay = 500) {
+    // Retry wrapper to handle transient rate-limit/heavy-use errors from Gemini.
+    // Kept short and bounded: Netlify's function timeout isn't being raised, and 5
+    // exponential-backoff attempts alone summed to ~8-9s before any Gemini call
+    // time, which reliably turned transient 429/503s into an opaque 502 instead
+    // of a successful retry. One quick retry still catches the common blip case.
+    async function retryGenerateContent(modelInstance, payload, attempts = 2, baseDelay = 300) {
         for (let i = 0; i < attempts; i++) {
             try {
                 return await modelInstance.generateContent(payload);
@@ -107,7 +111,7 @@ exports.handler = async (event) => {
                 const msg = err && err.message ? err.message : '';
                 const shouldRetry = /429|rate limit|quota|temporar|timeout|service unavailable/i.test(msg);
                 if (i === attempts - 1 || !shouldRetry) throw err;
-                const jitter = Math.floor(Math.random() * 300) + 100;
+                const jitter = Math.floor(Math.random() * 150);
                 const delay = baseDelay * Math.pow(2, i) + jitter;
                 console.warn(`generate-recipe-chat.js: Retry attempt ${i + 1} failed: ${msg}. Backing off ${delay}ms.`);
                 await new Promise(r => setTimeout(r, delay));

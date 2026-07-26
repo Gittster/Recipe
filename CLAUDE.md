@@ -73,6 +73,9 @@ All functions use `process.env.CONTEXT === 'dev'` to detect local development an
 - All Netlify functions follow the same structure: CORS headers, OPTIONS handling, POST validation, Gemini AI call, JSON response
 - Functions expect JSON body with specific fields (varies by function)
 - AI responses are parsed and validated before returning to client
+- Client-supplied array/object fields (e.g. `ingredients`, `instructions`, `existingRecipes`, `dietaryRestrictions`) must be type-checked (`Array.isArray`, `typeof`) before calling array/string methods on them, and that logic must live inside a try/catch. A client-sent shape mismatch that throws uncaught crashes the whole function invocation, which Netlify surfaces to the browser as an opaque 502 instead of a handled JSON error.
+- Gemini retry wrappers (`retryGenerateContent`/`callWithRetry`, present in most AI functions) are intentionally short: 2 attempts, ~300-600ms base delay. Netlify's function timeout is not raised, so longer exponential backoff (previously up to 5 attempts / ~9s of delay alone) reliably turned a transient 429/503 into a guaranteed timeout instead of a successful retry.
+- Client-side `fetchWithTimeout()` (top of `script.js`) wraps every `fetch()` call to a Netlify function with a default 30s abort timeout (60s for the two image-upload endpoints) so a hung request can't leave the UI spinning indefinitely; use it instead of bare `fetch()` for any new Netlify function call.
 
 ## Recipe Card System
 Recipe cards use a compact/expand pattern:

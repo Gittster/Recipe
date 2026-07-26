@@ -1,6 +1,10 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-const RETRY_DELAYS = [1000, 2000, 4000];
+// Kept short and bounded: Netlify's function timeout isn't being raised, and the
+// old [1000, 2000, 4000] delays summed to ~7s before any Gemini call time, which
+// reliably turned transient 429/503s into an opaque 502 instead of a successful
+// retry. One quick retry still catches the common blip case.
+const RETRY_DELAYS = [300, 600];
 
 async function callWithRetry(model, contents, config, attempt = 0) {
     try {
