@@ -32,6 +32,12 @@ mark {
 /* --- 2. Main Layout --- */
 .app-container {
     background-color: #f8f9fa; /* A slightly off-white background for the whole app */
+    /* Bootstrap's vh-100 uses a static 100vh, which on mobile browsers doesn't
+       track the address bar showing/hiding the way position:fixed elements do.
+       That mismatch is what let #bottomNavBar cover the last (collapsed) recipe
+       card when the list barely overflowed the viewport. dvh tracks the real
+       visible area, keeping this container's height in sync with the fixed nav. */
+    height: 100dvh !important;
 }
 
 /* Top bar: fixed height and sits above main content */
