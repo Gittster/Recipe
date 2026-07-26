@@ -23,6 +23,7 @@ A recipe management web application that stores recipes locally using IndexedDB 
 │   ├── generate-recipe-chat.js    # Chat-based recipe generation
 │   ├── generate-recipes-from-ideas.js  # Bulk recipe ideas
 │   ├── generate-weekly-plan.js    # Weekly meal planning
+│   ├── get-error-logs.js          # Admin-only: reads errorLogs from Firestore
 │   ├── log-error.js               # Client-side error logging -> Firestore
 │   ├── ocr.js                     # OCR text extraction
 │   ├── parse-recipe-text.js       # Parse recipe from text
@@ -32,10 +33,13 @@ A recipe management web application that stores recipes locally using IndexedDB 
 
 ## Environment Variables
 - `GOOGLE_GEMINI_API_KEY` - Required for all AI functions
-- `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` - Firebase Admin SDK service account credentials, required by `log-error.js` to write to the `errorLogs` Firestore collection. Generate via Firebase Console > Project Settings > Service Accounts > Generate new private key; `FIREBASE_PRIVATE_KEY` must have its newlines escaped as `\n` when stored as a Netlify env var.
+- `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` - Firebase Admin SDK service account credentials, required by `log-error.js` and `get-error-logs.js` to read/write the `errorLogs` Firestore collection. Generate via Firebase Console > Project Settings > Service Accounts > Generate new private key; `FIREBASE_PRIVATE_KEY` must have its newlines escaped as `\n` when stored as a Netlify env var.
+- `ADMIN_EMAILS` - Comma-separated list of Firebase Auth login emails allowed to view error logs via `get-error-logs.js` (e.g. `you@example.com,other@example.com`). Matched case-insensitively against the caller's verified Firebase ID token email.
 
 ## Error Logging
 Client-side errors are automatically captured and sent to the `log-error` Netlify function, which writes them to the `errorLogs` Firestore collection. This covers uncaught exceptions, unhandled promise rejections, and every existing `console.error()` call in `script.js` (via a wrapped `console.error`, set up once near the top of the file) — no need to instrument individual call sites. Each entry includes the error message/stack, current view, viewport size, user agent, logged-in user ID (or local-mode flag), and a rolling breadcrumb trail of recent console activity. Client-side dedup (10s window) and a 25-log session cap keep repeated/looping errors from flooding Firestore.
+
+**Viewing logs**: Signed-in users see a "View Error Logs" link in Settings > General. It calls `get-error-logs.js` with the user's Firebase ID token in the `Authorization: Bearer` header; the function verifies the token server-side and checks the email against `ADMIN_EMAILS` before returning anything — non-admins get a 403 with a friendly message. The gate is enforced server-side, not just hidden in the UI.
 
 ## Local Development
 

@@ -375,6 +375,7 @@
                                 <div id="accountInfoSummary">
                                     <p class="text-muted small mb-1">Account Info:</p>
                                     <p class="small mb-0"><i class="bi bi-person-check-fill me-2"></i> <span id="settingsUserEmail">Loading...</span></p>
+                                    <button class="btn btn-link btn-sm p-0 mt-2 d-block" onclick="openErrorLogsModal()"><i class="bi bi-bug-fill me-1"></i> View Error Logs</button>
                                     <button class="btn btn-link btn-sm text-danger p-0 mt-2" onclick="signOut()"><i class="bi bi-box-arrow-right me-1"></i> Log Out</button>
                                 </div>
                             </div>
@@ -408,6 +409,25 @@
                     <div id="settingsSaveStatus" class="small me-auto"></div>
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
                     <button type="button" class="btn btn-primary" onclick="saveUserSettings()">Save Settings</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="errorLogsModal" tabindex="-1" aria-labelledby="errorLogsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="errorLogsModalLabel"><i class="bi bi-bug-fill me-2"></i>Error Logs</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="errorLogsStatus" class="text-muted small mb-2">Loading...</div>
+                    <div id="errorLogsList"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="loadErrorLogs()"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>

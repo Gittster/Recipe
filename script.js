@@ -17,6 +17,7 @@ let pasteTextModalInstance = null;  // for #pasteTextModal
 let urlInputModalInstance = null;   // for #urlInputModal
 let dedicatedRecipePhotoInput = null; // <<< ADD THIS DECLARATION HERE
 let userSettingsModalInstance = null;
+let errorLogsModalInstance = null;
 let currentWeeklyPlan = {};
 
 // Track which recipe cards are expanded (persists across re-renders)
@@ -188,6 +189,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const settingsModalElement = document.getElementById('userSettingsModal');
     if (settingsModalElement) {
         userSettingsModalInstance = new bootstrap.Modal(settingsModalElement);
+    }
+    const errorLogsModalElement = document.getElementById('errorLogsModal');
+    if (errorLogsModalElement) {
+        errorLogsModalInstance = new bootstrap.Modal(errorLogsModalElement);
     }
 
     // Sidebar viewport adjustment — shift the single content wrapper on desktop
@@ -5978,6 +5983,74 @@ async function openUserSettingsModal() {
     } catch (error) {
         console.error("Error loading user settings:", error);
         alert("Could not load your settings. " + error.message);
+    }
+}
+
+async function openErrorLogsModal() {
+    if (!errorLogsModalInstance || !currentUser) return;
+    errorLogsModalInstance.show();
+    await loadErrorLogs();
+}
+
+async function loadErrorLogs() {
+    const statusEl = document.getElementById('errorLogsStatus');
+    const listEl = document.getElementById('errorLogsList');
+    if (!statusEl || !listEl || !currentUser) return;
+
+    statusEl.textContent = 'Loading...';
+    listEl.innerHTML = '';
+
+    try {
+        const idToken = await currentUser.getIdToken();
+        const response = await fetch('/.netlify/functions/get-error-logs?limit=100', {
+            headers: { 'Authorization': `Bearer ${idToken}` }
+        });
+        const data = await response.json();
+
+        if (response.status === 403) {
+            statusEl.textContent = "You don't have permission to view error logs.";
+            return;
+        }
+        if (!response.ok) {
+            statusEl.textContent = `Error: ${data.error || 'Failed to load error logs.'}`;
+            return;
+        }
+
+        const logs = data.logs || [];
+        statusEl.textContent = logs.length
+            ? `Showing ${logs.length} most recent error(s).`
+            : 'No errors logged yet.';
+
+        listEl.innerHTML = logs.map(log => {
+            const ctx = log.context || {};
+            const when = log.createdAt ? new Date(log.createdAt).toLocaleString() : 'Unknown time';
+            const levelBadgeClass = (log.level === 'uncaught-exception' || log.level === 'unhandled-rejection')
+                ? 'bg-danger' : 'bg-warning text-dark';
+            const userLabel = ctx.userId ? ctx.userId : (ctx.isLocalMode ? 'Local/guest' : 'Unknown');
+
+            return `
+                <details class="border rounded p-2 mb-2">
+                    <summary class="d-flex justify-content-between align-items-start gap-2" style="cursor:pointer;">
+                        <span class="flex-grow-1">
+                            <span class="badge ${levelBadgeClass} me-2">${escapeHtml(log.level || 'error')}</span>
+                            ${escapeHtml((log.message || '').slice(0, 140))}
+                        </span>
+                        <span class="text-muted small text-nowrap">${escapeHtml(when)}</span>
+                    </summary>
+                    <div class="mt-2 small">
+                        <div><strong>View:</strong> ${escapeHtml(ctx.currentView || 'Unknown')}</div>
+                        <div><strong>User:</strong> ${escapeHtml(userLabel)}</div>
+                        <div><strong>URL:</strong> ${escapeHtml(ctx.url || 'Unknown')}</div>
+                        <div><strong>Viewport:</strong> ${ctx.viewport ? escapeHtml(`${ctx.viewport.width}x${ctx.viewport.height}`) : 'Unknown'}</div>
+                        <div><strong>User agent:</strong> ${escapeHtml(ctx.userAgent || 'Unknown')}</div>
+                        ${log.stack ? `<div class="mt-1"><strong>Stack:</strong><pre class="bg-light p-2 rounded small mb-0" style="white-space:pre-wrap;">${escapeHtml(log.stack)}</pre></div>` : ''}
+                        ${Array.isArray(ctx.breadcrumbs) && ctx.breadcrumbs.length ? `<div class="mt-1"><strong>Recent console activity:</strong><pre class="bg-light p-2 rounded small mb-0" style="white-space:pre-wrap;">${escapeHtml(ctx.breadcrumbs.join('\n'))}</pre></div>` : ''}
+                    </div>
+                </details>
+            `;
+        }).join('');
+    } catch (error) {
+        statusEl.textContent = `Error: ${error.message}`;
     }
 }
 

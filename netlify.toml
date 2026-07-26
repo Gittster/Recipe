@@ -7,6 +7,9 @@
 [functions.log-error]
   external_node_modules = ["firebase-admin"]
 
+[functions.get-error-logs]
+  external_node_modules = ["firebase-admin"]
+
 [dev]
   port = 8888
   targetPort = 5500
