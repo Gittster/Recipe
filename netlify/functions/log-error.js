@@ -30,6 +30,29 @@ function truncate(value, max) {
     return value.length > max ? value.slice(0, max) + "...[truncated]" : value;
 }
 
+const MAX_EXTRA_JSON_LENGTH = 3000;
+
+// "extra" is an arbitrary, per-call-site object callers pass to add debugging
+// context (e.g. the recipe and question a user was asking about when an error
+// hit). Cap its serialized size so a careless call site can't blow up a doc.
+function sanitizeExtra(extra) {
+    if (!extra || typeof extra !== "object" || Array.isArray(extra)) return null;
+    let json;
+    try {
+        json = JSON.stringify(extra);
+    } catch (_) {
+        return null;
+    }
+    if (json.length > MAX_EXTRA_JSON_LENGTH) {
+        return { _truncated: true, preview: json.slice(0, MAX_EXTRA_JSON_LENGTH) + "...[truncated]" };
+    }
+    try {
+        return JSON.parse(json);
+    } catch (_) {
+        return null;
+    }
+}
+
 exports.handler = async (event) => {
     const headers = {
         "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
@@ -84,7 +107,8 @@ exports.handler = async (event) => {
             isLocalMode: !!(context && context.isLocalMode),
             breadcrumbs: Array.isArray(context && context.breadcrumbs)
                 ? context.breadcrumbs.slice(-MAX_BREADCRUMBS).map(b => truncate(String(b), 500))
-                : []
+                : [],
+            extra: sanitizeExtra(context && context.extra)
         },
         createdAt: admin.firestore.FieldValue.serverTimestamp()
     };

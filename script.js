@@ -44,6 +44,10 @@ const expandedRecipeIds = new Set();
         try { return JSON.stringify(arg); } catch (_) { return String(arg); }
     }
 
+    function isPlainObject(value) {
+        return value !== null && typeof value === 'object' && !(value instanceof Error) && !Array.isArray(value);
+    }
+
     function pushBreadcrumb(level, args) {
         try {
             breadcrumbs.push(`[${level}] ${args.map(stringifyArg).join(' ')}`);
@@ -51,7 +55,7 @@ const expandedRecipeIds = new Set();
         } catch (_) { /* breadcrumb capture must never throw */ }
     }
 
-    function sendErrorLog({ message, stack, level }) {
+    function sendErrorLog({ message, stack, level, extra }) {
         try {
             if (!message) return;
             const signature = `${level}:${message}`;
@@ -61,6 +65,11 @@ const expandedRecipeIds = new Set();
             if (errorLogCount >= MAX_ERROR_LOGS_PER_SESSION) return;
             recentSignatures.set(signature, now);
             errorLogCount++;
+
+            let extraSafe = null;
+            if (extra) {
+                try { extraSafe = JSON.parse(JSON.stringify(extra)); } catch (_) { extraSafe = null; }
+            }
 
             const payload = {
                 message: String(message).slice(0, 2000),
@@ -73,7 +82,8 @@ const expandedRecipeIds = new Set();
                     currentView: document.getElementById('currentPageTitle')?.textContent || null,
                     userId: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.uid : null,
                     isLocalMode: !(typeof currentUser !== 'undefined' && currentUser),
-                    breadcrumbs: breadcrumbs.slice(-10)
+                    breadcrumbs: breadcrumbs.slice(-10),
+                    extra: extraSafe
                 }
             };
 
@@ -90,10 +100,17 @@ const expandedRecipeIds = new Set();
         originalConsoleError(...args);
         pushBreadcrumb('error', args);
         const errorArg = args.find(a => a instanceof Error);
+        // A trailing plain-object argument is treated as structured debugging
+        // context (e.g. console.error("msg", err, { recipeId, userQuestion }))
+        // instead of being folded into the message text as "[object Object]".
+        const lastArg = args[args.length - 1];
+        const hasExtra = isPlainObject(lastArg);
+        const messageArgs = hasExtra ? args.slice(0, -1) : args;
         sendErrorLog({
-            message: args.map(stringifyArg).join(' '),
+            message: messageArgs.map(stringifyArg).join(' '),
             stack: errorArg ? errorArg.stack : null,
-            level: 'console.error'
+            level: 'console.error',
+            extra: hasExtra ? lastArg : null
         });
     };
 
@@ -3024,7 +3041,12 @@ function openRecipeSpecificChatModal(recipe) {
                 }
             } catch (err) {
                 addChatMessage(`Error: ${err.message}`, 'bot', true);
-                console.error("Error in recipe chat send:", err);
+                console.error("Error in recipe chat send:", err, {
+                    recipeId: recipe.id,
+                    recipeName: recipe.name,
+                    userQuestion,
+                    historyLength: conversationHistory.length
+                });
             } finally {
                 if(sendBtn) sendBtn.disabled = false;
                 if(sendBtn) sendBtn.innerHTML = '<i class="bi bi-send-fill"></i> Send';
@@ -6051,6 +6073,7 @@ async function loadErrorLogs() {
                         <div><strong>Viewport:</strong> ${ctx.viewport ? escapeHtml(`${ctx.viewport.width}x${ctx.viewport.height}`) : 'Unknown'}</div>
                         <div><strong>User agent:</strong> ${escapeHtml(ctx.userAgent || 'Unknown')}</div>
                         ${log.stack ? `<div class="mt-1"><strong>Stack:</strong><pre class="bg-light p-2 rounded small mb-0" style="white-space:pre-wrap;">${escapeHtml(log.stack)}</pre></div>` : ''}
+                        ${ctx.extra ? `<div class="mt-1"><strong>Context:</strong><pre class="bg-light p-2 rounded small mb-0" style="white-space:pre-wrap;">${escapeHtml(JSON.stringify(ctx.extra, null, 2))}</pre></div>` : ''}
                         ${Array.isArray(ctx.breadcrumbs) && ctx.breadcrumbs.length ? `<div class="mt-1"><strong>Recent console activity:</strong><pre class="bg-light p-2 rounded small mb-0" style="white-space:pre-wrap;">${escapeHtml(ctx.breadcrumbs.join('\n'))}</pre></div>` : ''}
                     </div>
                 </details>
@@ -7807,7 +7830,10 @@ function showChatbotModal() {
                     chatbotRecipeDisplayArea.innerHTML = `<div class="alert alert-warning text-center mt-3">Sorry, Chef Bot couldn't generate a complete recipe. ${currentChatbotRecipe.error || ''}</div>`;
                 }
             } catch (error) {
-                console.error("Chatbot fetch error:", error);
+                console.error("Chatbot fetch error:", error, {
+                    userQuery,
+                    historyLength: conversationHistory.length
+                });
                 chatbotRecipeDisplayArea.innerHTML = `<div class="alert alert-danger text-center mt-3">An error occurred: ${error.message}. Please try again.</div>`;
             } finally {
                 askChefBotBtn.disabled = false;

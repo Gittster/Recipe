@@ -41,6 +41,8 @@ Client-side errors are automatically captured and sent to the `log-error` Netlif
 
 **Viewing logs**: Signed-in users see a "View Error Logs" link in Settings > General. It calls `get-error-logs.js` with the user's Firebase ID token in the `Authorization: Bearer` header; the function verifies the token server-side and checks the email against `ADMIN_EMAILS` before returning anything — non-admins get a 403 with a friendly message. The gate is enforced server-side, not just hidden in the UI.
 
+**Adding call-site-specific context**: pass a trailing plain object to `console.error()` to attach structured debugging context beyond the generic fields captured automatically (e.g. `console.error("Error in recipe chat send:", err, { recipeId, recipeName, userQuestion })`). It's excluded from the logged message text and stored separately as `context.extra`, shown in the viewer as a "Context" block. Only add this where the call site has genuinely useful local state (e.g. what the user typed, which recipe/id was involved) — most of the 170 existing `console.error()` calls don't need it.
+
 ## Local Development
 
 ### Setup
