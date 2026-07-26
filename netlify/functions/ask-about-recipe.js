@@ -147,7 +147,7 @@ exports.handler = async (event) => {
     // The full content to send, with history first, then the current user prompt
     const contentsForApi = [...apiHistory, { role: "user", parts: [{ text: currentUserTurnPrompt }] }];
     
-    const generationConfig = { temperature: 0.5, maxOutputTokens: 2048 }; // Slightly lower temp for more focused answers
+    const generationConfig = { temperature: 0.5, maxOutputTokens: 4096, responseMimeType: "application/json" }; // Slightly lower temp for more focused answers
     const safetySettings = [
         { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
         { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
