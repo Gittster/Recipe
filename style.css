@@ -229,7 +229,8 @@ mark {
 
 .recipe-card-details {
     max-height: 0;
-    overflow: hidden;
+    overflow-x: visible;
+    overflow-y: hidden;
     opacity: 0;
     transition: max-height 0.35s ease, opacity 0.25s ease;
 }

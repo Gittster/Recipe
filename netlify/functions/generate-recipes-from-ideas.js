@@ -58,6 +58,7 @@ For EACH recipe, provide:
 - A list of ingredients (each object with "name", "quantity", "unit"). Format quantity as string if needed (e.g., "1/2", "to taste").
 - Step-by-step instructions; return the instructions as a JSON array where each step string MUST begin with a step number in the format "N." or "N)" (for example: "1. Do this..."). Do NOT return a single string containing multiple numbered steps.
 - A few relevant tags (array of strings, e.g., ["dinner", "quick", "ai-generated"]).
+- Every field value must be plain text. Do NOT use markdown emphasis inside them — no "**bold**", "*italic*", "_underscore_", backticks, or "#" headers.
 
 Output ONLY a single valid JSON array where each element corresponds to one requested recipe. Each element MUST include the original "day" and "type" from the request, plus the generated "recipe" object containing "name", "ingredients", "instructions", and "tags".
 

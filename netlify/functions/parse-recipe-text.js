@@ -69,6 +69,7 @@ exports.handler = async (event) => {
       - "ingredients" should be an array of objects, where each object has "name" (string), "quantity" (string), and "unit" (string).
       - "instructions" should be a JSON array of step strings. Each step MUST begin with a step number in the format "N." or "N)" (e.g., "1. Preheat the oven..."). Do NOT return a single string containing multiple steps.
       - "tags" should be an array of relevant lowercase strings based on the recipe content.
+      - Every field value above must be plain text. Do NOT use markdown emphasis inside them — no "**bold**", "*italic*", "_underscore_", backticks, or "#" headers.
 
       Respond ONLY with a valid, minified JSON object. Do not include markdown formatting like \`\`\`json.
 

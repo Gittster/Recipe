@@ -79,6 +79,7 @@ exports.handler = async (event) => {
         - "instructions" MUST be a JSON array where each element is one step string and MUST begin with a step number in the format "N." or "N)" (for example: "1. Preheat the oven..." or "1) Preheat the oven...").
         - Do NOT provide a single long string containing multiple numbered steps; use one array element per numbered step.
         - Preserve measurements like "3-inch" or "3 in" inside step text; do not let them be misinterpreted as step numbers.
+        - All field values ("name", ingredient "name"s, "instructions" steps, "tags") MUST be plain text. Do NOT use markdown emphasis inside them — no "**bold**", "*italic*", "_underscore_", backticks, or "#" headers.
         - Use low creativity (temperature will be lowered) and avoid any surrounding explanation, markdown, or code fences. Return ONLY the JSON object.
     `;
 

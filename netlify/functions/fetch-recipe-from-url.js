@@ -106,6 +106,7 @@ The JSON object must have these keys: "name", "ingredients", "instructions", "ta
 - "ingredients": array of objects with "name" (string), "quantity" (string), "unit" (string).
 - "instructions": JSON array of step strings. Each step MUST begin with a step number like "1." or "1)". Do NOT return a single string with multiple steps.
 - "tags": array of relevant lowercase strings based on the recipe content.
+- Every field value must be plain text. Do NOT use markdown emphasis inside them — no "**bold**", "*italic*", "_underscore_", backticks, or "#" headers.
 
 Respond ONLY with a valid, minified JSON object. No markdown, no code fences.
 

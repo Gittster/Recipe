@@ -130,6 +130,7 @@ exports.handler = async (event) => {
               - For "instructions", provide the complete new string of instructions.
               - For "tags", provide the complete new array of tags.
         3. If no recipe modification is implied or feasible based on the question, the "suggestedUpdate" field in your JSON response must be null.
+        4. Every field value inside "suggestedUpdate" ("name", ingredient "name"s, "instructions", "tags") MUST be plain text. Do NOT use markdown emphasis inside them — no "**bold**", "*italic*", "_underscore_", backticks, or "#" headers.
 
         OUTPUT FORMAT:
         Return ONLY a single valid JSON object with NO surrounding text or markdown. The JSON object must have these exact keys:

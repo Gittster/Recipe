@@ -85,6 +85,7 @@ Important constraints:
 - Do NOT return a single string containing multiple numbered steps.
 - Preserve measurements such as "3-inch" or "3 in" inside step text; do not allow them to be treated as standalone step numbers.
 - If no food is detected, return {"error": "No recognizable food detected in the image."} (still JSON only).
+- Every field value must be plain text. Do NOT use markdown emphasis inside them — no "**bold**", "*italic*", "_underscore_", backticks, or "#" headers.
 - Output ONLY the JSON object with no surrounding text, markdown, or code fences.
         `;
     } else { // Default to 'extract' (original functionality)
@@ -102,6 +103,7 @@ Important constraints:
 - "instructions" MUST be a JSON array where each element is one step string and MUST begin with a step number in the format "N." or "N)". Do NOT return a single string containing multiple steps.
 - If parts are unreadable, make a best effort guess or use empty strings, but keep JSON valid.
 - If no recipe is detected, return {"error": "No recipe detected in the image."} (JSON only).
+- Every field value must be plain text. Do NOT use markdown emphasis inside them — no "**bold**", "*italic*", "_underscore_", backticks, or "#" headers.
 - Output ONLY the JSON object, no markdown, no code fences, no extra text.
         `;
     }
