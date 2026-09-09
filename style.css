@@ -236,7 +236,7 @@ mark {
 }
 
 .recipe-card-expanded .recipe-card-details {
-    max-height: 3000px; /* Large enough for any content */
+    max-height: 20000px; /* Large enough for any content, including long ingredient lists + detailed instructions on narrow screens */
     opacity: 1;
 }
 
