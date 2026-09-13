@@ -1225,9 +1225,9 @@ function applyAllRecipeFilters() {
         : (mobileInput && mobileInput.offsetParent !== null) ? mobileInput
         : (unifiedInput || mobileInput);
     const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : "";
-    const searchTermsArray = searchTerm.split(' ').filter(term => term.length > 0);
+    const parsedSearchTerms = parseSearchTerms(searchTerm);
 
-    let filteredList = [...recipes]; 
+    let filteredList = [...recipes];
 
     if (currentFolderId) {
         // If a specific folder is selected, start with only recipes from that folder
@@ -1237,14 +1237,14 @@ function applyAllRecipeFilters() {
         filteredList = [...recipes];
     }
 
-    if (searchTermsArray.length > 0) {
+    if (parsedSearchTerms.length > 0) {
         filteredList = filteredList.filter(recipe => {
             const searchableContent = [
                 recipe.name || "",
                 ...(recipe.ingredients || []).map(ing => ing.name || ""),
                 ...(recipe.tags || [])
             ].join(' ').toLowerCase();
-            return searchTermsArray.every(term => searchableContent.includes(term));
+            return parsedSearchTerms.every(term => searchTermMatches(searchableContent, term));
         });
     }
 
@@ -1274,9 +1274,8 @@ function applyAllRecipeFilters() {
     }
     
     const displayOptions = {
-        highlightNameTerm: searchTerm,
-        highlightIngredients: searchTermsArray,
-        highlightTags: searchTermsArray
+        highlightNameTerm: parsedSearchTerms.map(t => t.term).join(' '),
+        highlightTerms: parsedSearchTerms
     };
 
     displayRecipes(filteredList, 'recipeResults', displayOptions);
@@ -1305,10 +1304,39 @@ function filterRecipesByTag() {
   displayRecipes(filtered, 'recipeResults', { highlightTags: tagTerms });
 }
 
-function createHighlightRegex(term) {
+function createHighlightRegex(term, exact = false) {
     if (!term) return null;
     const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`(${escapedTerm})`, 'gi');
+    const pattern = exact ? `\\b(${escapedTerm})\\b` : `(${escapedTerm})`;
+    return new RegExp(pattern, 'gi');
+}
+
+// Splits a search box value into terms, treating "quoted" or 'quoted' phrases as
+// whole-word/whole-phrase matches (so searching "ham" won't match "hamburger"),
+// and any remaining unquoted words as plain substring matches (existing behavior).
+function parseSearchTerms(rawInput) {
+    if (!rawInput) return [];
+    const terms = [];
+    const quoteRegex = /"([^"]+)"|'([^']+)'/g;
+    let remaining = rawInput;
+    let match;
+    while ((match = quoteRegex.exec(rawInput)) !== null) {
+        const phrase = (match[1] || match[2]).trim().toLowerCase();
+        if (phrase) terms.push({ term: phrase, exact: true });
+        remaining = remaining.replace(match[0], ' ');
+    }
+    remaining.split(' ').map(t => t.trim().toLowerCase()).filter(Boolean).forEach(t => {
+        terms.push({ term: t, exact: false });
+    });
+    return terms;
+}
+
+function searchTermMatches(content, termObj) {
+    if (termObj.exact) {
+        const escaped = termObj.term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return new RegExp(`\\b${escaped}\\b`, 'i').test(content);
+    }
+    return content.includes(termObj.term);
 }
 
 async function handlePastedRecipeTextFromModal() {
@@ -3559,8 +3587,9 @@ function buildIngredientMatchIndicator(recipe, searchTerms) {
     const matchedIngredients = [];
     (recipe.ingredients || []).forEach(ing => {
         const ingName = typeof ing === 'object' ? (ing.name || '') : (ing || '');
-        searchTerms.forEach(term => {
-            if (ingName.toLowerCase().includes(term.toLowerCase())) {
+        const ingNameLower = ingName.toLowerCase();
+        searchTerms.forEach(termObj => {
+            if (searchTermMatches(ingNameLower, termObj)) {
                 if (!matchedIngredients.includes(ingName)) {
                     matchedIngredients.push(ingName);
                 }
@@ -3701,9 +3730,14 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
     }
 
     const nameRegex = options.highlightNameTerm ? createHighlightRegex(options.highlightNameTerm) : null;
-    const ingredientRegexes = options.highlightIngredients ? options.highlightIngredients.map(term => createHighlightRegex(term)).filter(r => r) : [];
-    const tagRegexes = options.highlightTags ? options.highlightTags.map(term => createHighlightRegex(term)).filter(r => r) : [];
-    const searchTerms = options.highlightIngredients || [];
+    // highlightTerms (array of {term, exact}) takes precedence when present (main search, with
+    // support for quoted whole-word terms); older callers pass plain highlightIngredients/highlightTags
+    // string arrays and get substring-only highlighting as before.
+    const highlightIngredientTerms = options.highlightTerms || (options.highlightIngredients || []).map(term => ({ term, exact: false }));
+    const highlightTagTerms = options.highlightTerms || (options.highlightTags || []).map(term => ({ term, exact: false }));
+    const ingredientRegexes = highlightIngredientTerms.map(t => createHighlightRegex(t.term, t.exact)).filter(r => r);
+    const tagRegexes = highlightTagTerms.map(t => createHighlightRegex(t.term, t.exact)).filter(r => r);
+    const searchTerms = highlightIngredientTerms;
 
     listToDisplay.forEach(recipe => {
         const card = document.createElement('div');
@@ -3769,15 +3803,13 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
                 tagBadge.className = 'badge bg-secondary';
                 let tagDisplay = tag;
                 let isTagHighlighted = false;
-                if (tagRegexes.length > 0) {
-                    tagRegexes.forEach(regex => {
-                        const searchTermFromRegex = regex.source.replace(/^\(|\)$/g, '');
-                        if (tag.toLowerCase().includes(searchTermFromRegex)) {
-                            tagDisplay = tag.replace(regex, '<mark>$1</mark>');
-                            isTagHighlighted = true;
-                        }
-                    });
-                }
+                tagRegexes.forEach(regex => {
+                    const replaced = tag.replace(regex, '<mark>$1</mark>');
+                    if (replaced !== tag) {
+                        tagDisplay = replaced;
+                        isTagHighlighted = true;
+                    }
+                });
                 if (isTagHighlighted) {
                     tagBadge.classList.remove('bg-secondary');
                     tagBadge.classList.add('bg-warning', 'text-dark');
@@ -3837,14 +3869,12 @@ function displayRecipes(listToDisplay, containerId = 'recipeResults', options = 
                 const nameTd = document.createElement('td');
                 const ingName = typeof ing === 'object' ? (ing.name || '') : (ing || '');
                 let ingNameDisplay = ingName;
-                if (ingredientRegexes.length > 0) {
-                    ingredientRegexes.forEach(regex => {
-                        const searchTermFromRegex = regex.source.replace(/^\(|\)$/g, '');
-                        if (ingName.toLowerCase().includes(searchTermFromRegex)) {
-                            ingNameDisplay = ingName.replace(regex, '<mark>$1</mark>');
-                        }
-                    });
-                }
+                ingredientRegexes.forEach(regex => {
+                    const replaced = ingName.replace(regex, '<mark>$1</mark>');
+                    if (replaced !== ingName) {
+                        ingNameDisplay = replaced;
+                    }
+                });
                 nameTd.innerHTML = ingNameDisplay;
                 const qtyTd = document.createElement('td');
                 qtyTd.textContent = typeof ing === 'object' ? (ing.quantity || '') : '';
