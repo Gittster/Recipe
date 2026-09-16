@@ -24,6 +24,9 @@ A recipe management web application that stores recipes locally using IndexedDB 
 │   ├── generate-recipes-from-ideas.js  # Bulk recipe ideas
 │   ├── generate-weekly-plan.js    # Weekly meal planning
 │   ├── get-error-logs.js          # Admin-only: reads errorLogs from Firestore
+│   ├── get-meal-plan.js           # SweetSuite-only: read-only planning entries in a date range
+│   ├── get-recipe.js              # SweetSuite-only: read-only single recipe by id
+│   ├── get-shopping-list.js       # SweetSuite-only: read-only shopping list ingredients
 │   ├── log-error.js               # Client-side error logging -> Firestore
 │   ├── ocr.js                     # OCR text extraction
 │   ├── parse-recipe-text.js       # Parse recipe from text
@@ -36,6 +39,8 @@ A recipe management web application that stores recipes locally using IndexedDB 
 - `GOOGLE_GEMINI_API_KEY` - Required for all AI functions
 - `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` - Firebase Admin SDK service account credentials, required by `log-error.js` and `get-error-logs.js` to read/write the `errorLogs` Firestore collection. Generate via Firebase Console > Project Settings > Service Accounts > Generate new private key; `FIREBASE_PRIVATE_KEY` must have its newlines escaped as `\n` when stored as a Netlify env var.
 - `ADMIN_EMAILS` - Comma-separated list of Firebase Auth login emails allowed to view error logs via `get-error-logs.js` (e.g. `you@example.com,other@example.com`). Matched case-insensitively against the caller's verified Firebase ID token email.
+- `SWEETSUITE_API_KEY` - Shared secret the SweetSuite dashboard sends as the `X-SweetSuite-Key` header on every call to `get-meal-plan.js`, `get-shopping-list.js`, and `get-recipe.js`. Generate any long random string; it must match the value SweetSuite is configured with.
+- `HOUSEHOLD_EMAIL` - The Firebase Auth login email whose `planning`/`shopping`/`recipes` data the SweetSuite endpoints expose. Resolved to a uid via `admin.auth().getUserByEmail()` once per warm function instance (not hardcoded in source).
 
 ## Error Logging
 Client-side errors are automatically captured and sent to the `log-error` Netlify function, which writes them to the `errorLogs` Firestore collection. This covers uncaught exceptions, unhandled promise rejections, and every existing `console.error()` call in `script.js` (via a wrapped `console.error`, set up once near the top of the file) — no need to instrument individual call sites. Each entry includes the error message/stack, current view, viewport size, user agent, logged-in user ID (or local-mode flag), and a rolling breadcrumb trail of recent console activity. Client-side dedup (10s window) and a 25-log session cap keep repeated/looping errors from flooding Firestore.
@@ -45,6 +50,15 @@ Client-side errors are automatically captured and sent to the `log-error` Netlif
 **Marking logs handled**: each entry has a "Mark as Handled" button (calls `update-error-log.js`, same admin-token gate as `get-error-logs.js`) that sets `handled`/`handledAt`/`handledBy` on the Firestore doc. The viewer's "Hide handled" checkbox (checked by default) filters them out of the list client-side from the already-fetched batch, no refetch needed.
 
 **Adding call-site-specific context**: pass a trailing plain object to `console.error()` to attach structured debugging context beyond the generic fields captured automatically (e.g. `console.error("Error in recipe chat send:", err, { recipeId, recipeName, userQuestion })`). It's excluded from the logged message text and stored separately as `context.extra`, shown in the viewer as a "Context" block. Only add this where the call site has genuinely useful local state (e.g. what the user typed, which recipe/id was involved) — most of the 170 existing `console.error()` calls don't need it.
+
+## SweetSuite Integration
+Three read-only endpoints expose this app's Firestore data to the [SweetSuite](https://github.com/Gittster/SweetSuite) family dashboard, which renders its own Meals tab natively rather than embedding this app in an iframe. All three require the `X-SweetSuite-Key` header (see `SWEETSUITE_API_KEY` above) and resolve the same `HOUSEHOLD_EMAIL` account's data — none of them touch `script.js` or any existing function.
+
+- `GET /.netlify/functions/get-meal-plan?start=YYYY-MM-DD&end=YYYY-MM-DD` -> `{ meals: [{ id, date, recipeName, recipeId }] }`. Defaults to today through +14 days if `start`/`end` are omitted.
+- `GET /.netlify/functions/get-shopping-list` -> `{ ingredients: [{ name, quantity, unit, checked }] }`.
+- `GET /.netlify/functions/get-recipe?id=<recipeId>` -> `{ recipe: { id, name, imageUrl, ingredients, instructions, tags, rating } }`. 404s if the id doesn't belong to the household account.
+
+`get-meal-plan.js` queries `planning` with an equality filter on `uid` and a range filter on `date`, which needs a Firestore composite index. The first real query will fail with an error containing a direct "create this index" link — click it once and the query works from then on.
 
 ## Local Development
 
