@@ -13,6 +13,15 @@
 [functions.update-error-log]
   external_node_modules = ["firebase-admin"]
 
+[functions.get-meal-plan]
+  external_node_modules = ["firebase-admin"]
+
+[functions.get-shopping-list]
+  external_node_modules = ["firebase-admin"]
+
+[functions.get-recipe]
+  external_node_modules = ["firebase-admin"]
+
 [dev]
   port = 8888
   targetPort = 5500
