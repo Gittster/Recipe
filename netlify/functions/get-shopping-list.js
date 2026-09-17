@@ -25,18 +25,18 @@ if (!admin.apps.length) {
     firebaseReady = true;
 }
 
-let cachedHouseholdUid = null;
-async function getHouseholdUid() {
-    if (cachedHouseholdUid) return cachedHouseholdUid;
-    const user = await admin.auth().getUserByEmail(HOUSEHOLD_EMAIL);
-    cachedHouseholdUid = user.uid;
-    return cachedHouseholdUid;
+const uidCache = new Map();
+async function resolveUid(email) {
+    if (uidCache.has(email)) return uidCache.get(email);
+    const user = await admin.auth().getUserByEmail(email);
+    uidCache.set(email, user.uid);
+    return user.uid;
 }
 
 exports.handler = async (event) => {
     const headers = {
         "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-        "Access-Control-Allow-Headers": "Content-Type, X-SweetSuite-Key",
+        "Access-Control-Allow-Headers": "Content-Type, X-SweetSuite-Key, X-Household-Email",
         "Access-Control-Allow-Methods": "GET, OPTIONS",
         "Content-Type": "application/json"
     };
@@ -50,8 +50,8 @@ exports.handler = async (event) => {
     if (!firebaseReady) {
         return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server configuration error.' }) };
     }
-    if (!SWEETSUITE_API_KEY || !HOUSEHOLD_EMAIL) {
-        console.error("get-shopping-list.js: SWEETSUITE_API_KEY or HOUSEHOLD_EMAIL is not configured.");
+    if (!SWEETSUITE_API_KEY) {
+        console.error("get-shopping-list.js: SWEETSUITE_API_KEY is not configured.");
         return { statusCode: 500, headers, body: JSON.stringify({ error: 'SweetSuite access is not configured.' }) };
     }
 
@@ -60,8 +60,13 @@ exports.handler = async (event) => {
         return { statusCode: 401, headers, body: JSON.stringify({ error: 'Missing or invalid API key.' }) };
     }
 
+    const targetEmail = event.headers['x-household-email'] || event.headers['X-Household-Email'] || HOUSEHOLD_EMAIL;
+    if (!targetEmail) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: 'No household email provided or configured.' }) };
+    }
+
     try {
-        const uid = await getHouseholdUid();
+        const uid = await resolveUid(targetEmail);
         const doc = await admin.firestore().collection('shopping').doc(uid).get();
         const ingredients = doc.exists ? (doc.data().ingredients || []) : [];
 
