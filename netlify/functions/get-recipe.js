@@ -85,7 +85,10 @@ exports.handler = async (event) => {
             name: data.name || null,
             imageUrl: data.imageUrl || null,
             ingredients: data.ingredients || [],
-            instructions: data.instructions || '',
+            // Stored as either a newline-joined string or an array of steps
+            // depending on how the recipe was created (see script.js's own
+            // handling of this) — always return a string.
+            instructions: Array.isArray(data.instructions) ? data.instructions.join('\n') : (data.instructions || ''),
             tags: data.tags || [],
             rating: data.rating || 0
         };
