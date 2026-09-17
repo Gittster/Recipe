@@ -27,6 +27,7 @@ A recipe management web application that stores recipes locally using IndexedDB 
 │   ├── get-meal-plan.js           # SweetSuite-only: read-only planning entries in a date range
 │   ├── get-recipe.js              # SweetSuite-only: read-only single recipe by id
 │   ├── get-shopping-list.js       # SweetSuite-only: read-only shopping list ingredients
+│   ├── update-shopping-item.js    # SweetSuite-only: toggles one shopping ingredient's checked status
 │   ├── log-error.js               # Client-side error logging -> Firestore
 │   ├── ocr.js                     # OCR text extraction
 │   ├── parse-recipe-text.js       # Parse recipe from text
@@ -39,7 +40,7 @@ A recipe management web application that stores recipes locally using IndexedDB 
 - `GOOGLE_GEMINI_API_KEY` - Required for all AI functions
 - `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` - Firebase Admin SDK service account credentials, required by `log-error.js` and `get-error-logs.js` to read/write the `errorLogs` Firestore collection. Generate via Firebase Console > Project Settings > Service Accounts > Generate new private key; `FIREBASE_PRIVATE_KEY` must have its newlines escaped as `\n` when stored as a Netlify env var.
 - `ADMIN_EMAILS` - Comma-separated list of Firebase Auth login emails allowed to view error logs via `get-error-logs.js` (e.g. `you@example.com,other@example.com`). Matched case-insensitively against the caller's verified Firebase ID token email.
-- `SWEETSUITE_API_KEY` - Shared secret the SweetSuite dashboard sends as the `X-SweetSuite-Key` header on every call to `get-meal-plan.js`, `get-shopping-list.js`, and `get-recipe.js`. Generate any long random string; it must match the value SweetSuite is configured with.
+- `SWEETSUITE_API_KEY` - Shared secret the SweetSuite dashboard sends as the `X-SweetSuite-Key` header on every call to `get-meal-plan.js`, `get-shopping-list.js`, `get-recipe.js`, and `update-shopping-item.js`. Generate any long random string; it must match the value SweetSuite is configured with.
 - `HOUSEHOLD_EMAIL` - Fallback Firebase Auth login email used only when a request doesn't send `X-Household-Email` (see below). Optional once SweetSuite always sends that header, but kept as a safety net for any other caller.
 
 ## Error Logging
@@ -58,6 +59,7 @@ Which account's data comes back is resolved per-request: SweetSuite forwards whi
 
 - `GET /.netlify/functions/get-meal-plan?start=YYYY-MM-DD&end=YYYY-MM-DD` -> `{ meals: [{ id, date, recipeName, recipeId }] }`. Defaults to today through +14 days if `start`/`end` are omitted.
 - `GET /.netlify/functions/get-shopping-list` -> `{ ingredients: [{ name, quantity, unit, checked }] }`.
+- `POST /.netlify/functions/update-shopping-item` with `{ index, checked }` -> `{ ingredients }` (the updated array). `index` is a position into the array `get-shopping-list` just returned for the same resolved account; the handler re-reads the doc fresh before mutating, so it's only vulnerable to a race if the list changes between SweetSuite's GET and this POST. There's no per-ingredient id in Firestore, so index is the only handle available — same approach the recipe app's own client uses internally.
 - `GET /.netlify/functions/get-recipe?id=<recipeId>` -> `{ recipe: { id, name, imageUrl, ingredients, instructions, tags, rating } }`. 404s if the id doesn't belong to the resolved account.
 
 `get-meal-plan.js` queries `planning` with an equality filter on `uid` and a range filter on `date`, which needs a Firestore composite index. The first real query will fail with an error containing a direct "create this index" link — click it once and the query works from then on.
