@@ -26,6 +26,7 @@ A recipe management web application that stores recipes locally using IndexedDB 
 │   ├── get-error-logs.js          # Admin-only: reads errorLogs from Firestore
 │   ├── get-meal-plan.js           # SweetSuite-only: read-only planning entries in a date range
 │   ├── get-recipe.js              # SweetSuite-only: read-only single recipe by id
+│   ├── get-recipes.js             # SweetSuite-only: read-only recipe library listing (summaries)
 │   ├── get-shopping-list.js       # SweetSuite-only: read-only shopping list ingredients
 │   ├── update-shopping-item.js    # SweetSuite-only: toggles one shopping ingredient's checked status
 │   ├── log-error.js               # Client-side error logging -> Firestore
@@ -40,7 +41,7 @@ A recipe management web application that stores recipes locally using IndexedDB 
 - `GOOGLE_GEMINI_API_KEY` - Required for all AI functions
 - `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` - Firebase Admin SDK service account credentials, required by `log-error.js` and `get-error-logs.js` to read/write the `errorLogs` Firestore collection. Generate via Firebase Console > Project Settings > Service Accounts > Generate new private key; `FIREBASE_PRIVATE_KEY` must have its newlines escaped as `\n` when stored as a Netlify env var.
 - `ADMIN_EMAILS` - Comma-separated list of Firebase Auth login emails allowed to view error logs via `get-error-logs.js` (e.g. `you@example.com,other@example.com`). Matched case-insensitively against the caller's verified Firebase ID token email.
-- `SWEETSUITE_API_KEY` - Shared secret the SweetSuite dashboard sends as the `X-SweetSuite-Key` header on every call to `get-meal-plan.js`, `get-shopping-list.js`, `get-recipe.js`, and `update-shopping-item.js`. Generate any long random string; it must match the value SweetSuite is configured with.
+- `SWEETSUITE_API_KEY` - Shared secret the SweetSuite dashboard sends as the `X-SweetSuite-Key` header on every call to `get-meal-plan.js`, `get-shopping-list.js`, `get-recipe.js`, `get-recipes.js`, and `update-shopping-item.js`. Generate any long random string; it must match the value SweetSuite is configured with.
 - `HOUSEHOLD_EMAIL` - Fallback Firebase Auth login email used only when a request doesn't send `X-Household-Email` (see below). Optional once SweetSuite always sends that header, but kept as a safety net for any other caller.
 
 ## Error Logging
@@ -53,7 +54,7 @@ Client-side errors are automatically captured and sent to the `log-error` Netlif
 **Adding call-site-specific context**: pass a trailing plain object to `console.error()` to attach structured debugging context beyond the generic fields captured automatically (e.g. `console.error("Error in recipe chat send:", err, { recipeId, recipeName, userQuestion })`). It's excluded from the logged message text and stored separately as `context.extra`, shown in the viewer as a "Context" block. Only add this where the call site has genuinely useful local state (e.g. what the user typed, which recipe/id was involved) — most of the 170 existing `console.error()` calls don't need it.
 
 ## SweetSuite Integration
-Three read-only endpoints expose this app's Firestore data to the [SweetSuite](https://github.com/Gittster/SweetSuite) family dashboard, which renders its own Meals tab natively rather than embedding this app in an iframe. All three require the `X-SweetSuite-Key` header (see `SWEETSUITE_API_KEY` above) — none of them touch `script.js` or any existing function.
+A handful of endpoints expose this app's Firestore data to the [SweetSuite](https://github.com/Gittster/SweetSuite) family dashboard, which renders its own Meals/Shopping tabs natively rather than embedding this app in an iframe. All of them require the `X-SweetSuite-Key` header (see `SWEETSUITE_API_KEY` above) — none of them touch `script.js` or any existing function.
 
 Which account's data comes back is resolved per-request: SweetSuite forwards whichever household member is currently signed into its own Google login as an `X-Household-Email` header, and that email is looked up via `admin.auth().getUserByEmail()` (cached per warm function instance, keyed by email). If the header is omitted, `HOUSEHOLD_EMAIL` is used as a fallback. This only works if the person's ErinsList login uses the same email as their SweetSuite sign-in — if the lookup fails (no matching Firebase Auth user), the request fails with a 500, same as any other Firestore error.
 
@@ -61,8 +62,9 @@ Which account's data comes back is resolved per-request: SweetSuite forwards whi
 - `GET /.netlify/functions/get-shopping-list` -> `{ ingredients: [{ name, quantity, unit, checked }] }`.
 - `POST /.netlify/functions/update-shopping-item` with `{ index, checked }` -> `{ ingredients }` (the updated array). `index` is a position into the array `get-shopping-list` just returned for the same resolved account; the handler re-reads the doc fresh before mutating, so it's only vulnerable to a race if the list changes between SweetSuite's GET and this POST. There's no per-ingredient id in Firestore, so index is the only handle available — same approach the recipe app's own client uses internally.
 - `GET /.netlify/functions/get-recipe?id=<recipeId>` -> `{ recipe: { id, name, imageUrl, ingredients, instructions, tags, rating } }`. 404s if the id doesn't belong to the resolved account.
+- `GET /.netlify/functions/get-recipes` -> `{ recipes: [{ id, name, imageUrl, tags, rating }] }`. Full recipe library for the resolved account (summaries only — no `ingredients`/`instructions`; fetch those per-recipe via `get-recipe`), for SweetSuite's Recipes browser as opposed to just what's currently planned.
 
-`get-meal-plan.js` queries `planning` with an equality filter on `uid` and a range filter on `date`, which needs a Firestore composite index. The first real query will fail with an error containing a direct "create this index" link — click it once and the query works from then on.
+`get-meal-plan.js` queries `planning` with an equality filter on `uid` and a range filter on `date`, which needs a Firestore composite index. The first real query will fail with an error containing a direct "create this index" link — click it once and the query works from then on. `get-recipes.js` only filters on `uid` (no range/order), so it doesn't need one.
 
 ## Local Development
 
